@@ -21,7 +21,7 @@ using JSON
 using OrderedCollections: OrderedDict
 
 """The version of the specification this package reads and writes."""
-const SPECIFICATION_VERSION = "0.1"
+const SPECIFICATION_VERSION = "0.2"
 
 include("glb.jl")
 include("model.jl")

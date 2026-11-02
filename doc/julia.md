@@ -50,13 +50,15 @@ Two things differ from the other platform's graph, and are undone by `from_mtg`:
 | `complex` | the first ancestor at a smaller scale |
 | `parent`, `edge_type` | the parent, at the same scale, by `<` (successor) or `+` (branch) |
 | relation `bearer` | the parent otherwise, e.g. an axis borne by an internode |
-| `mtg_index` | the node's `index` |
-| variables | the attributes, declared by `variables` (MTG.jl has no units) |
+| `order` | the node's position among its parent's children |
+| `mtg_index` (standard name `mtg_index`) | the node's `index` |
+| variables | the attributes, declared by `variables` (MTG.jl has no units); missing where a node has no such attribute; dates and times as ISO 8601 text with their `format` |
 | scalars | the attributes of the scale 0 root (`Scene`) |
 
-Some MTG content has no place in fspm-TF 0.1: missing attributes, dates, the MTG's classes and description, and
-the order of children. It is kept in the data structure's `extras["MultiScaleTreeGraph"]`, so that `to_mtg`
-rebuilds the MTG exactly. Other readers see the missing values as NaN, `false`, 0 or "".
+`ranks` gives a scale another rank than its number, e.g. the vocabulary's (Organ 5), and `labels` maps the
+symbols to the vocabulary's labels. MTG.jl's own metadata (its classes and description, the scene node, each set's
+MTG scale) is kept in the data structure's `extras["virtualplantlab"]`, so that `to_mtg` rebuilds the MTG exactly.
+A float attribute a node lacks is NaN in its column, so `to_mtg` reads a NaN as no attribute.
 
 ## A VirtualPlantLab graph
 
@@ -67,8 +69,8 @@ With PlantGraphs loaded (Julia 1.12 or later), `from_graph` writes one entity se
 - the graph's data as scalars;
 - its parent as the nearest kept node.
 
-The turtle's movements (`RU`, `T`, `F`, …) are left out. PlantGraphs stores no edge type, so the last child of a
-node is written as its successor and the others as branches; `extras` says the edge types were guessed. With
+The turtle's movements (`RU`, `T`, `F`, …) are left out. PlantGraphs stores no edge type, so the edges are written as
+`unknown`, and the children's order as the `order` column. A field a node's type lacks is missing. With
 PlantGeomTurtle loaded too, `add_geometry!` adds the graph's turtle mesh, each triangle carrying the row of the node
 that made it.
 

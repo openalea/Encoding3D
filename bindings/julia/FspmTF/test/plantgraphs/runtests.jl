@@ -42,10 +42,11 @@ plant() = Graph(axiom = Internode(0.1, 0.01) + (RU(30.0) + Leaf(0.05, 0.02, 3), 
         @test organs.columns["label"] == ["Internode", "Leaf", "Leaf", "Internode", "Meristem"]   # no turtle moves
         ids = organs.columns["id"]
         @test organs.columns["parent"] == [-1, ids[1], ids[1], ids[1], ids[4]]       # the leaves on the first internode
-        @test organs.columns["edge_type"] == ["none", "branch", "branch", "successor", "successor"]
+        @test organs.columns["edge_type"] == ["none", "unknown", "unknown", "unknown", "unknown"]   # none stored
+        @test organs.columns["order"] == [0, 0, 1, 2, 0]                              # the leaves, then the internode
         @test isequal(organs.columns["length"], [0.1, 0.05, 0.04, 0.08, NaN])       # NaN: the meristem has none
-        @test organs.columns["age"] == [0, 3, 1, 0, 0]                               # missing where no field
-        @test written.extras["VirtualPlantLab"]["missing"]["Organ"]["age"] == [0, 3, 4]
+        @test isequal(organs.columns["age"], [missing, 3, 1, missing, missing])       # missing where no field
+        @test written.extras["virtualplantlab"]["model"] == "PlantGraphs"
         @test written.scalars.columns["temperature"] == [20.5]
 
         frame = from_bytes(to_bytes(Frame(data_structures = [written])))
@@ -56,7 +57,7 @@ plant() = Graph(axiom = Internode(0.1, 0.01) + (RU(30.0) + Leaf(0.05, 0.02, 3), 
         again_organs = entity_set(again, "Organ")
         @test again_organs.columns["label"] == organs.columns["label"]
         @test isequal(again_organs.columns["length"], organs.columns["length"])
-        @test again_organs.columns["age"] == organs.columns["age"]
+        @test isequal(again_organs.columns["age"], organs.columns["age"])
         @test again_organs.columns["edge_type"] == organs.columns["edge_type"]
         @test again_organs.columns["parent"] == [-1; [graph_ids[parent] for parent in organs.columns["parent"][2:end]]]
     end

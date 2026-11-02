@@ -10,14 +10,20 @@
 #       Mapping          source entity ↔ target entity weights between two data structures
 #
 # A column is a Vector (one value per row: numbers, Bool, String) or a Matrix (one row per entity, one column per
-# component: a fixed-size vector per entity).
+# component: a fixed-size vector per entity). Missing values: NaN in float columns; `missing` elsewhere (a
+# Vector{Union{Missing,T}} of integers, booleans or text).
 
 """The id of no entity: the `complex` or `parent` of an entity that has none, the feature row of a vertex with none."""
 const NO_ID = -1
 """The values of `edge_type`: the root of its scale, MTG `<`, MTG `+`."""
-const EDGE_TYPES = ("none", "successor", "branch")
+const EDGE_TYPES = ("none", "successor", "branch", "unknown")
 const ENUM_COLUMNS = ("label", "edge_type", "relation")
-const ID_COLUMNS = ("id", "complex", "parent", "source", "target", "level", "index")
+const ID_COLUMNS = ("id", "complex", "parent", "source", "target", "level", "index", "order")
+"""The vocabulary's base scales: an entity set's `scale` is one of them, or `"mixed"`."""
+const BASE_SCALES = ("Plant", "Axis", "GrowthUnit", "Phytomer", "Organ", "SubOrgan", "Layer", "Cell", "Compartment",
+                     "Connection")
+"""The formats of a text variable holding ISO 8601 dates or times."""
+const FORMATS = ("date", "date-time", "time")
 const DATA_STRUCTURE_KINDS = ("graph", "regular_grid", "adaptive_grid", "table")
 const ROLES = ("state", "input", "parameter", "derived", "setting")
 const COLUMN_TYPES = (Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, Float32, Float64)
@@ -27,7 +33,8 @@ const COLUMN_TYPES = (Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64, 
              minimum=nothing, maximum=nothing, references=String[], doi=String[])
 
 The declaration of a variable (a column): its unit (a UCUM code), its standard name in the vocabulary, its kind
-(`extensive`, `intensive`, ...: how it maps between scales and grids), its role and its provenance.
+(`extensive`, `intensive`, ...: how it maps between scales and grids), its role and its provenance; the `format` of
+a text column holding dates or times (`"date"`, `"date-time"`, `"time"`).
 """
 Base.@kwdef mutable struct Variable
     unit::String = "1"
@@ -39,6 +46,7 @@ Base.@kwdef mutable struct Variable
     maximum::Union{Nothing,Real} = nothing
     references::Vector{String} = String[]
     doi::Vector{String} = String[]
+    format::Union{Nothing,String} = nothing
 end
 
 function Base.:(==)(left::Variable, right::Variable)
@@ -70,13 +78,16 @@ end
 The entities of one scale of a graph (`rank`: the scale's rank, coarser first), or a grid's cells (`rank` nothing).
 Reserved columns: `id` (Int64, stable across frames, never reused), `label` (String), `complex` (the id of the
 containing entity at a coarser scale, `NO_ID` if none), `parent` (the predecessor's id at the same scale, `NO_ID` if
-none), `edge_type` (`"none"`, `"successor"`, `"branch"`); an adaptive grid's cells: `level` and `index`.
+none), `edge_type` (`"none"`, `"successor"`, `"branch"`, `"unknown"`), `order` (optional: its position among its tree
+parent's children); an adaptive grid's cells: `level` and `index`. `scale`: its base scale (`BASE_SCALES`), or
+`"mixed"`.
 """
 mutable struct EntitySet <: AbstractTable
     name::String
     columns::Columns
     variables::Declarations
     rank::Union{Nothing,Int}
+    scale::Union{Nothing,String}
 end
 
 """
@@ -109,7 +120,7 @@ mutable struct Mapping <: AbstractTable
 end
 
 # The columns whose meaning the specification fixes, per kind of table
-const ENTITY_SET_RESERVED = ("id", "label", "complex", "parent", "edge_type", "level", "index")
+const ENTITY_SET_RESERVED = ("id", "label", "complex", "parent", "edge_type", "level", "index", "order")
 const RELATION_RESERVED = ("id", "source", "target", "relation")
 const MAPPING_RESERVED = ("source", "target", "weight")
 reserved(::Table) = ()
@@ -125,12 +136,18 @@ as_column(name::AbstractString, values::Number) = [values]
 as_column(name::AbstractString, values::AbstractString) = [String(values)]
 function as_column(name::AbstractString, values::AbstractVector)
     isempty(values) && return Float64[]
-    if all(value -> value isa AbstractString, values)
-        return Vector{String}(values)
+    present = [value for value in values if !ismissing(value)]
+    if all(value -> value isa AbstractString, present)
+        return length(present) == length(values) ? Vector{String}(values) :
+               Union{Missing,String}[ismissing(value) ? missing : String(value) for value in values]
     end
-    promoted = [values...]                      # the narrowest common type
-    eltype(promoted) <: Union{Number,Bool} && return promoted
-    throw(ArgumentError("column '$name': numbers, booleans or strings per row (got $(eltype(promoted)))"))
+    promoted = isempty(present) ? Float64[] : [present...]          # the narrowest common type
+    element = eltype(promoted)
+    element <: Union{Number,Bool} ||
+        throw(ArgumentError("column '$name': numbers, booleans or strings per row (got $element)"))
+    length(present) == length(values) && return promoted
+    element <: AbstractFloat && return element[ismissing(value) ? NaN : value for value in values]   # missing: NaN
+    return Union{Missing,element}[value for value in values]
 end
 as_column(name::AbstractString, values) =
     throw(ArgumentError("column '$name': a vector, or a matrix of one row per entity (got $(typeof(values)))"))
@@ -143,6 +160,8 @@ function prepare_columns(table_name::AbstractString, columns, reserved_names)
         if name in ID_COLUMNS && name in reserved_names && eltype(column) <: Integer && !(eltype(column) <: Bool)
             column = convert(Array{Int64}, column)          # ids are Int64, whatever the platform's integers
         end
+        name in reserved_names && Missing <: eltype(column) &&
+            throw(ArgumentError("table '$table_name': the reserved column '$name' has no missing values"))
         prepared[name] = column
     end
     counts = Dict(name => size(column, 1) for (name, column) in prepared)
@@ -155,8 +174,9 @@ prepare_variables(variables) = Declarations(String(name) => variable for (name, 
 
 Table(name::AbstractString; columns = Columns(), variables = Declarations()) =
     Table(String(name), prepare_columns(name, columns, ()), prepare_variables(variables))
-EntitySet(name::AbstractString; columns = Columns(), variables = Declarations(), rank = nothing) =
-    EntitySet(String(name), prepare_columns(name, columns, ENTITY_SET_RESERVED), prepare_variables(variables), rank)
+EntitySet(name::AbstractString; columns = Columns(), variables = Declarations(), rank = nothing, scale = nothing) =
+    EntitySet(String(name), prepare_columns(name, columns, ENTITY_SET_RESERVED), prepare_variables(variables), rank,
+              scale)
 Relation(name::AbstractString; columns = Columns(), variables = Declarations(), source_set = "", target_set = "") =
     Relation(String(name), prepare_columns(name, columns, RELATION_RESERVED), prepare_variables(variables),
              String(source_set), String(target_set))
@@ -236,8 +256,9 @@ end
                   meshes=Mesh[], origin=identity, platform=nothing, model=nothing, extras=OrderedDict())
 
 One plant population's graph, or one environment model's grid. `origin`: its frame in the scene (a 4×4 matrix,
-`origin[row, column]`, or 16 numbers row by row). `extras`: JSON values for the writing platform (e.g. what it needs to rebuild its own data
-structure); other readers keep them without interpreting them.
+`origin[row, column]`, or 16 numbers row by row). `extras`: JSON values for the writing platform (e.g. what it needs
+to rebuild its own data structure); other readers keep them without interpreting them. `labels`: the platform's
+labels => the vocabulary's.
 """
 mutable struct DataStructure
     id::String
@@ -251,17 +272,20 @@ mutable struct DataStructure
     platform::Union{Nothing,String}
     model::Union{Nothing,String}
     extras::AbstractDict{String,Any}
+    labels::AbstractDict{String,String}
 end
 
 identity_matrix() = Matrix{Float64}([i == j for i in 1:4, j in 1:4])
 
 function DataStructure(id::AbstractString; kind = "graph", entity_sets = EntitySet[], relations = Relation[],
                        scalars = nothing, grid = nothing, meshes = Mesh[], origin = identity_matrix(),
-                       platform = nothing, model = nothing, extras = OrderedDict{String,Any}())
+                       platform = nothing, model = nothing, extras = OrderedDict{String,Any}(),
+                       labels = OrderedDict{String,String}())
     origin = Matrix{Float64}(origin isa AbstractVector ? permutedims(reshape(origin, 4, 4)) : origin)
     size(origin) == (4, 4) || throw(ArgumentError("data structure '$id': the origin is a 4×4 matrix"))
     DataStructure(String(id), String(kind), collect(EntitySet, entity_sets), collect(Relation, relations), scalars,
-                  grid, collect(Mesh, meshes), origin, platform, model, extras)
+                  grid, collect(Mesh, meshes), origin, platform, model, extras,
+                  OrderedDict{String,String}(String(key) => String(value) for (key, value) in pairs(labels)))
 end
 
 """The entity set `name` of a data structure."""

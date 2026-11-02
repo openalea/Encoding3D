@@ -3,6 +3,7 @@
 
 json_value(value::AbstractFloat) =
     isnan(value) ? nothing : isinf(value) ? (value > 0 ? "Infinity" : "-Infinity") : Float64(value)
+json_value(::Missing) = nothing
 json_value(value) = value
 
 json_column(column::AbstractVector) = [json_value(value) for value in column]
@@ -10,7 +11,10 @@ json_column(column::AbstractMatrix) = [[json_value(value) for value in row] for 
 
 """The name of a column's type in the expected values: numpy's (`float64`, `int64`, `uint8`, `bool`...), or
 `string`."""
-dtype_name(column::AbstractArray) = eltype(column) <: AbstractString ? "string" : lowercase(string(eltype(column)))
+function dtype_name(column::AbstractArray)
+    element = nonmissingtype(eltype(column))
+    return element <: AbstractString ? "string" : lowercase(string(element))
+end
 
 function table_dict(table::AbstractTable)
     entry = json_object("name" => table.name, "count" => row_count(table),
@@ -27,6 +31,7 @@ function table_dict(table::AbstractTable)
         variable.maximum === nothing || (declared["maximum"] = variable.maximum)
         isempty(variable.references) || (declared["references"] = variable.references)
         isempty(variable.doi) || (declared["doi"] = variable.doi)
+        variable.format === nothing || (declared["format"] = variable.format)
         declarations[name] = declared
     end
     isempty(declarations) || (entry["variables"] = declarations)
@@ -43,11 +48,14 @@ function frame_to_dict(frame::Frame)
     for data_structure in frame.data_structures
         entry = json_object("id" => data_structure.id, "kind" => data_structure.kind,
                             "origin" => [collect(row) for row in eachrow(data_structure.origin)],
-                            "entity_sets" => [merge!(table_dict(set), json_object("rank" => set.rank))
+                            "entity_sets" => [merge!(table_dict(set), json_object("rank" => set.rank),
+                                                     set.scale === nothing ? json_object() :
+                                                     json_object("scale" => set.scale))
                                               for set in data_structure.entity_sets])
         data_structure.platform === nothing || (entry["platform"] = data_structure.platform)
         data_structure.model === nothing || (entry["model"] = data_structure.model)
         isempty(data_structure.extras) || (entry["extras"] = data_structure.extras)
+        isempty(data_structure.labels) || (entry["labels"] = data_structure.labels)
         if !isempty(data_structure.relations)
             entry["relations"] = [merge!(table_dict(relation), json_object("source_set" => relation.source_set,
                                                                            "target_set" => relation.target_set))

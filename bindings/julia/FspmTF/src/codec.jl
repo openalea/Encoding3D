@@ -64,9 +64,12 @@ function to_bytes(frame::Frame)
         data_structure.platform === nothing || (entry["platform"] = data_structure.platform)
         data_structure.model === nothing || (entry["model"] = data_structure.model)
         entry["origin"] = vec(data_structure.origin)          # column-major, as glTF matrices
-        entry["entitySets"] = [json_object("name" => set.name, "rank" => set.rank,
-                                           "propertyTable" => add_table(set, "$(data_structure.id)__$(set.name)"))
-                               for set in data_structure.entity_sets]
+        entry["entitySets"] = map(data_structure.entity_sets) do set
+            set_entry = json_object("name" => set.name, "rank" => set.rank)
+            set.scale === nothing || (set_entry["scale"] = set.scale)
+            set_entry["propertyTable"] = add_table(set, "$(data_structure.id)__$(set.name)")
+            set_entry
+        end
         if !isempty(data_structure.relations)
             entry["relations"] = [json_object("name" => relation.name, "sourceSet" => relation.source_set,
                                               "targetSet" => relation.target_set,
@@ -76,6 +79,7 @@ function to_bytes(frame::Frame)
         data_structure.scalars === nothing ||
             (entry["scalars"] = add_table(data_structure.scalars, "$(data_structure.id)__scalars"))
         data_structure.grid === nothing || (entry["grid"] = grid_json(data_structure.grid))
+        isempty(data_structure.labels) || (entry["labels"] = data_structure.labels)
         isempty(data_structure.extras) || (entry["extras"] = data_structure.extras)
         node = json_object("name" => data_structure.id)
         data_structure.origin == identity_matrix() || (node["matrix"] = entry["origin"])
@@ -158,6 +162,7 @@ function declaration_json(variable::Variable)
     variable.maximum === nothing || (declaration["maximum"] = variable.maximum)
     isempty(variable.references) || (declaration["references"] = variable.references)
     isempty(variable.doi) || (declaration["doi"] = variable.doi)
+    variable.format === nothing || (declaration["format"] = variable.format)
     return declaration
 end
 
@@ -173,7 +178,8 @@ function encode_table(table::AbstractTable, class_id::AbstractString, buffers::B
         description = declaration(table, name).description
         property = json_object()
         description === nothing || (property["description"] = description)
-        element = eltype(column)
+        element = nonmissingtype(eltype(column))
+        has_missing = Missing <: eltype(column) && any(ismissing, column)
         if name in ENUM_COLUMNS && name in reserved_names
             enum_name, codes = enum_codes(name, column, class_id, schema)
             property["type"], property["enumType"] = "ENUM", enum_name
@@ -182,12 +188,25 @@ function encode_table(table::AbstractTable, class_id::AbstractString, buffers::B
             column isa AbstractVector ||
                 throw(ArgumentError("column '$name' of '$(table.name)': text vectors are not supported"))
             property["type"] = "STRING"
+            if has_missing                                   # missing text: noData, a string the column lacks
+                no_data = free_string(column)
+                property["noData"] = no_data
+                column = String[ismissing(value) ? no_data : value for value in column]
+            end
             encoded = [Vector{UInt8}(codeunits(value)) for value in column]
             offsets = vcat(0, cumsum(Int64[length(value) for value in encoded]))
             offset_type = offsets[end] < 2^32 ? UInt32 : UInt64
             stored[name] = json_object("values" => add!(buffers, reduce(vcat, encoded; init = UInt8[])),
                                        "stringOffsets" => add!(buffers, offset_type.(offsets)),
                                        "stringOffsetType" => uppercase(string(offset_type)))
+        elseif element === Bool && has_missing           # booleans with missing values: UINT8 0, 1, 255 missing
+            column isa AbstractVector ||
+                throw(ArgumentError("column '$name' of '$(table.name)': boolean vectors are not supported"))
+            property["type"], property["componentType"] = "SCALAR", "UINT8"
+            property["noData"] = BOOLEAN_NO_DATA
+            property["extras"] = json_object("FSPM_boolean" => true)
+            stored[name] = json_object("values" => add!(buffers, UInt8[ismissing(value) ? BOOLEAN_NO_DATA : UInt8(value)
+                                                                         for value in column]))
         elseif element === Bool
             column isa AbstractVector ||
                 throw(ArgumentError("column '$name' of '$(table.name)': boolean vectors are not supported"))
@@ -228,6 +247,10 @@ function encode_table(table::AbstractTable, class_id::AbstractString, buffers::B
                 end
             elseif name in ("complex", "parent") && name in reserved_names
                 property["noData"] = NO_ID
+            elseif has_missing                               # missing integers: noData, a value the column lacks
+                no_data = free_integer(element, column)
+                property["noData"] = no_data
+                data = element[ismissing(value) ? no_data : value for value in column]
             end
             stored[name] = json_object("values" => add!(buffers, row_major(data)))
         end
@@ -235,6 +258,32 @@ function encode_table(table::AbstractTable, class_id::AbstractString, buffers::B
         properties[name] = property
     end
     return properties, stored
+end
+
+const BOOLEAN_NO_DATA = 0xff     # a boolean column with missing values: UINT8 0, 1, and 255 missing
+
+"""A value of type `T` the column does not hold: its minimum (signed) or maximum (unsigned) first, then inwards."""
+function free_integer(::Type{T}, column) where {T<:Integer}
+    present = Set(value for value in column if !ismissing(value))
+    first, second = T <: Signed ? (typemin(T), typemax(T)) : (typemax(T), typemin(T))
+    for candidate in (first, second)
+        candidate in present || return candidate
+    end
+    candidate = first
+    while candidate in present                          # at most length(present) steps
+        candidate = T <: Signed ? candidate + one(T) : candidate - one(T)
+    end
+    return candidate
+end
+
+"""A string the column does not hold: the empty string first, then NUL characters."""
+function free_string(column)
+    present = Set(value for value in column if !ismissing(value))
+    candidate = ""
+    while candidate in present
+        candidate *= "\0"
+    end
+    return candidate
 end
 
 function enum_codes(name, column, class_id, schema)
@@ -338,12 +387,13 @@ function from_bytes(data::AbstractVector{UInt8})
         origin = haskey(entry, "origin") ? reshape(Float64.(entry["origin"]), 4, 4) : identity_matrix()
         data_structure = DataStructure(entry["id"]; kind = get(entry, "kind", "graph"),
                                        platform = get(entry, "platform", nothing), model = get(entry, "model", nothing),
-                                       extras = get(entry, "extras", json_object()), origin = origin)
+                                       extras = get(entry, "extras", json_object()), origin = origin,
+                                       labels = get(entry, "labels", json_object()))
         for item in get(entry, "entitySets", Any[])
-            rank = get(item, "rank", nothing)
+            rank, scale = get(item, "rank", nothing), get(item, "scale", nothing)
             push!(data_structure.entity_sets,
                   table(item["propertyTable"], (name, columns, declarations) ->
-                        EntitySet(name, columns, declarations, rank === nothing ? nothing : Int(rank))))
+                        EntitySet(name, columns, declarations, rank === nothing ? nothing : Int(rank), scale)))
         end
         for item in get(entry, "relations", Any[])
             push!(data_structure.relations,
@@ -403,6 +453,9 @@ function decode_table(document, binary, description, schema, variables)
             offset_type = TYPES_OF_COMPONENTS[get(stored, "stringOffsetType", "UINT32")]
             offsets = read_values(offset_type, view_bytes(document, binary, stored["stringOffsets"]), count + 1)
             column = String[String(raw[offsets[row]+1:offsets[row+1]]) for row in 1:count]
+            if haskey(property, "noData") && any(==(property["noData"]), column)     # missing text
+                column = Union{Missing,String}[value == property["noData"] ? missing : value for value in column]
+            end
         elseif type == "BOOLEAN"
             column = Bool[(raw[(row-1)÷8+1] >> ((row - 1) % 8)) & 0x01 == 0x01 for row in 1:count]
         elseif type == "SCALAR"
@@ -425,6 +478,15 @@ function decode_table(document, binary, description, schema, variables)
                 end
             end
             column = vector ? permutedims(reshape(values, width, count)) : values
+            if get(get(property, "extras", json_object()), "FSPM_boolean", false)    # booleans with missing values
+                no_data = get(property, "noData", BOOLEAN_NO_DATA)
+                column = any(==(no_data), column) ?
+                    Union{Missing,Bool}[value == no_data ? missing : value == 1 for value in column] :
+                    Bool[value == 1 for value in column]
+            elseif element <: Integer && !vector && haskey(property, "noData") && !(name in ("complex", "parent")) &&
+                   any(==(property["noData"]), column)                              # missing integers
+                column = Union{Missing,element}[value == property["noData"] ? missing : value for value in column]
+            end
         else
             throw(ArgumentError("'$class_id.$name': property type $type is not part of fspm-TF 0.1"))
         end
@@ -439,7 +501,8 @@ function decode_table(document, binary, description, schema, variables)
                                           minimum = get(declared, "minimum", nothing),
                                           maximum = get(declared, "maximum", nothing),
                                           references = String.(get(declared, "references", String[])),
-                                          doi = String.(get(declared, "doi", String[])))
+                                          doi = String.(get(declared, "doi", String[])),
+                                          format = get(declared, "format", nothing))
         end
     end
     return columns, declarations

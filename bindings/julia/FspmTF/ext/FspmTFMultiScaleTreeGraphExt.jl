@@ -9,14 +9,13 @@ A MultiScaleTreeGraph (MTG.jl) as an fspm-TF `graph` data structure, and back:
 | `complex` | its first ancestor at a smaller scale (none for the scene) |
 | `parent`, `edge_type` | its parent, when at the same scale and linked by `<` (successor) or `+` (branch) |
 | relation `bearer` | its parent otherwise, when it is not its complex linked by `/` (e.g. an axis borne by an internode) |
-| `mtg_index` | the node's `index` |
-| variables | its attributes |
+| `order` | the node's position among its parent's children |
+| `mtg_index` (standard name `mtg_index`) | the node's `index` |
+| variables | its attributes: missing where a node has none; dates and times as ISO 8601 text with their `format` |
 | scalars | the scene's (the scale 0 root's) attributes |
 
-What fspm-TF 0.1 cannot say is kept in the data structure's `extras["MultiScaleTreeGraph"]`, so that `to_mtg` rebuilds
-the same MTG: the attributes a node does not have (fspm-TF columns have a value on every row; the missing value
-written is NaN, `false`, 0 or ""), the types written as text (dates), the scene's node and its MTG metadata
-(`symbols`, `scales`, `description`), and the order of children when it is not the order of their ids.
+MTG.jl's scene node and metadata (`symbols`, `scales`, `description`) are kept in the data structure's
+`extras["virtualplantlab"]` (with `"model": "MultiScaleTreeGraph"`), so that `to_mtg` rebuilds the same MTG.
 """
 module FspmTFMultiScaleTreeGraphExt
 
@@ -27,6 +26,7 @@ using MultiScaleTreeGraph
 using OrderedCollections: OrderedDict
 
 const PLATFORM = "MultiScaleTreeGraph"
+const EXTRAS_KEY = "virtualplantlab"                  # the extras key: VirtualPlantLab's name in the vocabulary
 const METADATA_ATTRIBUTES = (:symbols, :scales, :description)
 # MTG.jl's node ids start at 1 and size its attribute store (an id of 2^32 allocates 2^32 rows), fspm-TF's start at 0
 # and may be sparse (CPlantBox's segments: 2^32 + node id). to_mtg then numbers the nodes 1, 2, ... in the order of
@@ -41,8 +41,10 @@ const OWN_ATTRIBUTES = (ID_ATTRIBUTE, PARENT_ATTRIBUTE, EDGE_TYPE_ATTRIBUTE)
 const LINK_NAMES = Dict(:< => "successor", :+ => "branch", :/ => "decomposition")
 const LINKS = Dict(name => link for (link, name) in LINK_NAMES)
 const INDEX_COLUMN = "mtg_index"
-const INDEX_VARIABLE = Variable(unit = "1", kind = "descriptor", role = "state",
+const INDEX_VARIABLE = Variable(unit = "1", standard_name = "mtg_index", kind = "descriptor", role = "state",
                                 description = "the node's index in its MTG code (1 in Internode1)")
+"""The node's position among its parent's children, from 0."""
+position_among_siblings(node) = isroot(node) ? 0 : findfirst(child -> child === node, children(parent(node))) - 1
 
 parent_node(node) = isroot(node) ? nothing : parent(node)
 
@@ -72,8 +74,9 @@ default_set_name(scale_number, symbols) =
 # ── Attributes as columns ───────────────────────────────────────────────
 
 
-"""Columns of `nodes`' attributes, by name in order of first appearance; the missing rows and text types of each.
-`skip`: attributes not written; the MTG's root's metadata (MTG.jl's `symbols`, `scales`, `description`) neither."""
+"""Columns of `nodes`' attributes (missing where a node has none), by name in order of first appearance, and their
+declarations (a date's `format` added). `skip`: attributes not written; the MTG's root's metadata (MTG.jl's `symbols`,
+`scales`, `description`) neither."""
 function attribute_columns(nodes, set_name, variables, skip = ())
     attribute_of(node, name) =
         isroot(node) && name in METADATA_ATTRIBUTES ? nothing : attribute(node, name; default = nothing)
@@ -83,7 +86,6 @@ function attribute_columns(nodes, set_name, variables, skip = ())
             push!(names, name)
     end
     columns, declarations = Columns(), Declarations()
-    missing_rows, text_types = json_object(), json_object()
     for name in names
         values = Any[attribute_of(node, name) for node in nodes]
         converted = FspmTF.column_of_values(values)
@@ -94,29 +96,34 @@ function attribute_columns(nodes, set_name, variables, skip = ())
         end
         column_name = string(name)
         check_identifier(column_name, "attribute of '$set_name'")
-        column, missing_of_column, text_type = converted
+        column, format = converted
         columns[column_name] = column
-        isempty(missing_of_column) || (missing_rows[column_name] = missing_of_column)
-        text_type === nothing || (text_types[column_name] = text_type)
-        haskey(variables, column_name) && (declarations[column_name] = variables[column_name])
+        declared = get(variables, column_name, nothing)
+        if format !== nothing                                  # dates and times: their format declared
+            declared = declared === nothing ? Variable(unit = "1", kind = "descriptor") : deepcopy(declared)
+            declared.format = format
+        end
+        declared === nothing || (declarations[column_name] = declared)
     end
-    return columns, declarations, missing_rows, text_types
+    return columns, declarations
 end
 
 # ── MTG → data structure ────────────────────────────────────────────────
 
 """
-    from_mtg(mtg; id="plants", scales=Dict(), variables=Dict(), platform="MultiScaleTreeGraph", model=nothing)
-        -> DataStructure
+    from_mtg(mtg; id="plants", scales=Dict(), ranks=Dict(), variables=Dict(), labels=Dict(),
+             platform="MultiScaleTreeGraph", model=nothing) -> DataStructure
 
 The MTG whose root is `mtg` as a `graph` data structure `id`. `scales`: the name of each scale's entity set
 (scale => name, e.g. `Dict(1 => "Plant", 2 => "Axis", 3 => "Organ")`; by default the scale's symbol when it has
-only one, `Scale<n>` otherwise). `variables`: the declarations of the attributes (name => `Variable`: unit, standard
-name, kind, role), MTG.jl having no units. A scale 0 root (MTG.jl's `Scene`) is the data structure itself, its
+only one, `Scale<n>` otherwise). `ranks`: each scale's rank (by default the scale), e.g. the vocabulary's base scales'
+positions. `variables`: the declarations of the attributes (name => `Variable`: unit, standard name, kind, role),
+MTG.jl having no units. `labels`: the symbols => the vocabulary's labels (e.g. `Dict("Internode" => "StemInternode")`). A scale 0 root (MTG.jl's `Scene`) is the data structure itself, its
 attributes the scalars.
 """
-function FspmTF.from_mtg(mtg; id::AbstractString = "plants", scales = Dict{Int,String}(),
-                         variables = Dict{String,Variable}(), platform = PLATFORM, model = nothing)
+function FspmTF.from_mtg(mtg; id::AbstractString = "plants", scales = Dict{Int,String}(), ranks = Dict{Int,Int}(),
+                         variables = Dict{String,Variable}(), labels = Dict{String,String}(), platform = PLATFORM,
+                         model = nothing)
     variables = Dict{String,Variable}(string(name) => variable for (name, variable) in pairs(variables))
     fspm_id(node) = attribute(node, ID_ATTRIBUTE; default = node_id(node))
     nodes = preorder(mtg)
@@ -137,7 +144,7 @@ function FspmTF.from_mtg(mtg; id::AbstractString = "plants", scales = Dict{Int,S
         set_names[scale_number] = name
     end
 
-    entity_sets, missing_rows, text_types = EntitySet[], json_object(), json_object()
+    entity_sets = EntitySet[]
     bearers = OrderedDict{Tuple{String,String},Vector{Tuple{Int64,Int64,String}}}()
     for (scale_number, scale_nodes) in by_scale
         set_name = set_names[scale_number]
@@ -173,14 +180,13 @@ function FspmTF.from_mtg(mtg; id::AbstractString = "plants", scales = Dict{Int,S
                   (fspm_id(node), fspm_id(tree_parent), LINK_NAMES[link(node)]))
         end
         columns["parent"], columns["edge_type"] = parents, edge_types
+        columns["order"] = Int64[position_among_siblings(node) for node in scale_nodes]
         columns[INDEX_COLUMN] = Int64[index(node) for node in scale_nodes]
-        attributes, declarations, missing_of_set, text_types_of_set =
-            attribute_columns(scale_nodes, set_name, variables, (Symbol(INDEX_COLUMN),))
+        attributes, declarations = attribute_columns(scale_nodes, set_name, variables, (Symbol(INDEX_COLUMN),))
         merge!(columns, attributes)
         declarations = merge(Declarations(INDEX_COLUMN => INDEX_VARIABLE), declarations)
-        isempty(missing_of_set) || (missing_rows[set_name] = missing_of_set)
-        isempty(text_types_of_set) || (text_types[set_name] = text_types_of_set)
-        push!(entity_sets, EntitySet(set_name; columns = columns, variables = declarations, rank = scale_number))
+        push!(entity_sets, EntitySet(set_name; columns = columns, variables = declarations,
+                                     rank = get(ranks, scale_number, scale_number)))
     end
 
     relations = Relation[]
@@ -204,55 +210,31 @@ function FspmTF.from_mtg(mtg; id::AbstractString = "plants", scales = Dict{Int,S
     if scene !== nothing
         extras["scene"] = json_object("id" => fspm_id(scene), "symbol" => string(symbol(scene)),
                                       "index" => index(scene), "link" => string(link(scene)))
-        columns, declarations, missing_of_scene, text_types_of_scene =
-            attribute_columns([scene], "scalars", variables)
-        if !isempty(columns)
-            scalars = Table("scalars"; columns = columns, variables = declarations)
-            isempty(missing_of_scene) || (missing_rows["scalars"] = missing_of_scene)
-            isempty(text_types_of_scene) || (text_types["scalars"] = text_types_of_scene)
-        end
+        columns, declarations = attribute_columns([scene], "scalars", variables)
+        isempty(columns) || (scalars = Table("scalars"; columns = columns, variables = declarations))
     end
-    isempty(missing_rows) || (extras["missing"] = missing_rows)
-    isempty(text_types) || (extras["text_types"] = text_types)
-    order = [fspm_id(node) for node in nodes]
-    order == [fspm_id(node) for node in preorder_by_id(nodes)] || (extras["order"] = order)
+    extras = merge(json_object("model" => PLATFORM,                  # each set's MTG scale (its rank may differ)
+                               "scales" => json_object(set_names[scale_number] => scale_number
+                                                       for scale_number in keys(by_scale))), extras)
 
     return DataStructure(id; kind = "graph", entity_sets = entity_sets, relations = relations, scalars = scalars,
-                         platform = platform, model = model, extras = json_object(PLATFORM => extras))
-end
-
-"""The depth-first order of the same tree, children sorted by id: the order to_mtg rebuilds without `order`."""
-function preorder_by_id(nodes)
-    ordered, stack = Any[], Any[first(nodes)]
-    while !isempty(stack)
-        node = pop!(stack)
-        push!(ordered, node)
-        append!(stack, sort(children(node); by = node_id, rev = true))
-    end
-    return ordered
+                         platform = platform, model = model, extras = json_object(EXTRAS_KEY => extras),
+                         labels = labels)
 end
 
 # ── Data structure → MTG ────────────────────────────────────────────────
 
-attribute_value(column::AbstractVector, row) = column[row]
-attribute_value(column::AbstractMatrix, row) = collect(column[row, :])
-
-function restore(value, text_type)
-    text_type === nothing && return value
-    return FspmTF.TEXT_TYPES[text_type](value)
-end
-
-"""The attributes of each row of `table`: Dict(column => value), without the rows' missing ones."""
-function row_attributes(table, missing_of_table, text_types_of_table, skip)
-    missing_rows = Dict(name => Set(rows) for (name, rows) in pairs(missing_of_table))
+"""The attributes of each row of `table`: Dict(column => value), without the rows' missing ones (`missing`, and NaN,
+a float column's missing value: a node has no such attribute); dates and times read back from their text by their
+declared `format`."""
+function row_attributes(table, skip)
     rows = [Dict{Symbol,Any}() for _ in 1:row_count(table)]
     for (name, column) in table.columns
         name in skip && continue
-        absent = get(missing_rows, name, Set{Int}())
-        text_type = get(text_types_of_table, name, nothing)
+        format = haskey(table.variables, name) ? table.variables[name].format : nothing
         for row in 1:row_count(table)
-            (row - 1) in absent && continue
-            rows[row][Symbol(name)] = restore(attribute_value(column, row), text_type)
+            value = FspmTF.value_of(column, row, format)
+            ismissing(value) || (value isa AbstractFloat && isnan(value)) || (rows[row][Symbol(name)] = value)
         end
     end
     return rows
@@ -269,24 +251,28 @@ variables as attributes, under a `Scene` root holding the scalars.
 function FspmTF.to_mtg(data_structure::DataStructure)
     data_structure.kind == "graph" ||
         throw(ArgumentError("data structure '$(data_structure.id)' is a $(data_structure.kind), not a graph"))
-    extras = get(data_structure.extras, PLATFORM, json_object())
-    missing_rows, text_types = get(extras, "missing", json_object()), get(extras, "text_types", json_object())
+    extras = get(data_structure.extras, EXTRAS_KEY, json_object())
+    get(extras, "model", nothing) == PLATFORM || (extras = json_object())   # another VPL model's: not MTG.jl's
     entity_sets = [set for set in data_structure.entity_sets if set.rank !== nothing]
     sort!(entity_sets; by = set -> set.rank)
+    mtg_scales = get(extras, "scales", json_object())              # MTG.jl's own: its scales; else the ranks
+    scale_of(set) = Int(get(mtg_scales, set.name, set.rank))
 
     # Every entity: its scale, symbol, index, attributes; its parent in the tree and the link to it
     encoding, attributes, tree_parent = Dict{Int64,Any}(), Dict{Int64,Dict{Symbol,Any}}(), Dict{Int64,Tuple{Int64,Symbol}}()
     reserved = (FspmTF.ENTITY_SET_RESERVED..., INDEX_COLUMN)
+    order_of = Dict{Int64,Int64}()                                   # each entity's position among its siblings
     for set in entity_sets
         ids = set.columns["id"]
         labels = get(set.columns, "label", fill(set.name, row_count(set)))
         indices = get(set.columns, INDEX_COLUMN, zeros(Int64, row_count(set)))
-        rows = row_attributes(set, get(missing_rows, set.name, json_object()), get(text_types, set.name, json_object()),
-                              reserved)
+        rows = row_attributes(set, reserved)
         for row in 1:row_count(set)
-            encoding[ids[row]] = (symbol = labels[row], index = indices[row], scale = set.rank)
+            encoding[ids[row]] = (symbol = labels[row], index = indices[row], scale = scale_of(set))
             attributes[ids[row]] = rows[row]
         end
+        haskey(set.columns, "order") && foreach(((id, position),) -> order_of[id] = position,
+                                                zip(ids, set.columns["order"]))
         complexes = get(set.columns, "complex", fill(NO_ID, row_count(set)))
         for row in 1:row_count(set)                                    # complex: by decomposition, '/'
             complexes[row] == NO_ID || (tree_parent[ids[row]] = (complexes[row], :/))
@@ -324,8 +310,7 @@ function FspmTF.to_mtg(data_structure::DataStructure)
     roots = sort([id for id in keys(encoding) if !haskey(tree_parent, id)])
     scene_entry = get(extras, "scene", nothing)
     scene_attributes = data_structure.scalars === nothing ? Dict{Symbol,Any}() :
-        only(row_attributes(data_structure.scalars, get(missing_rows, "scalars", json_object()),
-                            get(text_types, "scalars", json_object()), ()))
+        only(row_attributes(data_structure.scalars, ()))
     # MTG.jl's ids: the entities' own, unless they start below 1 or are sparse; then 1, 2, ... in their order
     all_ids = sort(collect(keys(encoding)))
     renumbered = !isempty(all_ids) && (first(all_ids) < 1 || last(all_ids) > 2 * length(all_ids) + 1)
@@ -353,10 +338,8 @@ function FspmTF.to_mtg(data_structure::DataStructure)
         push!(get!(children_of, parent_id, Int64[]), id)
     end
     isempty(roots) || (children_of[root_id] = vcat(roots, get(children_of, root_id, Int64[])))
-    rank_of = haskey(extras, "order") ? Dict(Int64(id) => position for (position, id) in enumerate(extras["order"])) :
-              nothing
-    for list in values(children_of)
-        rank_of === nothing ? sort!(list) : sort!(list; by = id -> get(rank_of, id, typemax(Int)))
+    for list in values(children_of)                                  # the `order` column, else by id
+        sort!(list; by = id -> (get(order_of, id, typemax(Int64)), id))
     end
     stack = Any[root]
     while !isempty(stack)
