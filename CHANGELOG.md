@@ -8,4 +8,6 @@
   validator, display copies, the comparison with expected values, the `fspm-tf` command line.
 - The conformance files (`conformance/`), their expected values, and the GitHub action checking a codec against them.
 - The ParaView reader plugin (`paraview/`).
+- FspmTF.jl, the Julia codec (`bindings/julia/FspmTF/`): conformant reading and writing, sequences, and a
+  MultiScaleTreeGraph.jl package extension (`from_mtg`, `to_mtg`); its CI, `.github/workflows/julia-codec.yml`.
 - The documentation (`doc/`), with a notebook; the design note (`doc/design_note.md`).

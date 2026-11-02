@@ -1,0 +1,23 @@
+name = "FspmTF"
+uuid = "b7fd6adf-cc0c-448b-9b1a-23349074d866"
+authors = ["Tristan Gérault"]
+version = "0.1.0"
+
+[deps]
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
+
+[weakdeps]
+MultiScaleTreeGraph = "dd4a991b-8a45-4075-bede-262ee62d5583"
+
+[extensions]
+FspmTFMultiScaleTreeGraphExt = "MultiScaleTreeGraph"
+
+[compat]
+Dates = "1"
+JSON = "1"
+MultiScaleTreeGraph = "0.16"
+OrderedCollections = "1, 2"
+julia = "1.10"
+

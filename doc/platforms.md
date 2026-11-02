@@ -28,7 +28,7 @@ This is a few hundred lines in any language. Existing libraries help:
 
 - **C++:** cesium-native reads and writes `EXT_structural_metadata`.
 - **Java:** JglTF has its JSON classes.
-- **Julia:** a small GLB reader is enough; `GLTF.jl` handles the JSON.
+- **Julia:** done, `bindings/julia/FspmTF/` ([FspmTF.jl](julia.md)): a hand-written GLB container and JSON.jl.
 
 Each codec goes in its own folder, with its usual build files and tests:
 

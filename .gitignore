@@ -118,3 +118,6 @@ examples/**/outputs/
 # the documentation build, and its pages generated from spec/vocabulary
 doc/_build/
 doc/_generated/
+
+# Julia: environments resolved locally (the codec is a library: no committed manifest)
+bindings/julia/**/Manifest*.toml

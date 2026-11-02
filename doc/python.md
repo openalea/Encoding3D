@@ -10,7 +10,8 @@ from openalea.metafspm.io.fspm_tf import export_scene, import_frame
 export_scene("scene.glb", scene)                       # the scene now
 data_structures = import_frame("scene.glb")            # metafspm's DataStructures, rebuilt bit for bit
 
-scene = Scene(planting, ..., output_dirpath="outputs", frame_period=24)    # a frame every 24 steps
+recorder = SceneRecorder("outputs", frame_period=24)  # openalea.metafspm.scene.recorder: a frame every 24 steps
+scene = Scene(planting, ..., recorder=recorder)
 ```
 
 See [metafspm's documentation](https://github.com/openalea/metafspm) for the options.
