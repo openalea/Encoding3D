@@ -4,7 +4,8 @@
 |---|---|---|---|---|---|
 | openalea.fspm_tf (reference codec) | Python | this repository, `bindings/python/` | yes | yes | 0.1 |
 | openalea.metafspm | Python | `openalea.metafspm.io.fspm_tf` (branch release2026) | yes: its own frames, rebuilt bit for bit | yes | 0.1 |
-| CPlantBox | C++ / Python | planned (phase P4) | | | |
+| fspm_tf (C++ codec) | C++ | this repository, `bindings/cpp/` | yes | yes | 0.1 |
+| CPlantBox | C++ | `bindings/cpp/cplantbox/` (`fspm_tf::cplantbox`), to move into CPlantBox | yes: static root systems, from any graph with segment ends | yes: organs, segments, geometry, soil grid, mapping | 0.1 |
 | GroIMP | Java | | | | |
 | FspmTF.jl (Julia codec) | Julia | this repository, `bindings/julia/FspmTF/` | yes | yes | 0.1 |
 | MultiScaleTreeGraph.jl (VirtualPlantLab, PlantSimEngine) | Julia | FspmTF.jl's package extension: `from_mtg`, `to_mtg` | yes: any graph as an MTG; its own MTGs rebuilt as they were | yes | 0.1 |

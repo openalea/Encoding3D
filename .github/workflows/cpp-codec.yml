@@ -1,0 +1,67 @@
+# The C++ codec (bindings/cpp): its tests on Linux, macOS and Windows; the conformance check other codecs run (its
+# dumps of the conformance files compared with their expected values, the files it writes validated); and CPlantBox's
+# adapter, built on CPlantBox's library (a pinned commit) and tested on CPlantBox plants. OpenAlea's conda CI builds
+# the Python package only.
+name: C++ codec
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  CPLANTBOX_COMMIT: 17e1fab617e72fa5e2773dfee723083bdf515053
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (nlohmann_json fetched)
+        run: cmake -S bindings/cpp -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dump and write the conformance scenes with the C++ codec
+        run: |
+          cmake -S bindings/cpp -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target fspm_tf_conformance_run
+          ./build/fspm_tf_conformance_run conformance out
+      - uses: ./.github/actions/conformance
+        with:
+          dumps: out/dumps
+          written: out/written
+
+  cplantbox-adapter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: CPlantBox's library (no Python bindings, no PiafMunch)
+        run: |
+          git clone --quiet https://github.com/Plant-Root-Soil-Interactions-Modelling/CPlantBox.git cplantbox
+          git -C cplantbox checkout --quiet "$CPLANTBOX_COMMIT"
+          cmake -S cplantbox -B cplantbox-build -DCMAKE_BUILD_TYPE=Release -DCPB_BUILD_PYTHON=OFF -DPIAFMUNCH=OFF \
+                -DCPB_BUILD_SHARED=OFF -DCPB_NATIVE_CPU_TUNING=OFF
+          cmake --build cplantbox-build --target CPlantBox -j 4
+      - name: The codec and the adapter
+        run: |
+          cmake -S bindings/cpp -B build -DCMAKE_BUILD_TYPE=Release -DFSPM_TF_CPLANTBOX_SOURCE_DIR="$PWD/cplantbox" \
+                -DFSPM_TF_CPLANTBOX_LIBRARY="$PWD/cplantbox-build/src/libCPlantBox.a"
+          cmake --build build -j 4
+          ctest --test-dir build --output-on-failure
+      - name: What the adapter wrote is valid fspm-TF
+        run: |
+          python -m pip install numpy jsonschema .
+          fspm-tf validate build/cplantbox/cplantbox_out/*.glb

@@ -10,4 +10,9 @@
 - The ParaView reader plugin (`paraview/`).
 - FspmTF.jl, the Julia codec (`bindings/julia/FspmTF/`): conformant reading and writing, sequences, and a
   MultiScaleTreeGraph.jl package extension (`from_mtg`, `to_mtg`); its CI, `.github/workflows/julia-codec.yml`.
+- The C++ codec (`bindings/cpp/`): conformant reading and writing, sequences, a CMake package; CPlantBox's adapter
+  (`bindings/cpp/cplantbox/`: organisms with their geometry, soil grid and mapping; static root systems from any graph
+  with segment ends); its CI, `.github/workflows/cpp-codec.yml`.
+- FspmTF.jl: MTGs from graphs with ids from 0 or sparse (numbered 1, 2, ..., ids kept in `fspm_tf_id`), and parents
+  in another complex kept (`fspm_tf_parent`).
 - The documentation (`doc/`), with a notebook; the design note (`doc/design_note.md`).

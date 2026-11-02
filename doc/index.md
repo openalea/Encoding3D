@@ -34,6 +34,7 @@ Viewing and checking files <using>
 Reading and writing in Python <python>
 A notebook: fspm-TF in Python <notebooks/fspm_tf_in_python>
 Reading and writing in Julia <julia>
+Reading and writing in C++, and CPlantBox <cpp>
 ```
 
 ## Implementing fspm-TF

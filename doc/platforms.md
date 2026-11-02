@@ -26,7 +26,7 @@ What it has to handle:
 
 This is a few hundred lines in any language. Existing libraries help:
 
-- **C++:** cesium-native reads and writes `EXT_structural_metadata`.
+- **C++:** done, `bindings/cpp/` ([C++ and CPlantBox](cpp.md)): hand-written, with nlohmann_json.
 - **Java:** JglTF has its JSON classes.
 - **Julia:** done, `bindings/julia/FspmTF/` ([FspmTF.jl](julia.md)): a hand-written GLB container and JSON.jl.
 
