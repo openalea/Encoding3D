@@ -152,7 +152,7 @@ void test_plant_with_geometry_and_soil(const filesystem::path &parameters, const
 
     plant->setRectangularGrid(CPlantBox::Vector3d(-10, -10, -40), CPlantBox::Vector3d(10, 10, 0),
                               CPlantBox::Vector3d(4, 4, 8), false);
-    const auto soil = cplantbox::soil_grid(*plant);
+    auto soil = cplantbox::soil_grid(*plant);
     const auto mapping = cplantbox::segments_in_soil(*plant, data_structure, soil);
     check(soil.entity_set("Voxel").row_count() == 4 * 4 * 8, "the soil grid's cells");
     check(mapping.row_count() > 0, "segments mapped to soil cells");
@@ -176,6 +176,38 @@ void test_plant_with_geometry_and_soil(const filesystem::path &parameters, const
         inside = inside && targets[item] == (index[0] * grid.shape[1] + index[1]) * grid.shape[2] + index[2];
     }
     check(inside, "each mapped segment's midpoint lies in its cell (C order of x, y, z)");
+
+    // A soil solver's values per cell and CPlantBox's hydraulics per node and segment, each where it belongs
+    std::vector<double> soil_potential, xylem_potential, radial_flux;
+    for (std::size_t cell = 0; cell < 4 * 4 * 8; ++cell) soil_potential.push_back(-100. - double(cell));
+    for (const auto &node : plant->nodes) xylem_potential.push_back(node.z);           // the node's own z
+    for (std::size_t segment = 0; segment < plant->segments.size(); ++segment) radial_flux.push_back(double(segment));
+    Variable potential;
+    potential.unit = "cm[H2O]";
+    potential.standard_name = "soil_water_potential";
+    cplantbox::add_cell_values(soil, *plant, {{"soil_water_potential", soil_potential, potential}});
+    potential.standard_name = "water_potential";
+    Variable flux;
+    flux.unit = "cm3/d";
+    flux.standard_name = "root_water_uptake";
+    cplantbox::add_node_values(data_structure, *plant, {{"xylem_potential", xylem_potential, potential}});
+    cplantbox::add_segment_values(data_structure, *plant, {{"radial_flux", radial_flux, flux}});
+    const auto cell_values = values(soil.entity_set("Voxel"), "soil_water_potential");
+    bool cells_right = true;
+    for (std::size_t item = 0; item < sources.size(); ++item) {    // each mapped segment's cell: its own value
+        std::size_t segment = 0;
+        while (cplantbox::SEGMENT_ID_OFFSET + plant->segments[segment].y != sources[item]) ++segment;
+        cells_right = cells_right && cell_values[std::size_t(targets[item])] == soil_potential[std::size_t(plant->seg2cell.at(int(segment)))];
+    }
+    check(cells_right, "soil values reordered to the cells' C order");
+    const auto xylem = values(data_structure.entity_set("SubOrgan"), "xylem_potential");
+    const auto distal_z = values(data_structure.entity_set("SubOrgan"), "z2");
+    bool nodes_right = true;
+    for (std::size_t segment = 0; segment < plant->segments.size(); ++segment) {
+        const auto row = row_of.at(cplantbox::SEGMENT_ID_OFFSET + plant->segments[segment].y);
+        nodes_right = nodes_right && xylem[row] == distal_z[row];
+    }
+    check(nodes_right, "each segment takes its distal node's value");
 
     Frame frame;
     frame.time = plant->getSimTime();

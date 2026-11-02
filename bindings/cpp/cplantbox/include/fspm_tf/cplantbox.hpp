@@ -71,6 +71,28 @@ DataStructure soil_grid(const CPlantBox::MappedSegments &segments, const std::st
 Mapping segments_in_soil(const CPlantBox::MappedSegments &segments, const DataStructure &plant,
                          const DataStructure &soil, const std::string &name = "roots_in_soil");
 
+/// Values to write with their declaration: e.g. a soil solver's water potential per cell, or CPlantBox's hydraulic
+/// results per segment or per node (PlantHydraulicModel), declared with their units and standard names.
+struct Values {
+    std::string name;             ///< the column's name
+    std::vector<double> values;   ///< one per cell, segment or node, in CPlantBox's order
+    Variable variable;            ///< its unit, standard name, kind, role
+};
+
+/// Adds values per soil cell (in CPlantBox's cell order: x fastest, then y, then z) to the soil grid written by
+/// soil_grid, as columns of its cells (reordered to fspm-TF's C order of x, y, z).
+void add_cell_values(DataStructure &soil, const CPlantBox::MappedSegments &segments, const std::vector<Values> &values);
+
+/// Adds values per segment of the MappedSegments (e.g. PlantHydraulicModel's radial fluxes) to the plant's SubOrgan
+/// set, each in the row of its segment. The segments must keep CPlantBox's numbering (a grid set without cutting).
+void add_segment_values(DataStructure &plant, const CPlantBox::MappedSegments &segments,
+                        const std::vector<Values> &values);
+
+/// Adds values per node of the MappedSegments (e.g. PlantHydraulicModel's xylem potentials) to the plant's SubOrgan
+/// set: each segment takes its distal node's value.
+void add_node_values(DataStructure &plant, const CPlantBox::MappedSegments &segments,
+                     const std::vector<Values> &values);
+
 /// A graph as a static CPlantBox root system (StaticRoot organs on a seed, as CPlantBox's StaticPlant builds from
 /// RSML): its segments' ends as the organs' nodes, a lateral at its parent's node, each organ's radius the mean of its
 /// segments'. The segments: the entity set holding the segment ends (proximal_end_* and distal_end_*, by standard

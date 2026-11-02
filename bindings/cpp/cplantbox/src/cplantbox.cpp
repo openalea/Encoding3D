@@ -304,6 +304,77 @@ Mapping segments_in_soil(const CPlantBox::MappedSegments &segments, const DataSt
     return mapping;
 }
 
+void add_cell_values(DataStructure &soil, const CPlantBox::MappedSegments &segments, const std::vector<Values> &values) {
+    if (!soil.grid) throw Error("'" + soil.id + "' has no grid: write it with soil_grid");
+    const auto &resolution = segments.resolution;
+    const auto nx = std::size_t(resolution.x), ny = std::size_t(resolution.y), nz = std::size_t(resolution.z);
+    auto &cells = soil.entity_set(soil.grid->cells);
+    for (const auto &item : values) {
+        if (item.values.size() != nx * ny * nz)
+            throw Error("'" + item.name + "': " + std::to_string(item.values.size()) + " values, the grid has " +
+                        std::to_string(nx * ny * nz) + " cells");
+        std::vector<double> column(item.values.size());
+        for (std::size_t cell = 0; cell < item.values.size(); ++cell) {   // CPlantBox: x fastest; fspm-TF: C order
+            const std::size_t i = cell % nx, j = (cell / nx) % ny, k = cell / (nx * ny);
+            column[(i * ny + j) * nz + k] = item.values[cell];
+        }
+        cells.set(item.name, column).declare(item.name, item.variable);
+    }
+}
+
+namespace {
+
+/// The SubOrgan row of each segment of the MappedSegments (by its distal node's id), or throws.
+std::vector<std::size_t> segment_rows(const DataStructure &plant, const CPlantBox::MappedSegments &segments) {
+    const auto &set = plant.entity_set("SubOrgan");
+    std::map<std::int64_t, std::size_t> row_of;
+    const auto &ids = set.column("id").as<std::int64_t>();
+    for (std::size_t row = 0; row < ids.size(); ++row) row_of[ids[row]] = row;
+    std::vector<std::size_t> rows;
+    for (std::size_t segment = 0; segment < segments.segments.size(); ++segment) {
+        const auto found = row_of.find(SEGMENT_ID_OFFSET + segments.segments[segment].y);
+        if (found == row_of.end())
+            throw Error("segment " + std::to_string(segment) + " is not in '" + plant.id +
+                        "': set the grid without cutting segments");
+        rows.push_back(found->second);
+    }
+    return rows;
+}
+
+void add_per_segment(DataStructure &plant, const std::vector<std::size_t> &rows, const Values &item,
+                     const std::vector<double> &per_segment) {
+    auto &set = plant.entity_set("SubOrgan");
+    std::vector<double> column(set.row_count(), std::nan(""));     // segments outside the mapped ones: NaN
+    for (std::size_t segment = 0; segment < rows.size(); ++segment) column[rows[segment]] = per_segment[segment];
+    set.set(item.name, column).declare(item.name, item.variable);
+}
+
+} // namespace
+
+void add_segment_values(DataStructure &plant, const CPlantBox::MappedSegments &segments,
+                        const std::vector<Values> &values) {
+    const auto rows = segment_rows(plant, segments);
+    for (const auto &item : values) {
+        if (item.values.size() != rows.size())
+            throw Error("'" + item.name + "': " + std::to_string(item.values.size()) + " values, " +
+                        std::to_string(rows.size()) + " segments");
+        add_per_segment(plant, rows, item, item.values);
+    }
+}
+
+void add_node_values(DataStructure &plant, const CPlantBox::MappedSegments &segments,
+                     const std::vector<Values> &values) {
+    const auto rows = segment_rows(plant, segments);
+    for (const auto &item : values) {
+        if (item.values.size() != segments.nodes.size())
+            throw Error("'" + item.name + "': " + std::to_string(item.values.size()) + " values, " +
+                        std::to_string(segments.nodes.size()) + " nodes");
+        std::vector<double> per_segment;                           // each segment: its distal node's value
+        for (const auto &segment : segments.segments) per_segment.push_back(item.values.at(std::size_t(segment.y)));
+        add_per_segment(plant, rows, item, per_segment);
+    }
+}
+
 // ── A graph as a static root system ──────────────────────────────────────
 
 namespace {

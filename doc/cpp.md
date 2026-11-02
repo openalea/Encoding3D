@@ -71,6 +71,19 @@ frame.mappings.push_back(fspm_tf::cplantbox::segments_in_soil(*plant, frame.data
 frame.data_structures.push_back(soil);
 fspm_tf::write_frame("plant.glb", frame);
 
+// A soil solver's values per cell (DuMux, or Python), CPlantBox's hydraulics per node and per segment
+// (PlantHydraulicModel: rx, radial fluxes), each declared with its unit and standard name
+fspm_tf::Variable potential;
+potential.unit = "cm[H2O]";
+potential.standard_name = "soil_water_potential";
+fspm_tf::cplantbox::add_cell_values(soil, *plant, {{"soil_water_potential", sx, potential}});
+potential.standard_name = "water_potential";
+fspm_tf::cplantbox::add_node_values(frame.data_structures[0], *plant, {{"xylem_potential", rx, potential}});
+fspm_tf::Variable uptake;
+uptake.unit = "cm3/d";
+uptake.standard_name = "root_water_uptake";
+fspm_tf::cplantbox::add_segment_values(frame.data_structures[0], *plant, {{"radial_flux", fluxes, uptake}});
+
 // A frame (CPlantBox's, or another platform's) as a static CPlantBox root system
 auto roots = fspm_tf::cplantbox::to_root_system(fspm_tf::read_frame("roots.glb").data_structures[0]);
 ```
@@ -83,6 +96,10 @@ auto roots = fspm_tf::cplantbox::to_root_system(fspm_tf::read_frame("roots.glb")
 | `x1` … `z2` (`proximal_end_*`, `distal_end_*`) | the segment's nodes, in cm (declared; readers convert, so a rebuilt root system has them bit for bit) |
 | other variables | CPlantBox's names and units (`length` in cm, `age` in d, `subType`, …), with their standard names; its `order` as `branching_order` (`order` is fspm-TF's reserved column) |
 | `extras["cplantbox"]` | the id offsets, the organism's parameters as CPlantBox's XML |
+
+CPlantBox's core has no soil model: the soil's values come from a solver outside it, which hands them to CPlantBox
+per cell. `add_cell_values` writes them in the soil grid's cells, reordered from CPlantBox's cell order (x fastest) to
+fspm-TF's (C order of x, y, z). `add_node_values` gives each segment its distal node's value.
 
 CPlantBox has two scales below the plant. `to_root_system` reads frames with more scales by what they hold: the
 segments are the entity set with segment ends, and the organs are the set their `complex` points to. For example,

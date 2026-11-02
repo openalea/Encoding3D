@@ -88,7 +88,7 @@ To read the segments' lengths, a reader:
 3. reads `count` (10) FLOAT64 values from the binary part;
 4. finds their unit (`m`) and standard name in `variables`.
 
-`fspm-tf info file.glb` lists what a frame holds: its data structures, tables, columns and their declarations.
+`fspm-tf info file.glb` lists what a frame holds: its data structures, their tables and their variables.
 
 ## Words
 
