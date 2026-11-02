@@ -25,12 +25,13 @@ NO_ID = -1                                      # complex / parent / feature row
 
 # Columns whose meaning the specification fixes, per kind of table
 RESERVED = {
-    "entity_set": ("id", "label", "complex", "parent", "edge_type", "level", "index", "order"),
+    "entity_set": ("id", "label", "complex", "parent", "edge_type", "level", "index", "sibling_order"),
     "relation": ("id", "source", "target", "relation"),
     "mapping": ("source", "target", "weight"),
     "scalars": (),
 }
-ID_COLUMNS = ("id", "complex", "parent", "source", "target", "level", "index", "order")   # reserved, int64
+ID_COLUMNS = ("id", "complex", "parent", "source", "target", "level", "index",
+              "sibling_order")      # reserved, int64
 EDGE_TYPES = ("none", "successor", "branch", "unknown")    # MTG: root of its scale, '<', '+'; a link not known
 BASE_SCALES = ("Plant", "Axis", "GrowthUnit", "Phytomer", "Organ", "SubOrgan", "Layer", "Cell", "Compartment",
                "Connection")                    # an entity set's scale: one of these, or "mixed"
@@ -98,7 +99,7 @@ class EntitySet(Table):
     """The entities of one scale of a graph (rank: the scale's rank, coarser first), or a grid's cells (rank None).
     Columns: id (int64, stable across frames, never reused), label (str), complex (the id of the containing entity
     at the coarser scale, NO_ID if none), parent (the predecessor's id at the same scale, NO_ID if none), edge_type
-    (str: 'none', 'successor', 'branch', 'unknown'); order (int64, optional: its position among its tree parent's
+    (str: 'none', 'successor', 'branch', 'unknown'); sibling_order (int64, optional: its position among its tree parent's
     children); an adaptive grid's cells: level and index; then the variables. *scale*: its base scale
     (BASE_SCALES), or "mixed"."""
     rank: Optional[int] = None

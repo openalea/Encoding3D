@@ -27,7 +27,7 @@ template <> struct TypeName<std::string> { static constexpr const char *value = 
 
 const std::vector<std::string> NO_RESERVED = {};
 const std::vector<std::string> ENTITY_SET_RESERVED = {"id",        "label", "complex", "parent", "edge_type",
-                                                     "level",     "index", "order"};
+                                                     "level",     "index", "sibling_order"};
 const std::vector<std::string> RELATION_RESERVED = {"id", "source", "target", "relation"};
 const std::vector<std::string> MAPPING_RESERVED = {"source", "target", "weight"};
 

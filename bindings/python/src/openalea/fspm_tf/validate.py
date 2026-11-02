@@ -349,8 +349,8 @@ def _check_scales_and_labels(data_structure, report) -> None:
                 and entity_set.rank != BASE_SCALES.index(entity_set.scale) + 1:
             report.warning(where, f"rank {entity_set.rank}: the base scale {entity_set.scale}'s position is "
                                   f"{BASE_SCALES.index(entity_set.scale) + 1}")
-        if "order" in entity_set.columns and (np.asarray(entity_set.columns["order"]) < 0).any():
-            report.error(f"{where}/order", "positions among siblings are non-negative")
+        if "sibling_order" in entity_set.columns and (np.asarray(entity_set.columns["sibling_order"]) < 0).any():
+            report.error(f"{where}/sibling_order", "positions among siblings are non-negative")
         if "label" in entity_set.columns:
             used |= {label for label in entity_set.columns["label"].tolist() if label is not None}
     vocabulary_labels = vocabulary.labels()

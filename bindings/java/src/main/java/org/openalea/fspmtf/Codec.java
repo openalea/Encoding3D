@@ -33,7 +33,7 @@ public final class Codec {
             FEATURES = "EXT_mesh_features", EDGE_TYPE_ENUM = "FSPM_edge_type";
     private static final List<String> ENUM_COLUMNS = List.of("label", "edge_type", "relation");
     private static final List<String> ID_COLUMNS = List.of("id", "complex", "parent", "source", "target", "level", "index",
-            "order");
+            "sibling_order");
     private static final int BOOLEAN_NO_DATA = 255;   // a boolean column with missing values: UINT8 0, 1, and 255 missing
     private static final int ARRAY_BUFFER = 34962, ELEMENT_ARRAY_BUFFER = 34963;
     private static final int FLOAT = 5126, UNSIGNED_INT = 5125, UNSIGNED_SHORT = 5123, UNSIGNED_BYTE = 5121;

@@ -25,7 +25,8 @@ const std::string METADATA = "EXT_structural_metadata";
 const std::string FEATURES = "EXT_mesh_features";
 const std::string EDGE_TYPE_ENUM = "FSPM_edge_type";
 const std::vector<std::string> ENUM_COLUMNS = {"label", "edge_type", "relation"};
-const std::vector<std::string> ID_COLUMNS = {"id", "complex", "parent", "source", "target", "level", "index", "order"};
+const std::vector<std::string> ID_COLUMNS = {"id", "complex", "parent", "source", "target", "level", "index",
+                                             "sibling_order"};
 constexpr std::uint8_t BOOLEAN_NO_DATA = 255;   // a boolean column with missing values: UINT8 0, 1, and 255 missing
 constexpr int ARRAY_BUFFER = 34962, ELEMENT_ARRAY_BUFFER = 34963;
 constexpr int FLOAT = 5126, UNSIGNED_INT = 5125, UNSIGNED_SHORT = 5123, UNSIGNED_BYTE = 5121;

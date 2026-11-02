@@ -5,13 +5,13 @@
 - Specification 0.2, additive (0.1 files stay valid), from the bindings' points (`spec/specification.md`, "Changes
   from 0.1"): missing values in integer, text and boolean columns; an entity set's `scale` and ranks as base scale
   positions; reading by content; position columns in their declared unit; a data structure's `labels`; the extras
-  key; `edge_type` `unknown`; the `order` column; parents in another complex; bearer relations' labels and names;
+  key; `edge_type` `unknown`; the `sibling_order` column; parents in another complex; bearer relations' labels and names;
   dates (`format`); sparse ids; the conformance files' status and the sources' precedence.
 - Vocabulary 0.2: `Seed`, `mtg_index`, the new enumerations.
 - The reference codec, the validator, the ParaView reader and the conformance files (a new scene, `missing_values`).
 - The Julia, C++ and Java codecs on 0.2, and their adapters using it instead of their extras: MTG.jl (missing
   attributes, dates, children's order, `mtg_index`), PlantGraphs (`unknown` edges, children's order), CPlantBox (a
-  `mixed` Organ set, segment ends in cm, `branching_order`), GroIMP (missing fields, scales, labels); extras keys in
+  `mixed` Organ set, segment ends in cm), GroIMP (missing fields, scales, labels); extras keys in
   lower case (`virtualplantlab`, `cplantbox`, `groimp`).
 
 ## Specification 0.1 (draft)

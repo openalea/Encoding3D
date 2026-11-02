@@ -7,7 +7,7 @@ A VirtualPlantLab graph (PlantGraphs.jl: a `Graph` or a `StaticGraph`) as an fsp
 | `id`, `label` | the node's id, the name of its type (`Internode`, `Leaf`, …) |
 | `parent` | its nearest kept ancestor |
 | `edge_type` | `unknown`: PlantGraphs stores no edge types |
-| `order` | the node's position among its kept parent's kept children |
+| `sibling_order` | the node's position among its kept parent's kept children |
 | variables | the fields of each node's type: missing where a type has no such field; dates as ISO 8601 text with their `format` |
 | scalars | the graph's data (`data(graph)`), its fields |
 
@@ -114,7 +114,7 @@ function FspmTF.from_graph(graph::Union{PG.Graph,PG.StaticGraph}; id::AbstractSt
     edge_types = String[parent == NO_ID ? "none" : "unknown" for parent in parents]   # PlantGraphs stores none
     objects = [PG.data(node) for (node, _) in rows]
     columns = Columns("id" => ids, "label" => String[label_of(object) for object in objects], "parent" => parents,
-                      "edge_type" => edge_types, "order" => order)
+                      "edge_type" => edge_types, "sibling_order" => order)
     fields, declarations = field_columns(objects, entity_set, variables)
     merge!(columns, fields)
     extras = json_object("model" => "PlantGraphs",
@@ -172,8 +172,8 @@ function FspmTF.to_graph(data_structure::DataStructure; types::AbstractDict, ent
     for row in 1:row_count(set)
         parents[row] == NO_ID ? push!(roots, row) : push!(get!(children_of, parents[row], Int[]), row)
     end
-    if haskey(set.columns, "order")                       # children in their order, else in their rows'
-        foreach(list -> sort!(list; by = row -> set.columns["order"][row]), values(children_of))
+    if haskey(set.columns, "sibling_order")                       # children in their order, else in their rows'
+        foreach(list -> sort!(list; by = row -> set.columns["sibling_order"][row]), values(children_of))
     end
     length(roots) == 1 || throw(ArgumentError("'$(set.name)': $(length(roots)) roots, a PlantGraphs graph has one"))
     static = PG.StaticGraph(PG.GraphNode(objects[only(roots)]))

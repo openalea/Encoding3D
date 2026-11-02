@@ -284,7 +284,7 @@ def missing_values() -> Frame:
         complex=np.array([1, 1, 1, 1, 2, 2, 0], dtype=np.int64),
         parent=np.array([-1, 10, 10, 11, 11, 14, -1], dtype=np.int64),
         edge_type=np.array(["none", "successor", "branch", "unknown", "branch", "successor", "none"], dtype=object),
-        order=np.array([0, 1, 0, 0, 0, 0, 1], dtype=np.int64),
+        sibling_order=np.array([0, 1, 0, 0, 0, 0, 1], dtype=np.int64),
         length=np.array([0.12, 0.08, 0.2, 0.15, 0.05, np.nan, 0.3]),
         rank=np.ma.MaskedArray(np.array([1, 2, 1, 2, 1, 0, 0], dtype=np.int32),
                                mask=[False, False, False, False, False, True, True]),

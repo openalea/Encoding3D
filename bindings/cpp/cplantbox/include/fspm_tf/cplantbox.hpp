@@ -10,8 +10,7 @@
 // | SubOrgan (rank 6), id            | its segments: complex its organ, parent the segment ending at its         |
 // |   2^32 + distal node id          | proximal node (successor along an organ, branch at a lateral's base)      |
 // | positions (proximal_end_*, ...)  | node coordinates, in cm (declared; readers convert)                       |
-// | other variables                  | CPlantBox's names and units (cm, d), declared with their standard names; |
-// |                                  | its `order` as `branching_order` (`order` is fspm-TF's reserved column)  |
+// | other variables                  | CPlantBox's names and units (cm, d), declared with their standard names  |
 // | extras["cplantbox"]              | the id offsets, the organism's parameters (its XML)                       |
 //
 // CPlantBox has two scales below the plant: organs and segments. A frame with more scales (e.g. metafspm's Plant,

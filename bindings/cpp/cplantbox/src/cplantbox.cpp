@@ -127,13 +127,12 @@ DataStructure to_data_structure(const CPlantBox::Organism &organism, const Optio
     }
     organ_set.set("id", organ_ids).set("label", Column(labels)).set("complex", complexes).set("parent", parents)
         .set("edge_type", Column(edge_types)).set("organType", organ_types).set("subType", sub_types)
-        .set("branching_order", orders).set("age", ages).set("length", lengths).set("radius", radii)
+        .set("order", orders).set("age", ages).set("length", lengths).set("radius", radii)
         .set("creationTime", creation_times).set("parentNI", parent_node_indices).set("numberOfNodes", node_counts)
         .set("alive", alive).set("active", active);
     organ_set.declare("organType", declared("1", "descriptor", "CPlantBox's organ type: 1 seed, 2 root, 3 stem, 4 leaf", {}, "setting"))
         .declare("subType", declared("1", "descriptor", "CPlantBox's sub type: the organ's parameter set", {}, "setting"))
-        .declare("branching_order", declared("1", "descriptor", "CPlantBox's order: the branching order (0: a base organ)",
-                                             "branching_order"))
+        .declare("order", declared("1", "descriptor", "branching order (0: a base organ)", "branching_order"))
         .declare("age", declared("d", "intensive", "the organ's age", "age"))
         .declare("length", declared("cm", "extensive", "the organ's realized length", "length"))
         .declare("radius", declared("cm", "intensive", "the organ's radius", "radius", "parameter"))

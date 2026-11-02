@@ -12,7 +12,7 @@ numbers, the same bytes on every run; the CI checks that the committed files are
 | `soil_and_roots` | a root system, a regular soil grid with z pointing down, and their mapping |
 | `adaptive_soil` | an adaptive grid's leaf cells (`level`, `index`) |
 | `parameter_set` | a `table` data structure: parameters per plant and in the scalars, references, an infinite value |
-| `missing_values` | integer, text, boolean and float columns with missing values; a date column (`format`); `unknown` edge types and an `order` column; a `mixed` entity set; a labels map; a parent in another axis; bearer relations between two pairs of sets |
+| `missing_values` | integer, text, boolean and float columns with missing values; a date column (`format`); `unknown` edge types and a `sibling_order` column; a `mixed` entity set; a labels map; a parent in another axis; bearer relations between two pairs of sets |
 | `growing_sequence/` | three frames of a growing root system, ids kept, and their index |
 
 ## The expected values

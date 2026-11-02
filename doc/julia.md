@@ -50,7 +50,7 @@ Two things differ from the other platform's graph, and are undone by `from_mtg`:
 | `complex` | the first ancestor at a smaller scale |
 | `parent`, `edge_type` | the parent, at the same scale, by `<` (successor) or `+` (branch) |
 | relation `bearer` | the parent otherwise, e.g. an axis borne by an internode |
-| `order` | the node's position among its parent's children |
+| `sibling_order` | the node's position among its parent's children |
 | `mtg_index` (standard name `mtg_index`) | the node's `index` |
 | variables | the attributes, declared by `variables` (MTG.jl has no units); missing where a node has no such attribute; dates and times as ISO 8601 text with their `format` |
 | scalars | the attributes of the scale 0 root (`Scene`) |
@@ -70,7 +70,7 @@ With PlantGraphs loaded (Julia 1.12 or later), `from_graph` writes one entity se
 - its parent as the nearest kept node.
 
 The turtle's movements (`RU`, `T`, `F`, …) are left out. PlantGraphs stores no edge type, so the edges are written as
-`unknown`, and the children's order as the `order` column. A field a node's type lacks is missing. With
+`unknown`, and the children's order as the `sibling_order` column. A field a node's type lacks is missing. With
 PlantGeomTurtle loaded too, `add_geometry!` adds the graph's turtle mesh, each triangle carrying the row of the node
 that made it.
 

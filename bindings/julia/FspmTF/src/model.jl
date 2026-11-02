@@ -18,7 +18,7 @@ const NO_ID = -1
 """The values of `edge_type`: the root of its scale, MTG `<`, MTG `+`."""
 const EDGE_TYPES = ("none", "successor", "branch", "unknown")
 const ENUM_COLUMNS = ("label", "edge_type", "relation")
-const ID_COLUMNS = ("id", "complex", "parent", "source", "target", "level", "index", "order")
+const ID_COLUMNS = ("id", "complex", "parent", "source", "target", "level", "index", "sibling_order")
 """The vocabulary's base scales: an entity set's `scale` is one of them, or `"mixed"`."""
 const BASE_SCALES = ("Plant", "Axis", "GrowthUnit", "Phytomer", "Organ", "SubOrgan", "Layer", "Cell", "Compartment",
                      "Connection")
@@ -78,7 +78,7 @@ end
 The entities of one scale of a graph (`rank`: the scale's rank, coarser first), or a grid's cells (`rank` nothing).
 Reserved columns: `id` (Int64, stable across frames, never reused), `label` (String), `complex` (the id of the
 containing entity at a coarser scale, `NO_ID` if none), `parent` (the predecessor's id at the same scale, `NO_ID` if
-none), `edge_type` (`"none"`, `"successor"`, `"branch"`, `"unknown"`), `order` (optional: its position among its tree
+none), `edge_type` (`"none"`, `"successor"`, `"branch"`, `"unknown"`), `sibling_order` (optional: its position among its tree
 parent's children); an adaptive grid's cells: `level` and `index`. `scale`: its base scale (`BASE_SCALES`), or
 `"mixed"`.
 """
@@ -120,7 +120,7 @@ mutable struct Mapping <: AbstractTable
 end
 
 # The columns whose meaning the specification fixes, per kind of table
-const ENTITY_SET_RESERVED = ("id", "label", "complex", "parent", "edge_type", "level", "index", "order")
+const ENTITY_SET_RESERVED = ("id", "label", "complex", "parent", "edge_type", "level", "index", "sibling_order")
 const RELATION_RESERVED = ("id", "source", "target", "relation")
 const MAPPING_RESERVED = ("source", "target", "weight")
 reserved(::Table) = ()

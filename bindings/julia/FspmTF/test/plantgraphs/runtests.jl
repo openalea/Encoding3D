@@ -43,7 +43,7 @@ plant() = Graph(axiom = Internode(0.1, 0.01) + (RU(30.0) + Leaf(0.05, 0.02, 3), 
         ids = organs.columns["id"]
         @test organs.columns["parent"] == [-1, ids[1], ids[1], ids[1], ids[4]]       # the leaves on the first internode
         @test organs.columns["edge_type"] == ["none", "unknown", "unknown", "unknown", "unknown"]   # none stored
-        @test organs.columns["order"] == [0, 0, 1, 2, 0]                              # the leaves, then the internode
+        @test organs.columns["sibling_order"] == [0, 0, 1, 2, 0]                              # the leaves, then the internode
         @test isequal(organs.columns["length"], [0.1, 0.05, 0.04, 0.08, NaN])       # NaN: the meristem has none
         @test isequal(organs.columns["age"], [missing, 3, 1, missing, missing])       # missing where no field
         @test written.extras["virtualplantlab"]["model"] == "PlantGraphs"

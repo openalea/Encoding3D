@@ -10,7 +10,7 @@ public class Table {
     /** The kinds of tables, each with its reserved columns. */
     public enum Kind {
         SCALARS(List.of()),
-        ENTITY_SET(List.of("id", "label", "complex", "parent", "edge_type", "level", "index", "order")),
+        ENTITY_SET(List.of("id", "label", "complex", "parent", "edge_type", "level", "index", "sibling_order")),
         RELATION(List.of("id", "source", "target", "relation")),
         MAPPING(List.of("source", "target", "weight"));
 

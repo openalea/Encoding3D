@@ -9,7 +9,7 @@ A MultiScaleTreeGraph (MTG.jl) as an fspm-TF `graph` data structure, and back:
 | `complex` | its first ancestor at a smaller scale (none for the scene) |
 | `parent`, `edge_type` | its parent, when at the same scale and linked by `<` (successor) or `+` (branch) |
 | relation `bearer` | its parent otherwise, when it is not its complex linked by `/` (e.g. an axis borne by an internode) |
-| `order` | the node's position among its parent's children |
+| `sibling_order` | the node's position among its parent's children |
 | `mtg_index` (standard name `mtg_index`) | the node's `index` |
 | variables | its attributes: missing where a node has none; dates and times as ISO 8601 text with their `format` |
 | scalars | the scene's (the scale 0 root's) attributes |
@@ -87,7 +87,7 @@ function attribute_columns(nodes, set_name, variables, skip = ())
     end
     columns, declarations = Columns(), Declarations()
     for name in names
-        if string(name) in FspmTF.ENTITY_SET_RESERVED            # e.g. an `order` attribute (a branching order)
+        if string(name) in FspmTF.ENTITY_SET_RESERVED            # a reserved name, e.g. `label`
             @warn "attribute '$name' of '$set_name' not written: '$name' is a reserved column of fspm-TF"
             continue
         end
@@ -184,7 +184,7 @@ function FspmTF.from_mtg(mtg; id::AbstractString = "plants", scales = Dict{Int,S
                   (fspm_id(node), fspm_id(tree_parent), LINK_NAMES[link(node)]))
         end
         columns["parent"], columns["edge_type"] = parents, edge_types
-        columns["order"] = Int64[position_among_siblings(node) for node in scale_nodes]
+        columns["sibling_order"] = Int64[position_among_siblings(node) for node in scale_nodes]
         columns[INDEX_COLUMN] = Int64[index(node) for node in scale_nodes]
         attributes, declarations = attribute_columns(scale_nodes, set_name, variables, (Symbol(INDEX_COLUMN),))
         merge!(columns, attributes)
@@ -275,8 +275,8 @@ function FspmTF.to_mtg(data_structure::DataStructure)
             encoding[ids[row]] = (symbol = labels[row], index = indices[row], scale = scale_of(set))
             attributes[ids[row]] = rows[row]
         end
-        haskey(set.columns, "order") && foreach(((id, position),) -> order_of[id] = position,
-                                                zip(ids, set.columns["order"]))
+        haskey(set.columns, "sibling_order") && foreach(((id, position),) -> order_of[id] = position,
+                                                zip(ids, set.columns["sibling_order"]))
         complexes = get(set.columns, "complex", fill(NO_ID, row_count(set)))
         for row in 1:row_count(set)                                    # complex: by decomposition, '/'
             complexes[row] == NO_ID || (tree_parent[ids[row]] = (complexes[row], :/))
@@ -342,7 +342,7 @@ function FspmTF.to_mtg(data_structure::DataStructure)
         push!(get!(children_of, parent_id, Int64[]), id)
     end
     isempty(roots) || (children_of[root_id] = vcat(roots, get(children_of, root_id, Int64[])))
-    for list in values(children_of)                                  # the `order` column, else by id
+    for list in values(children_of)                                  # the `sibling_order` column, else by id
         sort!(list; by = id -> (get(order_of, id, typemax(Int64)), id))
     end
     stack = Any[root]

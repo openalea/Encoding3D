@@ -30,7 +30,7 @@ defect of the lower one. A change of the format is a pull request to `spec/`, wi
 
 1. **§1, the data model**, all of it: frames, data structures, entity sets, relations, mappings, meshes, variables.
    Everything else describes how these are written.
-2. **§4.2, the reserved columns.** `id`, `label`, `complex`, `parent`, `edge_type` and `order` carry the plant's
+2. **§4.2, the reserved columns.** `id`, `label`, `complex`, `parent`, `edge_type` and `sibling_order` carry the plant's
    topology (an MTG's decomposition `/`, successor `<` and branch `+`).
 3. **§5 and §6, variables and the vocabulary**: units, kinds, roles, standard names. This is what lets two platforms
    recognise the same quantity.

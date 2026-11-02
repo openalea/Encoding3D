@@ -128,7 +128,7 @@ def test_rules_of_0_2():
     organs_of(frame).columns["edge_type"][0] = "unknown"           # an unknown link needs a parent
     assert "'none' exactly for the entities without a parent" in messages(frame)
     frame = generate.missing_values()
-    organs_of(frame).columns["order"][0] = -1
+    organs_of(frame).columns["sibling_order"][0] = -1
     assert "positions among siblings are non-negative" in messages(frame)
     frame = generate.missing_values()
     frame.data_structures[0].relations[1].name = "bearer_Axis_Organ"

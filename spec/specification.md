@@ -179,7 +179,7 @@ These columns have fixed meanings, in the tables where they appear:
 | `complex` | INT64, `noData` −1 | the id of the entity containing it, in a coarser entity set of the graph (MTG decomposition `/`); usually the nearest coarser one, but e.g. a cell wall may belong to its segment directly |
 | `parent` | INT64, `noData` −1 | the id of its predecessor in the same entity set |
 | `edge_type` | ENUM `FSPM_edge_type` | how it follows its parent: `none` (no parent), `successor` (MTG `<`), `branch` (MTG `+`), `unknown` (it has a parent, but the writer does not know how it follows it) |
-| `order` | INT64, optional | the entity's position, from 0, among the entities that share its parent in the writer's tree (its `parent`, else its bearer, else its `complex`), all entity sets together: for platforms that keep the order of children |
+| `sibling_order` | INT64, optional | the entity's position, from 0, among the entities that share its parent in the writer's tree (its `parent`, else its bearer, else its `complex`), all entity sets together: for platforms that keep the order of children |
 | `level`, `index` | INT64; INT64 vector, one per dimension | an adaptive grid's leaf cell: its refinement level, and its integer index at that level |
 
 **Relations**
@@ -326,7 +326,7 @@ sequence:
 | `soil_and_roots` | a root system, a regular soil grid with z pointing down, and their mapping |
 | `adaptive_soil` | an adaptive grid's leaf cells (`level`, `index`) |
 | `parameter_set` | a `table` data structure with parameters per plant and in the scalars, references and DOIs; an infinite value |
-| `missing_values` | integer, text and boolean columns with missing values; a date column; `unknown` edge types and an `order` column; a `mixed` entity set; a labels map; bearer relations between two pairs of sets |
+| `missing_values` | integer, text and boolean columns with missing values; a date column; `unknown` edge types and a `sibling_order` column; a `mixed` entity set; a labels map; bearer relations between two pairs of sets |
 | `growing_sequence/` | three frames of a growing root system and their index |
 
 An implementation conforms to 0.2 when two things hold:
@@ -351,7 +351,7 @@ All additions; a 0.1 file is a valid 0.2 file.
 - §2: the buffer's `byteLength` holds the padding.
 - §3: unique relation names, a data structure's `labels`, the extras key.
 - §4.1: missing values in integer, text and boolean columns.
-- §4.2: `edge_type` `unknown`, the `order` column, a parent in another complex, bearer relations' labels and names.
+- §4.2: `edge_type` `unknown`, the `sibling_order` column, a parent in another complex, bearer relations' labels and names.
 - §5: a variable's `format`.
 - §6: the vocabulary 0.2 (`Seed`, `mtg_index`).
 - §8: sparse ids.

@@ -180,7 +180,7 @@ expected_of(relative) = JSON.parse(read(joinpath(CONFORMANCE, relative[1:end-4] 
         @test isequal(organs.columns["isAlive"], [missing, false, true, true])   # Internode, Leaf, Internode, Leaf
         @test organs.variables["dateDeath"].format == "date"
         @test isequal(organs.columns["dateDeath"], [missing, "2022-08-24", missing, missing])
-        @test organs.columns["order"] == [0, 0, 1, 0]                    # the leaf before the next internode
+        @test organs.columns["sibling_order"] == [0, 0, 1, 0]                    # the leaf before the next internode
         @test organs.variables["mtg_index"].standard_name == "mtg_index"
         @test Set(keys(written.extras["virtualplantlab"])) == Set(["model", "scales", "metadata", "scene"])
         rebuilt = to_mtg(from_bytes(to_bytes(Frame(data_structures = [written]))).data_structures[1])

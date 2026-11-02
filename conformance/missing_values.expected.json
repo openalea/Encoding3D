@@ -160,7 +160,7 @@
         "none"
        ]
       },
-      "order": {
+      "sibling_order": {
        "dtype": "int64",
        "values": [
         0,
