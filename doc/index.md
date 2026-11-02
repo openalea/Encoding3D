@@ -45,9 +45,11 @@ For platform developers: how a platform reads and writes the format, and how the
 ```{toctree}
 :maxdepth: 1
 
+Reading the specification <reading_the_specification>
 Implementing a platform <platforms>
 Changing the format <governance>
 Implementations <implementations>
+The conformance files <conformance>
 ```
 
 ## Reference
