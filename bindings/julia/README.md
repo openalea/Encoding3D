@@ -5,8 +5,11 @@ MultiScaleTreeGraph.jl MTG to and from a `graph` data structure (`from_mtg`, `to
 
 - `FspmTF/src/`: the GLB container (`glb.jl`), the data model (`model.jl`), reading and writing (`codec.jl`),
   sequences (`sequence.jl`), the conformance dump (`dump.jl`).
-- `FspmTF/ext/FspmTFMultiScaleTreeGraphExt.jl`: the MTG adapter, loaded with MultiScaleTreeGraph.
-- `FspmTF/test/`: the tests, the conformance files included.
+- `FspmTF/ext/FspmTFMultiScaleTreeGraphExt.jl`: the MTG adapter, loaded with MultiScaleTreeGraph (PlantSimEngine's,
+  PlantGeom's graphs).
+- `FspmTF/ext/FspmTFPlantGraphsExt.jl`, `FspmTFPlantGeomTurtleExt.jl`: VirtualPlantLab's graphs and their turtle
+  geometry, loaded with PlantGraphs (and PlantGeomTurtle, PlantGeomPrimitives).
+- `FspmTF/test/`: the tests, the conformance files included; `test/plantgraphs/`: VirtualPlantLab's (Julia ≥ 1.12).
 - `conformance_run.jl`: the codec's dumps of the conformance files and its written scenes, for
   `.github/actions/conformance`.
 

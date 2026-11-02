@@ -37,6 +37,20 @@ jobs:
         with:
           project: bindings/julia/FspmTF
 
+  # VirtualPlantLab's PlantGraphs needs Julia 1.12 or later: its extensions are tested in their own project
+  virtualplantlab:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1"
+      - uses: julia-actions/cache@v2
+      - name: PlantGraphs and PlantGeomTurtle extensions
+        run: |
+          julia --project=bindings/julia/FspmTF/test/plantgraphs -e 'using Pkg; Pkg.develop(path="bindings/julia/FspmTF"); Pkg.instantiate()'
+          julia --project=bindings/julia/FspmTF/test/plantgraphs bindings/julia/FspmTF/test/plantgraphs/runtests.jl
+
   conformance:
     runs-on: ubuntu-latest
     steps:

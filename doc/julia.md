@@ -1,8 +1,11 @@
 # Reading and writing in Julia
 
 FspmTF.jl, in `bindings/julia/FspmTF/`, reads and writes fspm-TF files in Julia (1.10 or later). It passes the
-conformance check like the Python codec. With MultiScaleTreeGraph.jl loaded, it also turns an MTG into a data
-structure, and back. This is the MTG library of VirtualPlantLab's PlantGeom and of PlantSimEngine.
+conformance check like the Python codec. Two VirtualPlantLab models are covered:
+
+- with MultiScaleTreeGraph.jl loaded, it turns an MTG into a data structure, and back. This is the multiscale graph
+  of PlantSimEngine and PlantGeom;
+- with PlantGraphs.jl loaded, it does the same for VPL's own graphs, and with PlantGeomTurtle for their geometry.
 
 ## Installing
 
@@ -54,6 +57,33 @@ Two things differ from the other platform's graph, and are undone by `from_mtg`:
 Some MTG content has no place in fspm-TF 0.1: missing attributes, dates, the MTG's classes and description, and
 the order of children. It is kept in the data structure's `extras["MultiScaleTreeGraph"]`, so that `to_mtg`
 rebuilds the MTG exactly. Other readers see the missing values as NaN, `false`, 0 or "".
+
+## A VirtualPlantLab graph
+
+VPL's own graphs (PlantGraphs.jl) have one scale, and their nodes are the model's types (`Internode`, `Leaf`, …).
+With PlantGraphs loaded (Julia 1.12 or later), `from_graph` writes one entity set, `Organ` by default, with:
+
+- each node's type as its label, and its fields as variables;
+- the graph's data as scalars;
+- its parent as the nearest kept node.
+
+The turtle's movements (`RU`, `T`, `F`, …) are left out. PlantGraphs stores no edge type, so the last child of a
+node is written as its successor and the others as branches; `extras` says the edge types were guessed. With
+PlantGeomTurtle loaded too, `add_geometry!` adds the graph's turtle mesh, each triangle carrying the row of the node
+that made it.
+
+```julia
+using FspmTF, PlantGraphs, PlantGeomTurtle, PlantGeomPrimitives
+
+plants = from_graph(graph; id = "plant",
+                    variables = Dict("length" => Variable(unit = "m", standard_name = "length")))
+add_geometry!(plants, graph)          # the mesh of PlantGeomPrimitives.Mesh(graph), node by node (both export Mesh)
+write_frame("plant.glb", Frame(data_structures = [plants]))
+
+static, ids = to_graph(read_frame("plant.glb").data_structures[1];
+                       types = Dict("Internode" => Internode, "Leaf" => Leaf))   # nodes rebuilt from their fields
+graph = Graph(axiom = static, rules = rules)
+```
 
 ## The format's own tables
 

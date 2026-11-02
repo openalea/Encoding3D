@@ -9,7 +9,7 @@
 | GroIMP | Java | | | | |
 | FspmTF.jl (Julia codec) | Julia | this repository, `bindings/julia/FspmTF/` | yes | yes | 0.1 |
 | MultiScaleTreeGraph.jl (VirtualPlantLab, PlantSimEngine) | Julia | FspmTF.jl's package extension: `from_mtg`, `to_mtg` | yes: any graph as an MTG; its own MTGs rebuilt as they were | yes | 0.1 |
-| VirtualPlantLab (PlantGraphs) | Julia | planned (FspmTF.jl extensions: PlantGeom meshes, PlantGraphs) | | | |
+| VirtualPlantLab (PlantGraphs, PlantGeomTurtle) | Julia | FspmTF.jl's package extensions: `from_graph`, `to_graph`, `add_geometry!` | yes: nodes rebuilt from their fields | yes: nodes, fields, turtle geometry | 0.1 |
 
 Codecs (a language's reading and writing of the format) live in this repository, in `bindings/<language>/`; adapters
 (a platform's model to and from the codec's tables) in the platforms' repositories, or as a codec's optional
