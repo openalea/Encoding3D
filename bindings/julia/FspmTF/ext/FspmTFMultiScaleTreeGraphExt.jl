@@ -28,6 +28,16 @@ using OrderedCollections: OrderedDict
 
 const PLATFORM = "MultiScaleTreeGraph"
 const METADATA_ATTRIBUTES = (:symbols, :scales, :description)
+# MTG.jl's node ids start at 1 and size its attribute store (an id of 2^32 allocates 2^32 rows), fspm-TF's start at 0
+# and may be sparse (CPlantBox's segments: 2^32 + node id). to_mtg then numbers the nodes 1, 2, ... in the order of
+# their ids, each keeping its id in this attribute; from_mtg writes it back as the id.
+const ID_ATTRIBUTE = :fspm_tf_id
+# An entity whose parent (same scale) is in another complex, e.g. the first segment of a lateral root, whose parent
+# segment is in the bearing root: MTG.jl takes a node's complex from its ancestors, so the node stays under its complex
+# (by '/') and keeps its parent and edge type in these attributes.
+const PARENT_ATTRIBUTE = :fspm_tf_parent
+const EDGE_TYPE_ATTRIBUTE = :fspm_tf_edge_type
+const OWN_ATTRIBUTES = (ID_ATTRIBUTE, PARENT_ATTRIBUTE, EDGE_TYPE_ATTRIBUTE)
 const LINK_NAMES = Dict(:< => "successor", :+ => "branch", :/ => "decomposition")
 const LINKS = Dict(name => link for (link, name) in LINK_NAMES)
 const TEXT_TYPES = Dict("Date" => Date, "DateTime" => DateTime, "Time" => Time)
@@ -102,7 +112,8 @@ function attribute_columns(nodes, set_name, variables, skip = ())
         isroot(node) && name in METADATA_ATTRIBUTES ? nothing : attribute(node, name; default = nothing)
     names = Symbol[]
     for node in nodes, name in attribute_names(node)
-        name in names || name in skip || (isroot(node) && name in METADATA_ATTRIBUTES) || push!(names, name)
+        name in names || name in skip || name in OWN_ATTRIBUTES || (isroot(node) && name in METADATA_ATTRIBUTES) ||
+            push!(names, name)
     end
     columns, declarations = Columns(), Declarations()
     missing_rows, text_types = json_object(), json_object()
@@ -140,6 +151,7 @@ attributes the scalars.
 function FspmTF.from_mtg(mtg; id::AbstractString = "plants", scales = Dict{Int,String}(),
                          variables = Dict{String,Variable}(), platform = PLATFORM, model = nothing)
     variables = Dict{String,Variable}(string(name) => variable for (name, variable) in pairs(variables))
+    fspm_id(node) = attribute(node, ID_ATTRIBUTE; default = node_id(node))
     nodes = preorder(mtg)
     scene = scale(mtg) == 0 ? mtg : nothing
     extras = json_object()
@@ -162,18 +174,23 @@ function FspmTF.from_mtg(mtg; id::AbstractString = "plants", scales = Dict{Int,S
     bearers = OrderedDict{Tuple{String,String},Vector{Tuple{Int64,Int64,String}}}()
     for (scale_number, scale_nodes) in by_scale
         set_name = set_names[scale_number]
-        columns = Columns("id" => Int64[node_id(node) for node in scale_nodes],
+        columns = Columns("id" => Int64[fspm_id(node) for node in scale_nodes],
                           "label" => String[string(symbol(node)) for node in scale_nodes])
         complexes = [complex_node(node) for node in scale_nodes]
         if scale_number != first(keys(by_scale))
-            columns["complex"] = Int64[complex === nothing || complex === scene ? NO_ID : node_id(complex)
+            columns["complex"] = Int64[complex === nothing || complex === scene ? NO_ID : fspm_id(complex)
                                        for complex in complexes]
         end
         parents, edge_types = Int64[], String[]
         for (node, complex) in zip(scale_nodes, complexes)
+            if PARENT_ATTRIBUTE in attribute_names(node)                 # a parent in another complex (to_mtg)
+                push!(parents, attribute(node, PARENT_ATTRIBUTE))
+                push!(edge_types, attribute(node, EDGE_TYPE_ATTRIBUTE))
+                continue
+            end
             tree_parent = parent_node(node)
             if tree_parent !== nothing && scale(tree_parent) == scale(node) && link(node) in (:<, :+)
-                push!(parents, node_id(tree_parent))
+                push!(parents, fspm_id(tree_parent))
                 push!(edge_types, LINK_NAMES[link(node)])
                 continue
             end
@@ -183,10 +200,10 @@ function FspmTF.from_mtg(mtg; id::AbstractString = "plants", scales = Dict{Int,S
             tree_parent === complex && link(node) == :/ && continue       # its complex, by decomposition
             tree_parent === scene && link(node) == :/ && continue          # the scene's component
             tree_parent === scene &&
-                throw(ArgumentError("node $(node_id(node)) is linked to the scene by '$(link(node))', not '/'"))
+                throw(ArgumentError("node $(fspm_id(node)) is linked to the scene by '$(link(node))', not '/'"))
             pair = (set_name, set_names[scale(tree_parent)])
             push!(get!(bearers, pair, Tuple{Int64,Int64,String}[]),
-                  (node_id(node), node_id(tree_parent), LINK_NAMES[link(node)]))
+                  (fspm_id(node), fspm_id(tree_parent), LINK_NAMES[link(node)]))
         end
         columns["parent"], columns["edge_type"] = parents, edge_types
         columns[INDEX_COLUMN] = Int64[index(node) for node in scale_nodes]
@@ -218,7 +235,7 @@ function FspmTF.from_mtg(mtg; id::AbstractString = "plants", scales = Dict{Int,S
     isempty(metadata) || (extras["metadata"] = metadata)
     scalars = nothing
     if scene !== nothing
-        extras["scene"] = json_object("id" => node_id(scene), "symbol" => string(symbol(scene)),
+        extras["scene"] = json_object("id" => fspm_id(scene), "symbol" => string(symbol(scene)),
                                       "index" => index(scene), "link" => string(link(scene)))
         columns, declarations, missing_of_scene, text_types_of_scene =
             attribute_columns([scene], "scalars", variables)
@@ -230,8 +247,8 @@ function FspmTF.from_mtg(mtg; id::AbstractString = "plants", scales = Dict{Int,S
     end
     isempty(missing_rows) || (extras["missing"] = missing_rows)
     isempty(text_types) || (extras["text_types"] = text_types)
-    order = [node_id(node) for node in nodes]
-    order == [node_id(node) for node in preorder_by_id(nodes)] || (extras["order"] = order)
+    order = [fspm_id(node) for node in nodes]
+    order == [fspm_id(node) for node in preorder_by_id(nodes)] || (extras["order"] = order)
 
     return DataStructure(id; kind = "graph", entity_sets = entity_sets, relations = relations, scalars = scalars,
                          platform = platform, model = model, extras = json_object(PLATFORM => extras))
@@ -315,11 +332,24 @@ function FspmTF.to_mtg(data_structure::DataStructure)
             tree_parent[source] = (target, LINKS[label])
         end
     end
+    complex_of = Dict{Int64,Int64}()
+    for set in entity_sets
+        haskey(set.columns, "complex") || continue
+        for (id, complex) in zip(set.columns["id"], set.columns["complex"])
+            complex == NO_ID || (complex_of[id] = complex)
+        end
+    end
     for set in entity_sets                                             # parents at the same scale, '<' or '+'
         haskey(set.columns, "parent") || continue
         edge_types = set.columns["edge_type"]
         for (id, parent_id, edge_type) in zip(set.columns["id"], set.columns["parent"], edge_types)
-            parent_id == NO_ID || (tree_parent[id] = (parent_id, edge_type == "successor" ? :< : :+))
+            parent_id == NO_ID && continue
+            if get(complex_of, id, NO_ID) != get(complex_of, parent_id, NO_ID)    # in another complex: kept aside
+                attributes[id][PARENT_ATTRIBUTE] = parent_id
+                attributes[id][EDGE_TYPE_ATTRIBUTE] = edge_type
+            else
+                tree_parent[id] = (parent_id, edge_type == "successor" ? :< : :+)
+            end
         end
     end
 
@@ -329,20 +359,28 @@ function FspmTF.to_mtg(data_structure::DataStructure)
     scene_attributes = data_structure.scalars === nothing ? Dict{Symbol,Any}() :
         only(row_attributes(data_structure.scalars, get(missing_rows, "scalars", json_object()),
                             get(text_types, "scalars", json_object()), ()))
+    # MTG.jl's ids: the entities' own, unless they start below 1 or are sparse; then 1, 2, ... in their order
+    all_ids = sort(collect(keys(encoding)))
+    renumbered = !isempty(all_ids) && (first(all_ids) < 1 || last(all_ids) > 2 * length(all_ids) + 1)
+    number_of = renumbered ? Dict(id => position for (position, id) in enumerate(all_ids)) : nothing
+    mtg_id(id) = renumbered ? number_of[id] : Int(id)
+    renumbered && foreach(id -> attributes[id][ID_ATTRIBUTE] = id, all_ids)
     if scene_entry === nothing && length(roots) == 1 && isempty(scene_attributes)
         root_id = only(roots)
         root_encoding = encoding[root_id]
-        root = Node(root_id, MutableNodeMTG(:/, Symbol(root_encoding.symbol), root_encoding.index,
+        root = Node(mtg_id(root_id), MutableNodeMTG(:/, Symbol(root_encoding.symbol), root_encoding.index,
                                             root_encoding.scale), attributes[root_id])
         roots = Int64[]
     else
         scene_entry === nothing &&
-            (scene_entry = json_object("id" => maximum(keys(encoding); init = -1) + 1, "symbol" => "Scene",
-                                       "index" => 0, "link" => "/"))
+            (scene_entry = json_object("id" => renumbered ? length(all_ids) + 1 : maximum(all_ids; init = 0) + 1,
+                                       "symbol" => "Scene", "index" => 0, "link" => "/"))
         root = Node(Int(scene_entry["id"]), MutableNodeMTG(Symbol(scene_entry["link"]), Symbol(scene_entry["symbol"]),
                                                            Int(scene_entry["index"]), 0), scene_attributes)
-        root_id = node_id(root)
+        root_id = typemin(Int64)                     # the scene's key among the entities: not an entity's id
     end
+    entity_of = Dict{Int,Int64}(mtg_id(id) => id for id in all_ids)    # MTG.jl's id -> the entity's
+    entity_of[node_id(root)] = root_id
     children_of = Dict{Int64,Vector{Int64}}()
     for (id, (parent_id, _)) in tree_parent
         push!(get!(children_of, parent_id, Int64[]), id)
@@ -357,10 +395,10 @@ function FspmTF.to_mtg(data_structure::DataStructure)
     while !isempty(stack)
         node = pop!(stack)
         created = Any[]
-        for id in get(children_of, node_id(node), Int64[])
+        for id in get(children_of, entity_of[node_id(node)], Int64[])
             child_encoding = encoding[id]
             child_link = haskey(tree_parent, id) ? tree_parent[id][2] : :/
-            push!(created, Node(Int(id), node, MutableNodeMTG(child_link, Symbol(child_encoding.symbol),
+            push!(created, Node(mtg_id(id), node, MutableNodeMTG(child_link, Symbol(child_encoding.symbol),
                                                               child_encoding.index, child_encoding.scale),
                                 attributes[id]))
         end

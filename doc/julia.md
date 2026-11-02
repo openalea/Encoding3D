@@ -29,8 +29,16 @@ frame = read_frame("plant.glb")
 same_mtg = to_mtg(frame.data_structures[1])          # the same ids, symbols, links, attributes and order
 ```
 
-`to_mtg` also reads a graph another platform wrote, e.g. a root system simulated by metafspm. Its MTG has one scale
-per entity set and its variables as attributes, under a `Scene` root that holds the scalars.
+`to_mtg` also reads a graph another platform wrote, e.g. a root system simulated by metafspm or a CPlantBox plant.
+Its MTG has one scale per entity set and its variables as attributes, under a `Scene` root that holds the scalars.
+Two things differ from the other platform's graph, and are undone by `from_mtg`:
+
+- **Ids.** MTG.jl's node ids start at 1 and size its attribute store. When ids start at 0 or are sparse (CPlantBox's
+  segments: 2^32 + node id), the nodes are numbered 1, 2, … in id order, and each keeps its id in the attribute
+  `fspm_tf_id`.
+- **A parent in another complex**, such as a lateral root's first segment. MTG.jl takes a node's complex from its
+  ancestors, so the node stays under its own axis (`/`) and keeps its parent in the attributes `fspm_tf_parent` and
+  `fspm_tf_edge_type`.
 
 | fspm-TF | MultiScaleTreeGraph |
 |---|---|

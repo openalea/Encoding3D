@@ -189,15 +189,60 @@ expected_of(relative) = JSON.parse(read(joinpath(CONFORMANCE, relative[1:end-4] 
         @test attribute(get_node(rebuilt, 6), :length) == 0.2
     end
 
+    @testset "MultiScaleTreeGraph: ids from 0 and sparse (MTG.jl's: from 1, dense), numbered and written back" begin
+        plants = DataStructure("plant"; entity_sets = [
+            EntitySet("Plant"; columns = Dict("id" => [0]), rank = 1),
+            EntitySet("Organ"; rank = 5, columns = Dict("id" => [1, 2], "complex" => [0, 0], "parent" => [-1, 1],
+                                                        "edge_type" => ["none", "branch"], "length" => [1.0, 2.0])),
+            EntitySet("SubOrgan"; rank = 6, columns = Dict("id" => [2^32 + 5, 2^32 + 9], "complex" => [1, 2],
+                                                           "parent" => [-1, 2^32 + 5], "edge_type" => ["none", "branch"]))])
+        mtg = to_mtg(plants)
+        nodes = traverse(mtg, node -> node)
+        @test sort(node_id.(nodes)) == 1:5                              # dense, from 1
+        @test [attribute(node, :fspm_tf_id) for node in nodes] == [0, 1, 2, 2^32 + 9, 2^32 + 5]
+        lateral = only(node for node in nodes if attribute(node, :fspm_tf_id) == 2^32 + 9)
+        @test attribute(parent(lateral), :fspm_tf_id) == 2 && link(lateral) == :/     # under its own organ
+        @test attribute(lateral, :fspm_tf_parent) == 2^32 + 5 && attribute(lateral, :fspm_tf_edge_type) == "branch"
+        again = from_mtg(mtg; scales = Dict(1 => "Plant", 5 => "Organ", 6 => "SubOrgan"))
+        for name in ("Plant", "Organ", "SubOrgan")                     # the same rows, in the MTG's order
+            written, read = entity_set(plants, name), entity_set(again, name)
+            order = sortperm(read.columns["id"])
+            for column in ("id", "complex", "parent", "edge_type", "length")
+                haskey(written.columns, column) || continue
+                @test read.columns[column][order] == written.columns[column][sortperm(written.columns["id"])]
+            end
+        end
+        @test !haskey(entity_set(again, "SubOrgan").columns, "fspm_tf_id")
+    end
+
     @testset "MultiScaleTreeGraph: another platform's graph (the conformance root system) as an MTG" begin
         root_system = read_frame(joinpath(CONFORMANCE, "root_system.glb")).data_structures[1]
         mtg = to_mtg(root_system)
         nodes = traverse(mtg, node -> node)
         @test length(nodes) == sum(row_count(set) for set in root_system.entity_sets) + 1        # + the scene
+        entity_id(node) = attribute(node, :fspm_tf_id; default = node_id(node))   # ids 10 to 1000: renumbered
+        node_of = Dict(entity_id(node) => node for node in nodes if !isroot(node))
         segments = entity_set(root_system, "SubOrgan")
+        complex_of = Dict(zip(segments.columns["id"], segments.columns["complex"]))
         for (id, parent_id) in zip(segments.columns["id"], segments.columns["parent"])
-            parent_id == NO_ID || @test node_id(parent(get_node(mtg, Int(id)))) == parent_id
+            node = node_of[id]
+            @test entity_id(parent(node)) == complex_of[id] || entity_id(parent(node)) == parent_id
+            parent_id == NO_ID && continue
+            if complex_of[parent_id] == complex_of[id]
+                @test entity_id(parent(node)) == parent_id && link(node) == :<    # along its axis
+            else
+                @test attribute(node, :fspm_tf_parent) == parent_id && link(node) == :/   # a lateral's first segment
+            end
         end
-        @test attribute(get_node(mtg, Int(segments.columns["id"][1])), :length) == segments.columns["length"][1]
+        @test attribute(node_of[segments.columns["id"][1]], :length) == segments.columns["length"][1]
+        again = from_mtg(mtg; scales = Dict(1 => "Plant", 2 => "Axis", 6 => "SubOrgan"))      # and back: the same graph
+        for set in root_system.entity_sets
+            read = entity_set(again, set.name)
+            order, written_order = sortperm(read.columns["id"]), sortperm(set.columns["id"])
+            for column in ("id", "complex", "parent", "edge_type", "length")
+                haskey(set.columns, column) || continue
+                @test isequal(read.columns[column][order], set.columns[column][written_order])
+            end
+        end
     end
 end
