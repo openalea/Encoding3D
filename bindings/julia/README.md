@@ -10,4 +10,5 @@ MultiScaleTreeGraph.jl MTG to and from a `graph` data structure (`from_mtg`, `to
 - `conformance_run.jl`: the codec's dumps of the conformance files and its written scenes, for
   `.github/actions/conformance`.
 
-Dependencies: JSON.jl and OrderedCollections.jl. See [the documentation](../../doc/julia.md).
+Dependencies: JSON.jl and OrderedCollections.jl. Licence: MIT (`FspmTF/LICENSE`), as VirtualPlantLab; the rest of
+fspm-TF is CeCILL-C. See [the documentation](../../doc/julia.md).

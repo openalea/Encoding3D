@@ -6,7 +6,7 @@ structure, and back. This is the MTG library of VirtualPlantLab's PlantGeom and 
 
 ## Installing
 
-FspmTF.jl is not registered yet. Add it from the repository's subfolder:
+FspmTF.jl is MIT-licensed, as VirtualPlantLab (the rest of fspm-TF is CeCILL-C). It is not registered yet. Add it from the repository's subfolder:
 
 ```julia
 using Pkg
