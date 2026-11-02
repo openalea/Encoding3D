@@ -87,6 +87,10 @@ function attribute_columns(nodes, set_name, variables, skip = ())
     end
     columns, declarations = Columns(), Declarations()
     for name in names
+        if string(name) in FspmTF.ENTITY_SET_RESERVED            # e.g. an `order` attribute (a branching order)
+            @warn "attribute '$name' of '$set_name' not written: '$name' is a reserved column of fspm-TF"
+            continue
+        end
         values = Any[attribute_of(node, name) for node in nodes]
         converted = FspmTF.column_of_values(values)
         if converted === nothing
