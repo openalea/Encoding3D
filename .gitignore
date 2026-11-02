@@ -116,5 +116,5 @@ examples/**/outputs/
 *.report.json
 
 # the documentation build, and its pages generated from spec/vocabulary
-docs/_build/
-docs/_generated/
+doc/_build/
+doc/_generated/

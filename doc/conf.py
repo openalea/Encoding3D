@@ -5,56 +5,85 @@ import csv
 import json
 import os
 import sys
-from importlib.metadata import PackageNotFoundError, metadata
+from importlib.metadata import metadata
 
-import pydata_sphinx_theme  # noqa: F401  (Pydata theme: https://pydata-sphinx-theme.readthedocs.io)
+import pydata_sphinx_theme  # noqa: F401  (Pydata theme: https://pydata-sphinx-theme.readthedocs.io/en/stable/index.html)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.join(ROOT, "bindings", "python", "src"))   # the package, installed or not
 
+# The package's metadata (pyproject.toml), as every OpenAlea documentation reads it
+package = "openalea.fspm_tf"
+meta = metadata(package)
 project = "fspm-TF"
-try:
-    release = metadata("openalea.fspm_tf").get("version")
-except PackageNotFoundError:
-    release = "0.1"
+release = meta.get("version")
 version = ".".join(release.split(".")[:3])
-author = "Tristan Gérault"
-copyright = "Cecill-C INRAE / INRIA / CIRAD"
+author = meta["Author-email"].split(" <")[0]
+desc = meta["Summary"]
+urls = {key.strip(): value.strip() for key, value in (item.split(",") for item in meta.get_all("Project-URL"))}
 
+# The package's root, for autodoc when it is not installed (its sources are in bindings/python/src)
+sys.path.insert(0, os.path.join(ROOT, "bindings", "python", "src"))
+
+# -- General configuration ------------------------------------------------
 extensions = [
-    "sphinx.ext.autodoc",
-    "sphinx.ext.napoleon",
-    "sphinx.ext.viewcode",
-    "sphinx.ext.intersphinx",
-    "sphinx_copybutton",
-    "sphinx_favicon",
-    "myst_parser",
+    "sphinx.ext.autodoc",       # support for automatic inclusion of docstrings
+    "sphinx.ext.autosummary",   # generates autodoc summaries
+    "sphinx.ext.doctest",       # inclusion and testing of doctest code snippets
+    "sphinx.ext.intersphinx",   # support for linking to other projects
+    "sphinx.ext.mathjax",       # support for math equations
+    "sphinx.ext.ifconfig",      # support for conditional content
+    "sphinx.ext.viewcode",      # support for links to source code
+    "sphinx.ext.coverage",      # includes doc coverage stats in the documentation
+    "sphinx.ext.todo",          # support for todo items
+    "sphinx.ext.napoleon",      # support for numpy and google style docstrings
+    "sphinx_favicon",           # support for favicon
+    "sphinx_copybutton",        # support for copybutton in code blocks
+    "nbsphinx",                 # for integrating jupyter notebooks
+    "myst_parser",              # for parsing .md files
 ]
-myst_enable_extensions = ["colon_fence", "deflist"]
-myst_heading_anchors = 3
 templates_path = ["_templates"]
-exclude_patterns = ["_build", "_templates"]
+autosummary_generate = True
+exclude_patterns = ["build", "_build", "_templates", "**.ipynb_checkpoints"]
 source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
 master_doc = "index"
+copyright = "Cecill-C INRAE / INRIA / CIRAD"
 language = "en"
 pygments_style = "sphinx"
+todo_include_todos = False
+myst_enable_extensions = ["colon_fence", "deflist"]
+myst_heading_anchors = 3
 autodoc_member_order = "bysource"
-autodoc_default_options = {"members": True, "undoc-members": False}
+nbsphinx_execute = "always"     # the notebooks run at each build, as nbmake runs them in the tests
 
+# -- Options for HTML output ----------------------------------------------
 html_theme = "pydata_sphinx_theme"
 html_theme_options = {
     "header_links_before_dropdown": 6,
-    "icon_links": [{"name": "GitHub", "url": "https://github.com/openalea/fspm-TF", "icon": "fa-brands fa-github"}],
+    "icon_links": [{"name": "GitHub", "url": urls["Repository"], "icon": "fa-brands fa-github"}],
+    "show_version_warning_banner": True,
     "footer_start": ["copyright"],
     "footer_center": ["sphinx-version"],
-    "secondary_sidebar_items": {"**/*": ["page-toc", "edit-this-page", "sourcelink"]},
+    "secondary_sidebar_items": {"**/*": ["page-toc", "edit-this-page", "sourcelink"], "examples/no-sidebar": []},
     "use_edit_page_button": True,
 }
 html_static_path = ["_static"]
 html_logo = "_static/openalea_web.svg"
 html_favicon = "_static/openalea_web.svg"
-html_context = {"github_user": "openalea", "github_repo": "fspm-TF", "github_version": "main", "doc_path": "docs"}
+html_domain_indices = True
+html_use_index = True
+html_split_index = False
+html_show_sourcelink = True
+html_show_sphinx = True
+html_show_copyright = True
+htmlhelp_basename = "fspm_tf_documentation"
+html_context = {"github_user": "openalea", "github_repo": "fspm-TF", "github_version": "main", "doc_path": "doc"}
+
+# -- Options for LaTeX, manual page and Texinfo output ---------------------
+latex_elements = {}
+latex_documents = [(master_doc, "fspm_tf.tex", "fspm-TF Documentation", "INRAE / inria / CIRAD", "manual")]
+man_pages = [(master_doc, "fspm_tf", "fspm-TF Documentation", [author], 1)]
+texinfo_documents = [(master_doc, "fspm_tf", "fspm-TF Documentation", author, "fspm_tf", desc, "Miscellaneous")]
 intersphinx_mapping = {"python": ("https://docs.python.org/3", None)}
 
 

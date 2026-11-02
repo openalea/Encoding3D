@@ -446,7 +446,7 @@ This repository is platform-neutral, separate from metafspm, like RSML.
 ```
 fspm-TF/
   README.md
-  docs/design_note.md         this note
+  doc/design_note.md          this note
   spec/                       the agreement, the only folder discussed with the platforms:
     specification.md          the specification
     schema/                   JSON Schema of FSPM_scene and of the index file

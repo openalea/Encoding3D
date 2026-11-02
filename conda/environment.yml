@@ -4,16 +4,11 @@ channels:
   - conda-forge
 dependencies:
   - python
+  - pip
+  - pandoc                # the documentation's notebooks (nbsphinx)
   - numpy
   - jsonschema
-  - pip
   - pytest
-  # the documentation (docs/, also built by readthedocs from this file)
-  - sphinx
-  - pydata-sphinx-theme
-  - myst-parser
-  - sphinx-favicon
-  - sphinx-copybutton
-  # the package itself, from the sources (its dependencies are the conda ones above)
+  # the package from the sources, with the documentation's and the tests' tools (also what readthedocs builds with)
   - pip:
-      - -e ..
+      - -e ..[doc,test]

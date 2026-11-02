@@ -60,11 +60,15 @@ dev = [
   "pytest-cov >=3",
 ]
 doc = [
-  "sphinx",
   "pydata-sphinx-theme",
   "myst-parser",
   "sphinx-favicon",
+  "ipykernel",
   "sphinx-copybutton",
+  "ipython_genutils",
+  "nbsphinx",
+  "nbmake",              # the notebooks are tested: pytest --nbmake doc/notebooks
+  "pandas",              # the notebooks' tables
 ]
 
 [project.scripts]

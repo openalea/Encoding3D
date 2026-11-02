@@ -13,11 +13,11 @@ interface for coupling components across platforms.
 
 Status: specification 0.1, draft.
 
-- [The documentation](docs/index.md): for users (viewing, checking, Python) and for platform developers
+- [The documentation](doc/index.md): for users (viewing, checking, Python) and for platform developers
   (implementing a codec, conformance, changing the format), built with Sphinx (`.readthedocs.yml`; locally:
-  `python -m sphinx -b html docs docs/_build`)
+  `python -m sphinx -b html doc doc/_build`)
 - [The specification](spec/specification.md)
-- [The design note](docs/design_note.md): the review of existing formats and the decisions taken
+- [The design note](doc/design_note.md): the review of existing formats and the decisions taken
 - [Implementations](implementations.md)
 
 ## The repository
@@ -33,7 +33,7 @@ change there, released as a new version. Everything else implements, checks or d
 | `conformance/` | reference files, each a GLB with its expected values as JSON, written by `generate.py`: the specification as test cases for every platform's code (`conformance/README.md`; checked with `fspm-tf compare-all` and the action `.github/actions/conformance`) | follows `spec/` |
 | `bindings/<language>/` | each language's codec, with its own build, tests and release; `bindings/python/`: `openalea.fspm_tf`, the reference (codec, validator, display copies, command line), which reads `spec/` and ships it | no |
 | `paraview/` | the ParaView reader plugin, and the script checking it in a `pvpython` | no |
-| `docs/design_note.md` | how the decisions were reached | no |
+| `doc/design_note.md` | how the decisions were reached | no |
 | `pyproject.toml`, `conda/` | the Python package's build, at the root next to `spec/`, which it ships | no |
 
 ## The Python package
