@@ -26,11 +26,18 @@ template <> struct TypeName<bool> { static constexpr const char *value = "bool";
 template <> struct TypeName<std::string> { static constexpr const char *value = "string"; };
 
 const std::vector<std::string> NO_RESERVED = {};
-const std::vector<std::string> ENTITY_SET_RESERVED = {"id", "label", "complex", "parent", "edge_type", "level", "index"};
+const std::vector<std::string> ENTITY_SET_RESERVED = {"id",        "label", "complex", "parent", "edge_type",
+                                                     "level",     "index", "order"};
 const std::vector<std::string> RELATION_RESERVED = {"id", "source", "target", "relation"};
 const std::vector<std::string> MAPPING_RESERVED = {"source", "target", "weight"};
 
 } // namespace
+
+bool Column::has_missing() const {
+    for (const bool flag : missing)
+        if (flag) return true;
+    return false;
+}
 
 std::string Column::dtype() const {
     return std::visit([](const auto &column_values) -> std::string {
@@ -42,7 +49,7 @@ std::string Column::dtype() const {
 bool Variable::operator==(const Variable &other) const {
     return unit == other.unit && standard_name == other.standard_name && kind == other.kind && role == other.role &&
            description == other.description && minimum == other.minimum && maximum == other.maximum &&
-           references == other.references && doi == other.doi;
+           references == other.references && doi == other.doi && format == other.format;
 }
 
 std::size_t Table::row_count() const { return columns.empty() ? 0 : columns.front().second.rows(); }
@@ -103,6 +110,11 @@ void Table::check_lengths() const {
             throw Error("column '" + item.first + "' of '" + name + "': its values are not whole rows");
         if (item.second.rows() != row_count())
             throw Error("table '" + name + "': columns of different lengths");
+        if (!item.second.missing.empty() && item.second.missing.size() != item.second.rows())
+            throw Error("column '" + item.first + "' of '" + name + "': one missing flag per row");
+        if (item.second.has_missing() && (is_reserved(item.first) || item.second.width != 1))
+            throw Error("column '" + item.first + "' of '" + name + "': missing values only in variables of one value "
+                        "per row");
     }
 }
 

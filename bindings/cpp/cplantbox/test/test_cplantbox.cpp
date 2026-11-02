@@ -23,6 +23,16 @@ namespace {
 
 int failures = 0, checks = 0;
 
+void check(bool condition, const std::string &what);
+
+/// Checks that two JSON values are equal, printing their first differences when they are not.
+void check_same(const json &actual, const json &expected, const std::string &what) {
+    const auto differences = compare(actual, expected);
+    for (std::size_t item = 0; item < std::min<std::size_t>(differences.size(), 3); ++item)
+        std::cerr << "  " << differences[item] << "\n";
+    check(differences.empty(), what);
+}
+
 void check(bool condition, const std::string &what) {
     ++checks;
     if (!condition) {
@@ -96,10 +106,10 @@ void test_root_system(const filesystem::path &parameters, const filesystem::path
 
     write_frame((out / "anagallis.glb").string(), frame);           // written, read back the same
     const auto read_back = read_frame((out / "anagallis.glb").string());
-    check(compare(frame_to_json(read_back), frame_to_json(frame)).empty(), "the root system read back as written");
+    check_same(frame_to_json(read_back), frame_to_json(frame), "the root system read back as written");
 
     // Rebuilt as a static root system (CPlantBox has static roots only: the stem is left out), and exported again:
-    // the same root segments (ends to the nanometre)
+    // the same root segments, their ends bit for bit
     const auto rebuilt = cplantbox::to_root_system(read_back.data_structures[0]);
     const auto organ_types = values(segments, "organType");
     const auto root_segments = std::count(organ_types.begin(), organ_types.end(), double(CPlantBox::Organism::ot_root));
@@ -114,14 +124,16 @@ void test_root_system(const filesystem::path &parameters, const filesystem::path
         if (organ_types[row] == CPlantBox::Organism::ot_root) root_total += lengths[row];
     for (const auto length : values(rebuilt_segments, "length")) rebuilt_total += length;
     check(std::abs(rebuilt_total - root_total) < 1e-9 * root_total, "the static root system has the same root length");
-    std::multiset<long long> ends, rebuilt_ends;
+    std::multiset<double> ends, rebuilt_ends;                    // in cm both ways: bit for bit
     for (const char *name : {"x2", "y2", "z2"}) {
         const auto coordinates = values(segments, name);
         for (std::size_t row = 0; row < coordinates.size(); ++row)
-            if (organ_types[row] == CPlantBox::Organism::ot_root) ends.insert(std::llround(coordinates[row] * 1e9));
-        for (const auto value : values(rebuilt_segments, name)) rebuilt_ends.insert(std::llround(value * 1e9));
+            if (organ_types[row] == CPlantBox::Organism::ot_root) ends.insert(coordinates[row]);
+        for (const auto value : values(rebuilt_segments, name)) rebuilt_ends.insert(value);
     }
     check(ends == rebuilt_ends, "the static root system's segment ends are the same");
+    check(data_structure.entity_set("Organ").scale == std::optional<std::string>("mixed"), "the Organ set is mixed");
+    check(segments.variables.at("x1").unit == "cm", "segment ends in CPlantBox's unit, cm");
 }
 
 void test_plant_with_geometry_and_soil(const filesystem::path &parameters, const filesystem::path &out) {
@@ -156,7 +168,8 @@ void test_plant_with_geometry_and_soil(const filesystem::path &parameters, const
     const auto &targets = mapping.column("target").as<std::int64_t>();
     for (std::size_t item = 0; item < sources.size(); ++item) {
         const auto row = row_of.at(sources[item]);
-        const double middle[3] = {(x1[row] + x2[row]) / 2, (y1[row] + y2[row]) / 2, (z1[row] + z2[row]) / 2};
+        const double middle[3] = {(x1[row] + x2[row]) / 200, (y1[row] + y2[row]) / 200,       // cm -> m
+                                  (z1[row] + z2[row]) / 200};
         std::int64_t index[3];
         for (int axis = 0; axis < 3; ++axis)
             index[axis] = std::int64_t(std::floor((middle[axis] - grid.origin[axis]) / grid.spacing[axis]));
@@ -170,7 +183,7 @@ void test_plant_with_geometry_and_soil(const filesystem::path &parameters, const
     frame.mappings = {mapping};
     write_frame((out / "fspm2023.glb").string(), frame);
     const auto read_back = read_frame((out / "fspm2023.glb").string());
-    check(compare(frame_to_json(read_back), frame_to_json(frame)).empty(), "the plant, soil and mapping read back");
+    check_same(frame_to_json(read_back), frame_to_json(frame), "the plant, soil and mapping read back");
 }
 
 void test_another_platform(const filesystem::path &conformance) {

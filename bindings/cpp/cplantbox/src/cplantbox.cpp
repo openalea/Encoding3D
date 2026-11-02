@@ -95,10 +95,12 @@ DataStructure to_data_structure(const CPlantBox::Organism &organism, const Optio
 
     // Plant: the organism
     EntitySet plant("Plant", 1);
+    plant.scale = "Plant";
     plant.set("id", std::vector<std::int64_t>{0});
 
     // Organ: one row per organ
     EntitySet organ_set("Organ", 5);
+    organ_set.scale = "mixed";                                     // whole root and stem axes, leaves, the seed
     std::vector<std::int64_t> organ_ids, complexes, parents;
     std::vector<std::string> labels, edge_types;
     std::vector<std::int32_t> organ_types, sub_types, orders, parent_node_indices, node_counts;
@@ -125,12 +127,13 @@ DataStructure to_data_structure(const CPlantBox::Organism &organism, const Optio
     }
     organ_set.set("id", organ_ids).set("label", Column(labels)).set("complex", complexes).set("parent", parents)
         .set("edge_type", Column(edge_types)).set("organType", organ_types).set("subType", sub_types)
-        .set("order", orders).set("age", ages).set("length", lengths).set("radius", radii)
+        .set("branching_order", orders).set("age", ages).set("length", lengths).set("radius", radii)
         .set("creationTime", creation_times).set("parentNI", parent_node_indices).set("numberOfNodes", node_counts)
         .set("alive", alive).set("active", active);
     organ_set.declare("organType", declared("1", "descriptor", "CPlantBox's organ type: 1 seed, 2 root, 3 stem, 4 leaf", {}, "setting"))
         .declare("subType", declared("1", "descriptor", "CPlantBox's sub type: the organ's parameter set", {}, "setting"))
-        .declare("order", declared("1", "descriptor", "branching order (0: a base organ)", "branching_order"))
+        .declare("branching_order", declared("1", "descriptor", "CPlantBox's order: the branching order (0: a base organ)",
+                                             "branching_order"))
         .declare("age", declared("d", "intensive", "the organ's age", "age"))
         .declare("length", declared("cm", "extensive", "the organ's realized length", "length"))
         .declare("radius", declared("cm", "intensive", "the organ's radius", "radius", "parameter"))
@@ -146,6 +149,7 @@ DataStructure to_data_structure(const CPlantBox::Organism &organism, const Optio
         for (int node = 1; node < organ->getNumberOfNodes(); ++node)
             segment_ending_at[organ->getNodeId(node)] = SEGMENT_ID_OFFSET + organ->getNodeId(node);
     EntitySet segment_set("SubOrgan", 6);
+    segment_set.scale = "SubOrgan";
     std::vector<std::int64_t> segment_ids, segment_complexes, segment_parents;
     std::vector<std::string> segment_labels, segment_edge_types;
     std::vector<std::int32_t> segment_organ_types, segment_sub_types;
@@ -163,12 +167,12 @@ DataStructure to_data_structure(const CPlantBox::Organism &organism, const Optio
             segment_labels.push_back(segment_label(organ->organType()));
             segment_organ_types.push_back(organ->organType());
             segment_sub_types.push_back(sub_types[index]);
-            x1.push_back(proximal.x * METRES_PER_CENTIMETRE);
-            y1.push_back(proximal.y * METRES_PER_CENTIMETRE);
-            z1.push_back(proximal.z * METRES_PER_CENTIMETRE);
-            x2.push_back(distal.x * METRES_PER_CENTIMETRE);
-            y2.push_back(distal.y * METRES_PER_CENTIMETRE);
-            z2.push_back(distal.z * METRES_PER_CENTIMETRE);
+            x1.push_back(proximal.x);
+            y1.push_back(proximal.y);
+            z1.push_back(proximal.z);
+            x2.push_back(distal.x);
+            y2.push_back(distal.y);
+            z2.push_back(distal.z);
             segment_radii.push_back(radius);
             segment_lengths.push_back(distal.minus(proximal).length());
             segment_creation_times.push_back(organ->getNodeCT(node));
@@ -181,12 +185,12 @@ DataStructure to_data_structure(const CPlantBox::Organism &organism, const Optio
         .set("radius", segment_radii).set("length", segment_lengths).set("creationTime", segment_creation_times);
     segment_set.declare("organType", declared("1", "descriptor", "CPlantBox's organ type of its organ", {}, "setting"))
         .declare("subType", declared("1", "descriptor", "CPlantBox's sub type of its organ", {}, "setting"))
-        .declare("x1", declared("m", "descriptor", "proximal node, x", "proximal_end_x"))
-        .declare("y1", declared("m", "descriptor", "proximal node, y", "proximal_end_y"))
-        .declare("z1", declared("m", "descriptor", "proximal node, z", "proximal_end_z"))
-        .declare("x2", declared("m", "descriptor", "distal node, x", "distal_end_x"))
-        .declare("y2", declared("m", "descriptor", "distal node, y", "distal_end_y"))
-        .declare("z2", declared("m", "descriptor", "distal node, z", "distal_end_z"))
+        .declare("x1", declared("cm", "descriptor", "proximal node, x", "proximal_end_x"))
+        .declare("y1", declared("cm", "descriptor", "proximal node, y", "proximal_end_y"))
+        .declare("z1", declared("cm", "descriptor", "proximal node, z", "proximal_end_z"))
+        .declare("x2", declared("cm", "descriptor", "distal node, x", "distal_end_x"))
+        .declare("y2", declared("cm", "descriptor", "distal node, y", "distal_end_y"))
+        .declare("z2", declared("cm", "descriptor", "distal node, z", "distal_end_z"))
         .declare("radius", declared("cm", "intensive", "the segment's radius (its organ's)", "radius", "parameter"))
         .declare("length", declared("cm", "extensive", "the segment's length", "length", "derived"))
         .declare("creationTime", declared("d", "descriptor", "the creation time of its distal node"));

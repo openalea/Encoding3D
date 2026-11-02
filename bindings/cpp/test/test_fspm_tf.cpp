@@ -67,7 +67,7 @@ void report(const std::vector<std::string> &differences, const std::string &what
 
 void test_conformance(const filesystem::path &conformance) {
     const auto files = conformance_files(conformance);
-    check(files.size() == 9, "nine conformance files");
+    check(files.size() == 10, "ten conformance files");
     for (const auto &path : files) {
         const auto name = filesystem::relative(path, conformance).string();
         const auto data = file_bytes(path);

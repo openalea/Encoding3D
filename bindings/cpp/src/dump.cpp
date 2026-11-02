@@ -23,7 +23,8 @@ json column_json(const Column &column) {
     return std::visit([&](const auto &values) {
         json items = json::array();
         if (column.width == 1) {
-            for (std::size_t item = 0; item < values.size(); ++item) items.push_back(value_json(values[item]));
+            for (std::size_t item = 0; item < values.size(); ++item)
+                items.push_back(column.is_missing(item) ? json(nullptr) : value_json(values[item]));   // missing: null
             return items;
         }
         for (std::size_t row = 0; row < column.rows(); ++row) {
@@ -51,6 +52,7 @@ json table_json(const Table &table) {
         if (variable.maximum) declared["maximum"] = *variable.maximum;
         if (!variable.references.empty()) declared["references"] = variable.references;
         if (!variable.doi.empty()) declared["doi"] = variable.doi;
+        if (variable.format) declared["format"] = *variable.format;
         declarations[name] = declared;
     }
     if (!declarations.empty()) entry["variables"] = declarations;
@@ -72,6 +74,7 @@ json frame_to_json(const Frame &frame) {
         for (const auto &set : data_structure.entity_sets) {
             json item = table_json(set);
             item["rank"] = set.rank ? json(*set.rank) : json(nullptr);
+            if (set.scale) item["scale"] = *set.scale;
             sets.push_back(item);
         }
         json entry = {{"id", data_structure.id}, {"kind", data_structure.kind}, {"origin", origin},
@@ -79,6 +82,11 @@ json frame_to_json(const Frame &frame) {
         if (data_structure.platform) entry["platform"] = *data_structure.platform;
         if (data_structure.model) entry["model"] = *data_structure.model;
         if (!data_structure.extras.empty()) entry["extras"] = data_structure.extras;
+        if (!data_structure.labels.empty()) {
+            json labels = json::object();
+            for (const auto &[label, standard] : data_structure.labels) labels[label] = standard;
+            entry["labels"] = labels;
+        }
         if (!data_structure.relations.empty()) {
             json relations = json::array();
             for (const auto &relation : data_structure.relations) {

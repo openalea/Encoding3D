@@ -25,7 +25,8 @@ const std::string METADATA = "EXT_structural_metadata";
 const std::string FEATURES = "EXT_mesh_features";
 const std::string EDGE_TYPE_ENUM = "FSPM_edge_type";
 const std::vector<std::string> ENUM_COLUMNS = {"label", "edge_type", "relation"};
-const std::vector<std::string> ID_COLUMNS = {"id", "complex", "parent", "source", "target", "level", "index"};
+const std::vector<std::string> ID_COLUMNS = {"id", "complex", "parent", "source", "target", "level", "index", "order"};
+constexpr std::uint8_t BOOLEAN_NO_DATA = 255;   // a boolean column with missing values: UINT8 0, 1, and 255 missing
 constexpr int ARRAY_BUFFER = 34962, ELEMENT_ARRAY_BUFFER = 34963;
 constexpr int FLOAT = 5126, UNSIGNED_INT = 5125, UNSIGNED_SHORT = 5123, UNSIGNED_BYTE = 5121;
 constexpr std::int64_t MAX_FLOAT_FEATURE = std::int64_t(1) << 24;   // feature rows are float vertex attributes
@@ -66,6 +67,30 @@ template <typename T> T negative_stand_in() {
     return std::nextafter(std::numeric_limits<T>::lowest(), T(0));
 }
 
+/// A value of T the column does not hold: its minimum (signed) or maximum (unsigned) first, then inwards.
+template <typename T> T free_integer(const std::vector<T> &values, const std::vector<bool> &missing) {
+    std::set<T> present;
+    for (std::size_t row = 0; row < values.size(); ++row)
+        if (missing.empty() || !missing[row]) present.insert(values[row]);
+    const T first = std::is_signed_v<T> ? std::numeric_limits<T>::min() : std::numeric_limits<T>::max();
+    const T second = std::is_signed_v<T> ? std::numeric_limits<T>::max() : std::numeric_limits<T>::min();
+    if (!present.count(first)) return first;
+    if (!present.count(second)) return second;
+    T candidate = first;
+    while (present.count(candidate)) candidate = std::is_signed_v<T> ? T(candidate + 1) : T(candidate - 1);
+    return candidate;
+}
+
+/// A string the column does not hold: the empty string first, then NUL characters.
+std::string free_string(const std::vector<std::string> &values, const std::vector<bool> &missing) {
+    std::set<std::string> present;
+    for (std::size_t row = 0; row < values.size(); ++row)
+        if (missing.empty() || !missing[row]) present.insert(values[row]);
+    std::string candidate;
+    while (present.count(candidate)) candidate.push_back('\0');
+    return candidate;
+}
+
 json get(const json &object, const std::string &key, json fallback = nullptr) {
     if (object.is_object()) {
         auto found = object.find(key);
@@ -102,6 +127,7 @@ json declaration_json(const Variable &variable) {
     if (variable.maximum) declaration["maximum"] = *variable.maximum;
     if (!variable.references.empty()) declaration["references"] = variable.references;
     if (!variable.doi.empty()) declaration["doi"] = variable.doi;
+    if (variable.format) declaration["format"] = *variable.format;
     return declaration;
 }
 
@@ -167,9 +193,16 @@ std::pair<json, json> encode_table(const Table &table, const std::string &class_
         } else if (column.holds<std::string>()) {
             if (column.width != 1) throw Error(where + ": text vectors are not supported");
             property["type"] = "STRING";
+            std::vector<std::string> strings = column.as<std::string>();
+            if (column.has_missing()) {                          // missing text: noData, a string the column lacks
+                const std::string no_data = free_string(strings, column.missing);
+                property["noData"] = no_data;
+                for (std::size_t row = 0; row < strings.size(); ++row)
+                    if (column.missing[row]) strings[row] = no_data;
+            }
             std::vector<std::uint8_t> text;
             std::vector<std::uint64_t> offsets = {0};
-            for (const auto &value : column.as<std::string>()) {
+            for (const auto &value : strings) {
                 text.insert(text.end(), value.begin(), value.end());
                 offsets.push_back(text.size());
             }
@@ -182,6 +215,16 @@ std::pair<json, json> encode_table(const Table &table, const std::string &class_
                 item["stringOffsetType"] = "UINT64";
             }
             stored[name] = item;
+        } else if (column.holds<bool>() && column.has_missing()) {   // booleans with missing values: UINT8 0, 1, 255
+            property["type"] = "SCALAR";
+            property["componentType"] = "UINT8";
+            property["noData"] = BOOLEAN_NO_DATA;
+            property["extras"] = {{"FSPM_boolean", true}};
+            const auto &values = column.as<bool>();
+            std::vector<std::uint8_t> codes(values.size());
+            for (std::size_t row = 0; row < values.size(); ++row)
+                codes[row] = column.missing[row] ? BOOLEAN_NO_DATA : std::uint8_t(values[row]);
+            stored[name] = {{"values", buffers.add(codes)}};
         } else if (column.holds<bool>()) {
             if (column.width != 1) throw Error(where + ": boolean vectors are not supported");
             property["type"] = "BOOLEAN";
@@ -216,6 +259,8 @@ std::pair<json, json> encode_table(const Table &table, const std::string &class_
                     }
                     std::vector<T> data = values;
                     if constexpr (std::is_floating_point_v<T>) {
+                        for (std::size_t row = 0; row < column.missing.size(); ++row)   // a missing float: NaN
+                            if (column.missing[row]) data[row] = std::numeric_limits<T>::quiet_NaN();
                         const bool infinite = std::any_of(data.begin(), data.end(), [](T value) { return std::isinf(value); });
                         if (infinite) {
                             const T positive = positive_stand_in<T>(), negative = negative_stand_in<T>();
@@ -237,6 +282,11 @@ std::pair<json, json> encode_table(const Table &table, const std::string &class_
                         }
                     } else if (reserved && (name == "complex" || name == "parent")) {
                         property["noData"] = NO_ID;
+                    } else if (column.has_missing()) {           // missing integers: noData, a value the column lacks
+                        const T no_data = free_integer(data, column.missing);
+                        property["noData"] = no_data;
+                        for (std::size_t row = 0; row < data.size(); ++row)
+                            if (column.missing[row]) data[row] = no_data;
                     }
                     stored[name] = {{"values", buffers.add(data)}};
                 }
@@ -386,6 +436,7 @@ std::vector<std::uint8_t> to_bytes(const Frame &frame) {
         for (const auto &set : data_structure.entity_sets) {
             json item = {{"name", set.name}, {"rank", nullptr}};
             if (set.rank) item["rank"] = *set.rank;
+            if (set.scale) item["scale"] = *set.scale;
             item["propertyTable"] = add_table(set, data_structure.id + "__" + set.name);
             sets.push_back(item);
         }
@@ -400,6 +451,11 @@ std::vector<std::uint8_t> to_bytes(const Frame &frame) {
         }
         if (data_structure.scalars) entry["scalars"] = add_table(*data_structure.scalars, data_structure.id + "__scalars");
         if (data_structure.grid) entry["grid"] = grid_json(*data_structure.grid);
+        if (!data_structure.labels.empty()) {
+            json labels = json::object();
+            for (const auto &[label, standard] : data_structure.labels) labels[label] = standard;
+            entry["labels"] = labels;
+        }
         if (!data_structure.extras.empty()) entry["extras"] = data_structure.extras;
         json node = {{"name", data_structure.id}};
         if (!is_identity(data_structure.origin)) node["matrix"] = entry["origin"];
@@ -583,7 +639,19 @@ void decode_table(const json &document, const std::vector<std::uint8_t> &binary,
                     throw Error("'" + class_id + "." + name + "': string offsets outside its values");
                 text.emplace_back(reinterpret_cast<const char *>(raw.data + offsets[row]), offsets[row + 1] - offsets[row]);
             }
+            std::vector<bool> missing;
+            if (property.contains("noData")) {                   // missing text
+                const std::string no_data = property["noData"].get<std::string>();
+                missing.assign(count, false);
+                for (std::size_t row = 0; row < count; ++row)
+                    if (text[row] == no_data) {
+                        missing[row] = true;
+                        text[row].clear();
+                    }
+                if (std::none_of(missing.begin(), missing.end(), [](bool flag) { return flag; })) missing.clear();
+            }
             column = Column(std::move(text));
+            column.missing = std::move(missing);
         } else if (type == "BOOLEAN") {
             if (raw.size * 8 < count) throw Error("'" + class_id + "." + name + "': too few bits");
             std::vector<bool> values(count);
@@ -594,7 +662,34 @@ void decode_table(const json &document, const std::vector<std::uint8_t> &binary,
             if (vector && !property.contains("count"))
                 throw Error("'" + class_id + "." + name + "': variable-length arrays are not part of fspm-TF 0.1");
             const std::size_t width = vector ? property["count"].get<std::size_t>() : 1;
-            column = decode_scalar_of(property.at("componentType").get<std::string>(), raw, property, count, width);
+            const std::string component = property.at("componentType").get<std::string>();
+            column = decode_scalar_of(component, raw, property, count, width);
+            if (get(get(property, "extras", json::object()), "FSPM_boolean", false).get<bool>()) {
+                const auto codes = column.as<std::uint8_t>();        // booleans with missing values
+                const auto no_data = get(property, "noData", BOOLEAN_NO_DATA).get<std::uint64_t>();
+                std::vector<bool> values(count), missing(count);
+                for (std::size_t row = 0; row < count; ++row) {
+                    missing[row] = codes[row] == no_data;
+                    values[row] = !missing[row] && codes[row] == 1;
+                }
+                column = Column(std::move(values));
+                if (std::any_of(missing.begin(), missing.end(), [](bool flag) { return flag; })) column.missing = missing;
+            } else if (width == 1 && component.rfind("FLOAT", 0) != 0 && property.contains("noData") &&
+                       name != "complex" && name != "parent") {          // missing integers
+                const double no_data = property["noData"].get<double>();
+                std::vector<bool> missing(count);
+                bool any = false;
+                for (std::size_t row = 0; row < count; ++row) {
+                    const double value = std::visit([&](const auto &values) -> double {
+                        using V = typename std::decay_t<decltype(values)>::value_type;
+                        if constexpr (std::is_arithmetic_v<V>) return static_cast<double>(values[row]);
+                        else return 0.0;
+                    }, column.values);
+                    missing[row] = value == no_data;
+                    any = any || missing[row];
+                }
+                if (any) column.missing = missing;
+            }
         } else {
             throw Error("'" + class_id + "." + name + "': property type " + type + " is not part of fspm-TF 0.1");
         }
@@ -609,6 +704,7 @@ void decode_table(const json &document, const std::vector<std::uint8_t> &binary,
             if (property.contains("description")) variable.description = property["description"].get<std::string>();
             if (!get(declared, "minimum").is_null()) variable.minimum = declared["minimum"].get<double>();
             if (!get(declared, "maximum").is_null()) variable.maximum = declared["maximum"].get<double>();
+            if (!get(declared, "format").is_null()) variable.format = declared["format"].get<std::string>();
             for (const auto &reference : get(declared, "references", json::array()))
                 variable.references.push_back(reference.get<std::string>());
             for (const auto &doi : get(declared, "doi", json::array())) variable.doi.push_back(doi.get<std::string>());
@@ -705,6 +801,9 @@ Frame from_bytes(const std::vector<std::uint8_t> &data) {
         if (!get(entry, "platform").is_null()) data_structure.platform = entry["platform"].get<std::string>();
         if (!get(entry, "model").is_null()) data_structure.model = entry["model"].get<std::string>();
         data_structure.extras = get(entry, "extras", json::object());
+        const json labels = get(entry, "labels", json::object());
+        for (const auto &item : labels.items())
+            data_structure.labels.emplace_back(item.key(), item.value().get<std::string>());
         if (entry.contains("origin")) {
             const auto values = entry["origin"].get<std::vector<double>>();
             if (values.size() != 16) throw Error("data structure '" + data_structure.id + "': an origin of 16 numbers");
@@ -716,6 +815,7 @@ Frame from_bytes(const std::vector<std::uint8_t> &data) {
         for (const auto &item : get(entry, "entitySets", json::array())) {
             EntitySet set;
             if (!get(item, "rank").is_null()) set.rank = item["rank"].get<std::int64_t>();
+            if (!get(item, "scale").is_null()) set.scale = item["scale"].get<std::string>();
             table(item.at("propertyTable").get<std::int64_t>(), set);
             tables[item["propertyTable"].get<std::int64_t>()] = item.at("name").get<std::string>();
             data_structure.entity_sets.push_back(std::move(set));

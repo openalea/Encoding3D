@@ -10,7 +10,8 @@
 //       Mapping          source entity <-> target entity weights between two data structures
 //
 // A column holds one value per row (numbers, booleans, text), or a fixed-size vector per row (`width` values per
-// row, row after row).
+// row, row after row). Missing values: NaN in float columns; elsewhere the column's `missing` mask (one flag per row,
+// empty when none is missing).
 #pragma once
 
 #include <array>
@@ -31,11 +32,14 @@ namespace fspm_tf {
 using json = nlohmann::ordered_json;
 
 /// The version of the specification this library reads and writes.
-inline constexpr const char *SPECIFICATION_VERSION = "0.1";
+inline constexpr const char *SPECIFICATION_VERSION = "0.2";
 /// The id of no entity: the complex or parent of an entity that has none, the feature row of a vertex with none.
 inline constexpr std::int64_t NO_ID = -1;
 /// The values of edge_type: the root of its scale, MTG '<', MTG '+'.
-inline const std::vector<std::string> EDGE_TYPES = {"none", "successor", "branch"};
+inline const std::vector<std::string> EDGE_TYPES = {"none", "successor", "branch", "unknown"};
+/// The vocabulary's base scales: an entity set's scale is one of them, or "mixed".
+inline const std::vector<std::string> BASE_SCALES = {"Plant", "Axis", "GrowthUnit", "Phytomer", "Organ",
+                                                     "SubOrgan", "Layer", "Cell", "Compartment", "Connection"};
 
 /// What the specification forbids, or a file that is not fspm-TF.
 struct Error : std::runtime_error {
@@ -49,10 +53,12 @@ using ColumnValues = std::variant<std::vector<std::int8_t>, std::vector<std::uin
                                   std::vector<std::int64_t>, std::vector<std::uint64_t>, std::vector<float>,
                                   std::vector<double>, std::vector<bool>, std::vector<std::string>>;
 
-/// A column: its values, `width` per row (1: one value per row; >= 2: a fixed-size vector per row).
+/// A column: its values, `width` per row (1: one value per row; >= 2: a fixed-size vector per row), and which rows are
+/// missing (`missing`, one flag per row, empty when none is; NaN in a float column).
 struct Column {
     ColumnValues values;
     std::size_t width = 1;
+    std::vector<bool> missing;
 
     Column() : values(std::vector<double>{}) {}
     template <typename T> Column(std::vector<T> column_values, std::size_t width = 1)
@@ -73,6 +79,14 @@ struct Column {
         throw Error("a column of another type than the one asked for");
     }
     template <typename T> bool holds() const { return std::holds_alternative<std::vector<T>>(values); }
+    /// Whether row `row` is missing (by the mask; a float's NaN is read as a value).
+    bool is_missing(std::size_t row) const { return !missing.empty() && missing[row]; }
+    bool has_missing() const;
+    /// Marks rows as missing (one flag per row); returns the column, for chaining.
+    Column &with_missing(std::vector<bool> rows) {
+        missing = std::move(rows);
+        return *this;
+    }
     /// The column's type name in the conformance files' expected values: numpy's (float64, int64, bool...), or
     /// "string".
     std::string dtype() const;
@@ -90,6 +104,7 @@ struct Variable {
     std::optional<double> maximum;
     std::vector<std::string> references;
     std::vector<std::string> doi;
+    std::optional<std::string> format;   ///< a text column of dates or times: "date", "date-time" or "time"
 
     bool operator==(const Variable &other) const;
 };
@@ -130,6 +145,7 @@ struct Table {
 /// edge_type ("none", "successor", "branch"); an adaptive grid's cells: level and index.
 struct EntitySet : Table {
     std::optional<std::int64_t> rank;
+    std::optional<std::string> scale;    ///< a base scale (BASE_SCALES), or "mixed"
 
     EntitySet() : Table("", TableKind::entity_set) {}
     explicit EntitySet(std::string name, std::optional<std::int64_t> rank = std::nullopt)
@@ -209,6 +225,7 @@ struct DataStructure {
     std::optional<std::string> platform;
     std::optional<std::string> model;
     json extras = json::object();
+    std::vector<std::pair<std::string, std::string>> labels;   ///< the platform's labels -> the vocabulary's
 
     DataStructure() = default;
     explicit DataStructure(std::string id, std::string kind = "graph") : id(std::move(id)), kind(std::move(kind)) {}

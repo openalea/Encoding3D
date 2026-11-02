@@ -4,8 +4,8 @@
 |---|---|---|---|---|---|
 | openalea.fspm_tf (reference codec) | Python | this repository, `bindings/python/` | yes | yes | 0.2 |
 | openalea.metafspm | Python | `openalea.metafspm.io.fspm_tf` (branch release2026) | yes: its own frames, rebuilt bit for bit | yes | 0.2 (through openalea.fspm_tf) |
-| fspm_tf (C++ codec) | C++ | this repository, `bindings/cpp/` | yes | yes | 0.1 |
-| CPlantBox | C++ | `bindings/cpp/cplantbox/` (`fspm_tf::cplantbox`), to move into CPlantBox | yes: static root systems, from any graph with segment ends | yes: organs, segments, geometry, soil grid, mapping | 0.1 |
+| fspm_tf (C++ codec) | C++ | this repository, `bindings/cpp/` | yes | yes | 0.2 |
+| CPlantBox | C++ | `bindings/cpp/cplantbox/` (`fspm_tf::cplantbox`), to move into CPlantBox | yes: static root systems, from any graph with segment ends | yes: organs, segments, geometry, soil grid, mapping | 0.2 |
 | fspm-tf (Java codec) | Java | this repository, `bindings/java/` | yes | yes | 0.1 |
 | GroIMP | Java | `bindings/java/groimp/` (`GroImp`), to become a GroIMP plugin | yes: graphs and fields into the model's node classes | yes: scales, topology, edge bits, managed fields | 0.1 |
 | FspmTF.jl (Julia codec) | Julia | this repository, `bindings/julia/FspmTF/` | yes | yes | 0.2 |

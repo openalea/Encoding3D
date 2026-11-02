@@ -1,6 +1,6 @@
 # fspm_tf (C++)
 
-The C++ codec of fspm-TF (C++17, CMake): reading and writing frames and sequences (spec 0.1). In `cplantbox/` is
+The C++ codec of fspm-TF (C++17, CMake): reading and writing frames and sequences (spec 0.2). In `cplantbox/` is
 CPlantBox's adapter, which turns an organism into a graph with its geometry, soil grid and segment-to-cell mapping,
 and turns a graph into a static CPlantBox root system.
 

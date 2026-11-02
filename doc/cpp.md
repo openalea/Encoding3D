@@ -78,10 +78,10 @@ auto roots = fspm_tf::cplantbox::to_root_system(fspm_tf::read_frame("roots.glb")
 | fspm-TF | CPlantBox |
 |---|---|
 | Plant (rank 1), id 0 | the organism |
-| Organ (rank 5), id 1 + organ id | a seed, a root or a stem (labelled `RootAxis`, `ShootAxis`: a whole axis), a leaf |
+| Organ (rank 5, scale `mixed`), id 1 + organ id | a seed, a root or a stem (labelled `RootAxis`, `ShootAxis`: a whole axis), a leaf |
 | SubOrgan (rank 6), id 2^32 + distal node id | a segment; its parent is the segment ending at its proximal node |
-| `x1` … `z2` (`proximal_end_*`, `distal_end_*`) | the segment's nodes, cm converted to metres |
-| other variables | CPlantBox's names and units (`length` in cm, `age` in d, `order`, `subType`, …), with their standard names |
+| `x1` … `z2` (`proximal_end_*`, `distal_end_*`) | the segment's nodes, in cm (declared; readers convert, so a rebuilt root system has them bit for bit) |
+| other variables | CPlantBox's names and units (`length` in cm, `age` in d, `subType`, …), with their standard names; its `order` as `branching_order` (`order` is fspm-TF's reserved column) |
 | `extras["cplantbox"]` | the id offsets, the organism's parameters as CPlantBox's XML |
 
 CPlantBox has two scales below the plant. `to_root_system` reads frames with more scales by what they hold: the

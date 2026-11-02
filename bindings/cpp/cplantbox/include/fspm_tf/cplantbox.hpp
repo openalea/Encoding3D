@@ -5,12 +5,13 @@
 // | fspm-TF                          | CPlantBox                                                                 |
 // |----------------------------------|---------------------------------------------------------------------------|
 // | Plant (rank 1), one row, id 0    | the organism                                                              |
-// | Organ (rank 5), id 1 + organ id  | its organs: a seed, a root or a stem (a whole axis), a leaf; complex the  |
+// | Organ (rank 5, scale "mixed"),    | its organs: a seed, a root or a stem (a whole axis), a leaf; complex the  |
 // |                                  | plant, parent its parent organ (branch)                                   |
 // | SubOrgan (rank 6), id            | its segments: complex its organ, parent the segment ending at its         |
 // |   2^32 + distal node id          | proximal node (successor along an organ, branch at a lateral's base)      |
-// | positions (proximal_end_*, ...)  | node coordinates, cm converted to metres                                  |
-// | other variables                  | CPlantBox's names and units (cm, d), declared with their standard names  |
+// | positions (proximal_end_*, ...)  | node coordinates, in cm (declared; readers convert)                       |
+// | other variables                  | CPlantBox's names and units (cm, d), declared with their standard names; |
+// |                                  | its `order` as `branching_order` (`order` is fspm-TF's reserved column)  |
 // | extras["cplantbox"]              | the id offsets, the organism's parameters (its XML)                       |
 //
 // CPlantBox has two scales below the plant: organs and segments. A frame with more scales (e.g. metafspm's Plant,
