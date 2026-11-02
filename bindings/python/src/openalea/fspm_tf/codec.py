@@ -147,6 +147,8 @@ def to_bytes(frame: Frame) -> bytes:
         document["meshes"], document["accessors"] = meshes, accessors
     binary = buffers.binary()
     if buffers.views:
+        # the buffer holds the chunk's padding to 8 bytes: glTF-Validator warns of more than 3 bytes beyond it
+        binary += b"\0" * (-len(binary) % 8)
         document["buffers"] = [{"byteLength": len(binary)}]
         document["bufferViews"] = buffers.views
     return pack(document, binary)

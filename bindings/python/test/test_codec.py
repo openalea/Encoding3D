@@ -59,6 +59,16 @@ def test_glb_layout():
     assert "FSPM_scene" not in document.get("extensionsRequired", [])
 
 
+def test_buffer_length_holds_the_chunk_padding():
+    """A binary chunk of 4 bytes of data is padded to 8: the buffer's byteLength counts the padding, so that the
+    chunk is no longer than the buffer (glTF-Validator: BUFFER_GLB_CHUNK_TOO_BIG beyond 3 bytes)."""
+    frame = Frame(data_structures=[DataStructure("plants", entity_sets=[
+        EntitySet("Plant", columns={"id": np.array([0], dtype=np.int64), "count": np.array([1], dtype=np.int32)},
+                  rank=1)])])
+    document, binary = unpack(to_bytes(frame))
+    assert len(binary) % 8 == 0 and document["buffers"][0]["byteLength"] == len(binary)
+
+
 def test_column_types():
     columns = dict(id=np.arange(3, dtype=np.int64), f64=np.array([0.1, np.nan, -2.5e-300]),
                    infinite=np.array([np.inf, -np.inf, np.nan]), infinite32=np.array([1., np.inf, -np.inf], dtype=np.float32),
