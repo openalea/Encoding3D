@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- GroIMP's fspm-TF plugin: the 3D view of a GroIMP project exported as an fspm-TF frame (.glb): the graph's scales,
+     topology and fields (GroImp, bindings/java/groimp), and the scene's geometry, each triangle with its node (meshed by
+     GroIMP's glTF plugin, which it requires).
+
+       mvn -f bindings/java/pom.xml install && mvn -f bindings/java/groimp/pom.xml install
+       mvn -f bindings/java/groimp-plugin/pom.xml package          the plugin's folder: target/plugin/fspmTF
+     (GroIMP's modules 3.0.0 and its glTF plugin 0.5 in the local repository; see test/run_in_groimp.sh)
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>org.openalea</groupId>
+  <artifactId>fspm-tf-groimp-plugin</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+  <name>fspm-TF, GroIMP's plugin</name>
+  <licenses>
+    <license>
+      <name>GPL-3.0-or-later</name>
+      <url>https://www.gnu.org/licenses/gpl-3.0.txt</url>
+    </license>
+  </licenses>
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <groimp.version>3.0.0</groimp.version>
+  </properties>
+
+  <repositories>
+    <repository>
+      <id>gitlab-maven</id>
+      <url>https://gitlab.com/api/v4/groups/55048746/-/packages/maven</url>
+    </repository>
+  </repositories>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.openalea</groupId>
+      <artifactId>fspm-tf-groimp</artifactId>
+      <version>0.1.0</version>
+    </dependency>
+    <dependency>
+      <groupId>de.grogra</groupId>
+      <artifactId>gltf</artifactId>
+      <version>0.5</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>de.javagl</groupId>
+      <artifactId>jgltf-model</artifactId>
+      <version>2.0.4</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>de.grogra</groupId>
+      <artifactId>imp3d</artifactId>
+      <version>${groimp.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>de.grogra</groupId>
+      <artifactId>platform.core</artifactId>
+      <version>${groimp.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>de.grogra</groupId>
+      <artifactId>platform</artifactId>
+      <version>${groimp.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>de.grogra</groupId>
+      <artifactId>graph</artifactId>
+      <version>${groimp.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>de.grogra</groupId>
+      <artifactId>vecmath</artifactId>
+      <version>${groimp.version}</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>fspmTF</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+      </plugin>
+      <plugin>
+        <!-- the plugin's folder, as GroIMP installs plugins: plugin.xml and the jar, the libraries in ext/ (GroIMP's
+             glTF plugin brings jgltf and Jackson) -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.8.1</version>
+        <executions>
+          <execution>
+            <id>libraries</id>
+            <phase>package</phase>
+            <goals><goal>copy-dependencies</goal></goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/plugin/fspmTF/ext</outputDirectory>
+              <includeScope>runtime</includeScope>
+              <excludeGroupIds>com.fasterxml.jackson.core</excludeGroupIds>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>folder</id>
+            <phase>package</phase>
+            <goals><goal>run</goal></goals>
+            <configuration>
+              <target>
+                <copy file="${project.build.directory}/fspmTF.jar" todir="${project.build.directory}/plugin/fspmTF"/>
+                <copy todir="${project.build.directory}/plugin/fspmTF">
+                  <fileset dir="${project.basedir}/src/main/resources" includes="plugin.xml,plugin.properties"/>
+                </copy>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -4,7 +4,7 @@
      GroIMP plugin (devplan_bindings.md, G4).
 
        mvn -f bindings/java/pom.xml install && mvn -f bindings/java/groimp/pom.xml verify
-     (GroIMP's graph, utilities and xl.core 3.0.0 in the local repository: mvn -pl Graph -am install in GroIMP)
+     (GroIMP's graph, utilities and xl.core 3.0.0: from GroIMP's package registry)
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -28,6 +28,13 @@
     <groimp.version>3.0.0</groimp.version>
     <junit.version>5.11.4</junit.version>
   </properties>
+
+  <repositories>
+    <repository>
+      <id>gitlab-maven</id>        <!-- GroIMP's modules (graph, utilities, xl.core 3.0.0) -->
+      <url>https://gitlab.com/api/v4/groups/55048746/-/packages/maven</url>
+    </repository>
+  </repositories>
 
   <dependencies>
     <dependency>

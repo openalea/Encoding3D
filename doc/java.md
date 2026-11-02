@@ -53,5 +53,20 @@ that other classes of the same scale lack is missing in their rows.
 successor and branch edges, and edge bits. It does this for any graph, e.g. metafspm's Plant, Axis and SubOrgan
 become three scales linked by refinement edges.
 
-The adapter depends on GroIMP's Graph module only. It is meant to become a GroIMP plugin: an export filter with the
-scene's geometry, and an import filter.
+The adapter depends on GroIMP's Graph module only.
+
+## GroIMP's plugin
+
+`bindings/java/groimp-plugin/` is a GroIMP 3.0 plugin. In GroIMP, **File > Export** of the 3D view to a `.glb` file
+writes the project as an fspm-TF frame, and the CLI's `export3d plant.glb` does the same headless:
+
+- the graph, by the adapter above;
+- the scene's geometry as one mesh, each triangle carrying the rows of its node and of its complexes (an instance's
+  geometry: the node instantiating it).
+
+GroIMP's glTF plugin, which it requires, meshes the shapes: cylinders, boxes, spheres, cones, frusta, planes,
+parallelograms, NURBS, meshes and polygons. Its folder (`target/plugin/fspmTF`) is copied into GroIMP's `plugins/`.
+`test/run_in_groimp.sh` installs both plugins in GroIMP 3.0.0, grows GroIMP's `simpleRapeseed` example headless and
+exports it (456,900 vertices, each with its node), then checks the frame; CI runs it.
+
+Not done yet: an import filter (frames into a GroIMP project), and units for GroIMP's fields, which have none.

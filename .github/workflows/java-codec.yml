@@ -10,7 +10,8 @@ on:
   pull_request:
 
 env:
-  GROIMP_COMMIT: 6c5bbdef616f799c2eadec1097e1a312e43f308d
+  GROIMP_DEB_SHA256: b9b35811ff82482dfa676347639e40fe9601c92105f54095361a9a89f7e85dcf
+  GLTF_COMMIT: d093aaebe5197317dfb81fadbe0ef67268bdaf1c
 
 jobs:
   test:
@@ -57,12 +58,7 @@ jobs:
           distribution: temurin
           java-version: "21"
           cache: maven
-      - name: GroIMP's Graph module
-        run: |
-          git clone --quiet https://gitlab.com/grogra/groimp.git groimp
-          git -C groimp checkout --quiet "$GROIMP_COMMIT"
-          mvn -B -q -f groimp/pom.xml -pl Graph -am install -DskipTests -Dmaven.javadoc.skip=true
-      - name: The codec and the adapter
+      - name: The codec and the adapter (GroIMP's modules from its package registry)
         run: |
           mvn -B -q -f bindings/java/pom.xml install -DskipTests
           mvn -B -f bindings/java/groimp/pom.xml verify
@@ -70,3 +66,41 @@ jobs:
         run: |
           python -m pip install numpy jsonschema .
           fspm-tf validate bindings/java/groimp/target/groimp_out/*.glb
+
+  # The plugin in GroIMP itself, headless: GroIMP 3.0.0's release, its glTF plugin (a pinned commit, which meshes the
+  # shapes), an example grown and its 3D view exported as an fspm-TF frame
+  groimp-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: GroIMP 3.0.0
+        run: |
+          curl -sSL -o groimp.deb https://download.grogra.de/3_0_0/GroIMP-3.0.0-all.deb
+          echo "$GROIMP_DEB_SHA256  groimp.deb" | sha256sum -c
+          dpkg-deb -x groimp.deb groimp-install
+      - name: GroIMP's glTF plugin
+        run: |
+          git clone --quiet https://gitlab.com/grogra/groimp-plugins/gltf.git gltf
+          git -C gltf checkout --quiet "$GLTF_COMMIT"
+          mvn -B -q -f gltf/pom.xml install -DskipTests -Dmaven.javadoc.skip=true -Dgroimp.core.version=3.0.0
+          mkdir -p gltf-plugin/ext
+          cp gltf/target/gltf.jar gltf/src/main/resources/plugin.xml gltf/src/main/resources/plugin*.properties gltf-plugin/
+          cp gltf/target/lib/ext/*.jar gltf-plugin/ext/
+      - name: The codec, the adapter and the plugin
+        run: |
+          mvn -B -q -f bindings/java/pom.xml install -DskipTests
+          mvn -B -q -f bindings/java/groimp/pom.xml install -DskipTests
+          mvn -B -f bindings/java/groimp-plugin/pom.xml package
+      - name: Grown and exported in GroIMP, checked
+        run: |
+          python -m pip install numpy jsonschema .
+          bash bindings/java/groimp-plugin/test/run_in_groimp.sh groimp-install/usr/share/GroIMP gltf-plugin \
+               bindings/java/groimp-plugin/target/plugin/fspmTF out

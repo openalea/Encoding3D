@@ -30,6 +30,9 @@
 - The Java codec (`bindings/java/`): conformant reading and writing, sequences; GroIMP's adapter (`bindings/java/groimp/`:
   scales from refinement edges, topology, edge bits as relations, managed fields; graphs back into the model's node
   classes); its CI, `.github/workflows/java-codec.yml`.
+- GroIMP's plugin (`bindings/java/groimp-plugin/`): the 3D view exported as an fspm-TF frame from GroIMP 3.0 (File >
+  Export, CLI `export3d`), its geometry meshed by GroIMP's glTF plugin, each triangle with its node; tested headless in
+  GroIMP 3.0.0 in CI.
 - FspmTF.jl: VirtualPlantLab's graphs (PlantGraphs: `from_graph`, `to_graph`) and their turtle geometry
   (PlantGeomTurtle: `add_geometry!`), as package extensions.
 - FspmTF.jl: MTGs from graphs with ids from 0 or sparse (numbered 1, 2, ..., ids kept in `fspm_tf_id`), and parents

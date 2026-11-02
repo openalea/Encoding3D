@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- GroIMP's fspm-TF plugin: File > Export (or the CLI's export3d) to a .glb file writes the 3D view as an fspm-TF frame.
+     The shapes are meshed by GroIMP's glTF plugin (de.grogra.gltf), each mesh with its node. -->
+<plugin
+	id="org.openalea.fspmtf"
+	version="0.1.0"
+	xmlns="http://grogra.de/registry">
+
+	<!-- the codec and GroIMP's adapter (fspm-tf, fspm-tf-groimp) are in ext/, loaded by GroIMP as extensions -->
+	<library file="fspmTF.jar" prefixes="{org.openalea.fspmtf.groimp.plugin}" />
+
+	<import plugin="de.grogra.imp3d" />
+	<import plugin="de.grogra.rgg" />
+	<import plugin="de.grogra.gltf" />
+	<registry>
+		<ref name="io">
+			<ref name="filetypes">
+				<ext name="fspmTF" extensions="{.glb}" mimeType="model/fspm-tf" />
+			</ref>
+			<ref name="mimetypes">
+				<ref name="application/x-java-jvm-local-objectref">
+					<filter name="fspmTFExport"
+						inputClass="de.grogra.imp3d.View3D"
+						output="model/fspm-tf; io=fwriter"
+						create="org.openalea.fspmtf.groimp.plugin.FspmTfExport">
+						<eval name="de.grogra.imp3d.objects.Box"
+							create="de.grogra.gltf.exporter.objects.Box" />
+						<eval name="de.grogra.imp3d.objects.Cylinder"
+							create="de.grogra.gltf.exporter.objects.Cylinder" />
+						<eval name="de.grogra.imp3d.objects.Sphere"
+							create="de.grogra.gltf.exporter.objects.Sphere" />
+						<eval name="de.grogra.turtle.Translate"
+							create="de.grogra.gltf.exporter.objects.Translate" />
+						<eval name="de.grogra.imp3d.objects.Parallelogram"
+							create="de.grogra.gltf.exporter.objects.Parallelogram" />
+						<eval name="de.grogra.imp3d.objects.Cone"
+							create="de.grogra.gltf.exporter.objects.Cone" />
+						<eval name="de.grogra.imp3d.objects.Frustum"
+							create="de.grogra.gltf.exporter.objects.Frustum" />
+						<eval name="de.grogra.imp3d.objects.Plane"
+							create="de.grogra.gltf.exporter.objects.Plane" />
+						<eval name="de.grogra.imp3d.objects.MeshNode"
+							create="de.grogra.gltf.exporter.objects.Polygonizable" />
+						<eval name="de.grogra.imp3d.objects.NURBSSurface"
+							create="de.grogra.gltf.exporter.objects.Polygonizable" />
+						<eval name="de.grogra.imp3d.objects.Patch"
+							create="de.grogra.gltf.exporter.objects.Polygonizable" />
+						<eval name="de.grogra.imp3d.objects.Polygon"
+							create="de.grogra.gltf.exporter.objects.Polygonizable" />
+						<eval name="de.grogra.graph.impl.Node"
+							create="de.grogra.gltf.exporter.objects.Node" />
+					</filter>
+				</ref>
+			</ref>
+		</ref>
+	</registry>
+</plugin>
