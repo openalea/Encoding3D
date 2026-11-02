@@ -3,8 +3,8 @@ A frame as plain JSON values: every table's columns as lists, declarations, grid
 conformance files' expected values (``*.expected.json``) are written with it, so that a reader in any language can
 compare what it reads with them::
 
-    frame_to_dict(frame) -> dict        NaN as null, ±∞ as "Infinity" / "-Infinity"; floats as the shortest decimal
-                                        giving the same double
+    frame_to_dict(frame) -> dict        NaN and missing values as null, ±∞ as "Infinity" / "-Infinity"; floats as
+                                        the shortest decimal giving the same double
 """
 import math
 
@@ -26,6 +26,12 @@ def _value(value):
 
 
 def _column(values: np.ndarray):
+    if np.ma.isMaskedArray(values):                      # missing values: null
+        missing = np.ma.getmaskarray(values)
+        if values.ndim == 2:
+            return [[None if gone else _value(item) for item, gone in zip(row, row_missing)]
+                    for row, row_missing in zip(values.data, missing)]
+        return [None if gone else _value(item) for item, gone in zip(values.data, missing)]
     if values.ndim == 2:
         return [[_value(item) for item in row] for row in values]
     return [_value(item) for item in values]
@@ -44,6 +50,8 @@ def _table(table: Table) -> dict:
         for key in ("references", "doi"):
             if getattr(variable, key):
                 declaration[key] = list(getattr(variable, key))
+        if variable.format is not None:
+            declaration["format"] = variable.format
         declarations[name] = declaration
     if declarations:
         entry["variables"] = declarations
@@ -55,13 +63,16 @@ def frame_to_dict(frame: Frame) -> dict:
     for data_structure in frame.data_structures:
         entry = {"id": data_structure.id, "kind": data_structure.kind,
                  "origin": data_structure.origin.tolist(),
-                 "entity_sets": [dict(_table(entity_set), rank=entity_set.rank)
+                 "entity_sets": [dict(_table(entity_set), rank=entity_set.rank,
+                                      **({"scale": entity_set.scale} if entity_set.scale is not None else {}))
                                  for entity_set in data_structure.entity_sets]}
         for key in ("platform", "model"):
             if getattr(data_structure, key) is not None:
                 entry[key] = getattr(data_structure, key)
         if data_structure.extras:
             entry["extras"] = data_structure.extras
+        if data_structure.labels:
+            entry["labels"] = dict(data_structure.labels)
         if data_structure.relations:
             entry["relations"] = [dict(_table(relation), source_set=relation.source_set,
                                        target_set=relation.target_set) for relation in data_structure.relations]

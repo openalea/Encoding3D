@@ -10,6 +10,7 @@ Tables are EXT_structural_metadata property tables (one class per table), meshes
 IDs, and the FSPM_scene root extension holds what these two cannot: data structures, entity sets and their ranks,
 relations, grids, mappings, the frame's time, and the variables' units, standard names, kinds and roles.
 """
+import itertools
 import json
 import os
 import re
@@ -80,10 +81,13 @@ def to_bytes(frame: Frame) -> bytes:
             if getattr(data_structure, key) is not None:
                 entry[key] = getattr(data_structure, key)
         entry["origin"] = data_structure.origin.T.reshape(-1).tolist()      # column-major, as glTF matrices
-        entry["entitySets"] = [
-            {"name": entity_set.name, "rank": entity_set.rank,
-             "propertyTable": add_table(entity_set, f"{data_structure.id}__{entity_set.name}")}
-            for entity_set in data_structure.entity_sets]
+        entry["entitySets"] = []
+        for entity_set in data_structure.entity_sets:
+            set_entry = {"name": entity_set.name, "rank": entity_set.rank}
+            if entity_set.scale is not None:
+                set_entry["scale"] = entity_set.scale
+            set_entry["propertyTable"] = add_table(entity_set, f"{data_structure.id}__{entity_set.name}")
+            entry["entitySets"].append(set_entry)
         if data_structure.relations:
             entry["relations"] = [
                 {"name": relation.name, "sourceSet": relation.source_set, "targetSet": relation.target_set,
@@ -93,6 +97,8 @@ def to_bytes(frame: Frame) -> bytes:
             entry["scalars"] = add_table(data_structure.scalars, f"{data_structure.id}__scalars")
         if data_structure.grid is not None:
             entry["grid"] = _grid_json(data_structure.grid)
+        if data_structure.labels:
+            entry["labels"] = dict(data_structure.labels)
         if data_structure.extras:
             entry["extras"] = data_structure.extras
         node = {"name": data_structure.id}
@@ -174,6 +180,8 @@ def _declaration_json(variable: Variable) -> dict:
     for key in ("references", "doi"):
         if getattr(variable, key):
             declaration[key] = list(getattr(variable, key))
+    if variable.format is not None:
+        declaration["format"] = variable.format
     return declaration
 
 
@@ -192,6 +200,10 @@ def _encode_table(table: Table, class_id: str, buffers: BufferBuilder, schema: d
             values[name] = {"values": buffers.add(codes)}
         elif column.dtype == object:
             prop["type"] = "STRING"
+            if any(value is None for value in column):           # missing text: noData, a string the column lacks
+                no_data = _free_string(column)
+                prop["noData"] = no_data
+                column = np.array([no_data if value is None else value for value in column], dtype=object)
             encoded = [value.encode("utf-8") for value in column]
             offsets = np.concatenate([[0], np.cumsum([len(value) for value in encoded])])
             offset_type = "UINT32" if offsets[-1] < 2 ** 32 else "UINT64"
@@ -201,8 +213,15 @@ def _encode_table(table: Table, class_id: str, buffers: BufferBuilder, schema: d
         elif column.dtype == bool:
             if column.ndim != 1:
                 raise ValueError(f"column '{name}' of '{table.name}': boolean vectors are not supported")
-            prop["type"] = "BOOLEAN"
-            values[name] = {"values": buffers.add(np.packbits(column, bitorder="little"))}
+            if np.ma.isMaskedArray(column):                      # booleans with missing values: UINT8 0, 1, 255
+                prop.update(type="SCALAR", componentType="UINT8", noData=BOOLEAN_NO_DATA,
+                            extras={"FSPM_boolean": True})
+                stored = np.where(np.ma.getmaskarray(column), BOOLEAN_NO_DATA,
+                                  np.asarray(column.data, dtype=np.uint8)).astype(np.uint8)
+                values[name] = {"values": buffers.add(stored)}
+            else:
+                prop["type"] = "BOOLEAN"
+                values[name] = {"values": buffers.add(np.packbits(column, bitorder="little"))}
         else:
             if column.dtype not in COMPONENT_TYPES:
                 raise TypeError(f"column '{name}' of '{table.name}': dtype {column.dtype} is not supported")
@@ -231,11 +250,41 @@ def _encode_table(table: Table, class_id: str, buffers: BufferBuilder, schema: d
                     data = np.where(np.isnan(column), no_data, column).astype(column.dtype)
             elif name in ("complex", "parent") and name in table.reserved:
                 prop["noData"] = NO_ID
-            values[name] = {"values": buffers.add(data)}
+            elif np.ma.isMaskedArray(column):                    # missing integers: noData, a value the column lacks
+                no_data = _free_integer(column)
+                prop["noData"] = no_data
+                data = np.where(np.ma.getmaskarray(column), no_data, np.asarray(column.data)).astype(column.dtype)
+            values[name] = {"values": buffers.add(np.asarray(data))}
         if name == "id" and name in table.reserved and table.table_kind == "entity_set":
             prop["required"] = True
         properties[name] = prop
     return properties, values
+
+
+BOOLEAN_NO_DATA = 255                           # a boolean column with missing values: UINT8 0, 1, and 255 missing
+
+
+def _free_integer(column: np.ndarray) -> int:
+    """A value of the column's integer type that it does not hold: its minimum (signed) or maximum (unsigned) first."""
+    info = np.iinfo(column.dtype)
+    present = set(np.asarray(column.compressed() if np.ma.isMaskedArray(column) else column).reshape(-1).tolist())
+    first, second = (info.min, info.max) if info.min < 0 else (info.max, info.min)
+    for candidate in (first, second):
+        if candidate not in present:
+            return int(candidate)
+    step = 1 if info.min < 0 else -1                     # then inwards from the first: at most len(present) tries
+    for candidate in itertools.count(first + step, step):
+        if candidate not in present:
+            return int(candidate)
+
+
+def _free_string(column: np.ndarray) -> str:
+    """A string the column does not hold: the empty string first, then NUL characters."""
+    present = {value for value in column if value is not None}
+    candidate = ""
+    while candidate in present:
+        candidate += "\0"
+    return candidate
 
 
 def _enum_codes(name: str, column: np.ndarray, class_id: str, schema: dict) -> tuple:
@@ -335,9 +384,10 @@ def from_bytes(data: bytes) -> Frame:
     for entry in scene.get("dataStructures", []):
         data_structure = DataStructure(
             id=entry["id"], kind=entry.get("kind", "graph"), platform=entry.get("platform"),
-            model=entry.get("model"), extras=entry.get("extras", {}),
+            model=entry.get("model"), extras=entry.get("extras", {}), labels=entry.get("labels", {}),
             origin=np.asarray(entry.get("origin", np.eye(4).reshape(-1)), dtype=float).reshape(4, 4).T)
-        data_structure.entity_sets = [table(item["propertyTable"], EntitySet, rank=item.get("rank"))
+        data_structure.entity_sets = [table(item["propertyTable"], EntitySet, rank=item.get("rank"),
+                                            scale=item.get("scale"))
                                       for item in entry.get("entitySets", [])]
         data_structure.relations = [table(item["propertyTable"], Relation, source_set=item["sourceSet"],
                                           target_set=item["targetSet"]) for item in entry.get("relations", [])]
@@ -391,6 +441,8 @@ def _decode_table(document: dict, binary: bytes, description: dict, schema: dict
             offsets = np.frombuffer(view_bytes(document, binary, stored["stringOffsets"]), dtype=offset_type,
                                     count=count + 1)
             column = np.array([raw[offsets[i]:offsets[i + 1]].decode("utf-8") for i in range(count)], dtype=object)
+            if "noData" in prop:                                 # missing text
+                column = np.array([None if value == prop["noData"] else value for value in column], dtype=object)
         elif prop["type"] == "BOOLEAN":
             column = np.unpackbits(np.frombuffer(raw, dtype=np.uint8), bitorder="little", count=count).astype(bool)
         elif prop["type"] == "SCALAR":
@@ -408,6 +460,13 @@ def _decode_table(document: dict, binary: bytes, description: dict, schema: dict
                 column = np.where(column == np.asarray(infinity["positive"], dtype=dtype), np.inf,
                                   np.where(column == np.asarray(infinity["negative"], dtype=dtype), -np.inf, column)
                                   ).astype(dtype)
+            if prop.get("extras", {}).get("FSPM_boolean"):         # booleans with missing values
+                missing = column == prop.get("noData", BOOLEAN_NO_DATA)
+                column = np.ma.MaskedArray(column == 1, mask=missing) if missing.any() else column == 1
+            elif dtype.kind in "iu" and "noData" in prop and name not in ("complex", "parent"):   # missing integers
+                missing = column == prop["noData"]
+                if missing.any():
+                    column = np.ma.MaskedArray(column, mask=missing)
         else:
             raise ValueError(f"'{class_id}.{name}': property type {prop['type']} is not part of fspm-TF 0.1")
         columns[name] = column
@@ -418,7 +477,8 @@ def _decode_table(document: dict, binary: bytes, description: dict, schema: dict
                 unit=declared.get("unit", "1"), standard_name=declared.get("standardName"),
                 kind=declared.get("kind"), role=declared.get("role", "state"), description=prop.get("description"),
                 minimum=declared.get("minimum"), maximum=declared.get("maximum"),
-                references=tuple(declared.get("references", ())), doi=tuple(declared.get("doi", ())))
+                references=tuple(declared.get("references", ())), doi=tuple(declared.get("doi", ())),
+                format=declared.get("format"))
     return columns, declarations
 
 

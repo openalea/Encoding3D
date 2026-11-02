@@ -12,6 +12,9 @@ The fspm-TF data model in Python: plain dataclasses holding numpy columns::
 
 Every table holds columns of equal length (its rows), and declarations (Variable) for its variables. The columns
 reserved by the specification (RESERVED) are the structure: ids, the MTG relations, a relation's or a mapping's ends.
+
+Missing values: NaN in float columns; elsewhere a numpy masked array (np.ma, the masked rows missing) for integers and
+booleans, None in a text column.
 """
 from dataclasses import dataclass, field
 from typing import Optional
@@ -22,13 +25,16 @@ NO_ID = -1                                      # complex / parent / feature row
 
 # Columns whose meaning the specification fixes, per kind of table
 RESERVED = {
-    "entity_set": ("id", "label", "complex", "parent", "edge_type", "level", "index"),
+    "entity_set": ("id", "label", "complex", "parent", "edge_type", "level", "index", "order"),
     "relation": ("id", "source", "target", "relation"),
     "mapping": ("source", "target", "weight"),
     "scalars": (),
 }
-ID_COLUMNS = ("id", "complex", "parent", "source", "target", "level", "index")   # reserved columns of ids, int64
-EDGE_TYPES = ("none", "successor", "branch")    # MTG: root of its scale, '<', '+'
+ID_COLUMNS = ("id", "complex", "parent", "source", "target", "level", "index", "order")   # reserved, int64
+EDGE_TYPES = ("none", "successor", "branch", "unknown")    # MTG: root of its scale, '<', '+'; a link not known
+BASE_SCALES = ("Plant", "Axis", "GrowthUnit", "Phytomer", "Organ", "SubOrgan", "Layer", "Cell", "Compartment",
+               "Connection")                    # an entity set's scale: one of these, or "mixed"
+FORMATS = ("date", "date-time", "time")         # a text variable holding ISO 8601 dates or times
 ENUM_COLUMNS = ("label", "edge_type", "relation")
 DATA_STRUCTURE_KINDS = ("graph", "regular_grid", "adaptive_grid", "table")
 ROLES = ("state", "input", "parameter", "derived", "setting")
@@ -37,7 +43,8 @@ ROLES = ("state", "input", "parameter", "derived", "setting")
 @dataclass
 class Variable:
     """The declaration of a variable (a column): its unit (a UCUM code), its standard name in the vocabulary, its
-    kind (extensive, intensive, ...: how it maps between scales and grids), its role and its provenance."""
+    kind (extensive, intensive, ...: how it maps between scales and grids), its role and its provenance; the format
+    of a text column holding dates or times ("date", "date-time", "time")."""
     unit: str = "1"
     standard_name: Optional[str] = None
     kind: Optional[str] = None
@@ -47,6 +54,7 @@ class Variable:
     maximum: Optional[float] = None
     references: tuple = ()
     doi: tuple = ()
+    format: Optional[str] = None
 
 
 @dataclass
@@ -64,6 +72,8 @@ class Table:
         for name in set(self.columns) & set(ID_COLUMNS) & set(self.reserved):    # ids are int64, whatever the platform's
             if self.columns[name].dtype.kind in "iu":                            # default integer
                 self.columns[name] = self.columns[name].astype(np.int64)
+            if np.ma.isMaskedArray(self.columns[name]):
+                raise ValueError(f"table '{self.name}': the reserved column '{name}' has no missing values")
         counts = {name: len(values) for name, values in self.columns.items()}
         if len(set(counts.values())) > 1:
             raise ValueError(f"table '{self.name}': columns of different lengths {counts}")
@@ -88,8 +98,11 @@ class EntitySet(Table):
     """The entities of one scale of a graph (rank: the scale's rank, coarser first), or a grid's cells (rank None).
     Columns: id (int64, stable across frames, never reused), label (str), complex (the id of the containing entity
     at the coarser scale, NO_ID if none), parent (the predecessor's id at the same scale, NO_ID if none), edge_type
-    (str: 'none', 'successor', 'branch'); an adaptive grid's cells: level and index; then the variables."""
+    (str: 'none', 'successor', 'branch', 'unknown'); order (int64, optional: its position among its tree parent's
+    children); an adaptive grid's cells: level and index; then the variables. *scale*: its base scale
+    (BASE_SCALES), or "mixed"."""
     rank: Optional[int] = None
+    scale: Optional[str] = None
 
     table_kind = "entity_set"
 
@@ -154,7 +167,7 @@ class Mesh:
 class DataStructure:
     """One plant population's graph, or one environment model's grid. *origin*: its frame in the scene (4×4).
     *extras*: JSON values for the writing platform (e.g. what it needs to rebuild its own data structure); other
-    readers keep them without interpreting them."""
+    readers keep them without interpreting them. *labels*: {the platform's label: the vocabulary's label}."""
     id: str
     kind: str = "graph"
     entity_sets: list = field(default_factory=list)
@@ -166,6 +179,7 @@ class DataStructure:
     platform: Optional[str] = None
     model: Optional[str] = None
     extras: dict = field(default_factory=dict)
+    labels: dict = field(default_factory=dict)
 
     def __post_init__(self):
         self.origin = np.asarray(self.origin, dtype=np.float64).reshape(4, 4)
@@ -209,13 +223,18 @@ class Frame:
 
 
 def _as_column(name: str, values) -> np.ndarray:
-    array = np.asarray(values)
+    if np.ma.isMaskedArray(values):                     # integers or booleans with missing values
+        array = values if np.ma.getmaskarray(values).any() else np.asarray(values.data)
+    else:
+        array = np.asarray(values)
     if array.ndim == 0:
         array = array.reshape(1)
     if array.dtype.kind in "OU":
-        if not all(isinstance(value, str) for value in array.reshape(-1)):
-            raise TypeError(f"column '{name}': object columns must hold strings")
+        if not all(isinstance(value, str) or value is None for value in array.reshape(-1)):
+            raise TypeError(f"column '{name}': object columns must hold strings (None: missing)")
         array = array.astype(object)
+    elif np.ma.isMaskedArray(array) and array.dtype.kind == "f":
+        array = array.filled(np.nan)                     # missing floats are NaN
     if array.ndim > 2:
         raise ValueError(f"column '{name}': one value or one vector per row (got shape {array.shape})")
     return array

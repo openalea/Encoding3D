@@ -1,6 +1,6 @@
-# fspm-TF 0.1 specification
+# fspm-TF 0.2 specification
 
-Status: draft (2026-10-29). The key words MUST, SHOULD and MAY are to be read as in RFC 2119.
+Status: draft (2026-11-02). 0.2 adds to 0.1 (see "Changes from 0.1" at the end); a 0.1 file is a valid 0.2 file. The key words MUST, SHOULD and MAY are to be read as in RFC 2119 (https://www.rfc-editor.org/rfc/rfc2119).
 
 fspm-TF is an exchange format for whole functional-structural plant model scenes: multiscale plant graphs, their
 variables and parameters, their geometry, and the environment's grids, at successive time steps. A **frame** (one
@@ -15,7 +15,16 @@ The language-neutral files of this version are part of the specification:
 | `spec/vocabulary/standard_names.csv` | the standard names, their canonical units and kinds, and each platform's names for them (§6) |
 | `spec/vocabulary/labels.csv` | entity labels, their scales and Plant Ontology terms (§6) |
 | `spec/vocabulary/enums.json` | the values of `edge_type`, `kind`, `role`, data structure and grid kinds; the base scales |
-| `conformance/` | reference files and their expected values (§9) |
+| `conformance/` | reference files and their expected values (§9): the specification as test cases |
+
+When these sources disagree, `specification.md` prevails, then the schemas, then the conformance files; the
+disagreement is a defect of the lower one, to be fixed.
+
+The format builds on glTF 2.0 (https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html) and two of its
+extensions: `EXT_structural_metadata` for tables
+(https://github.com/CesiumGS/glTF/tree/3d-tiles-next/extensions/2.0/Vendor/EXT_structural_metadata) and
+`EXT_mesh_features` for feature IDs
+(https://github.com/CesiumGS/glTF/tree/3d-tiles-next/extensions/2.0/Vendor/EXT_mesh_features).
 
 ## 1. The data model
 
@@ -32,11 +41,21 @@ The language-neutral files of this version are part of the specification:
 
   Its `origin` is a 4×4 matrix placing its coordinates in the scene's frame.
 - **The scene's frame** is right-handed, in metres, with **z up**: z = 0 at the soil surface, negative below it.
-  Every position (meshes, the segment ends of the vocabulary's `proximal_end_*` and `distal_end_*`, grid origins and
-  spacings) is in metres. A platform with other axes or units (e.g. y up, or centimetres) converts its coordinates, or
-  puts the conversion in the data structure's origin.
+  Meshes, grid origins and grid spacings are in metres. Position columns (e.g. the vocabulary's `proximal_end_*` and
+  `distal_end_*`) keep the platform's length unit, declared like any variable's (§5), so that values stay at the
+  platform's precision; readers convert them with their declared unit. A platform with other axes (e.g. y up) puts
+  the rotation in the data structure's origin.
 - An **entity set** is a table: one row per entity, one column per variable. A graph has one entity set per scale,
   with that scale's `rank` (coarser scales have smaller ranks). A grid's cells form one entity set, with no rank.
+  - An entity set MAY declare its `scale`: one of the vocabulary's base scales (`enums.json`: Plant, Axis,
+    GrowthUnit, Phytomer, Organ, SubOrgan, Layer, Cell, Compartment, Connection), or `mixed` when its rows belong to
+    several base scales (e.g. CPlantBox's organs: whole root axes and leaves).
+  - The `rank` SHOULD be the position of the set's base scale in that list, from 1 (Plant 1, Axis 2, Organ 5,
+    SubOrgan 6), when it has one. Readers MUST NOT assume consecutive ranks.
+  - Platforms have different scales. A reader SHOULD find the tables it needs by what they hold (standard names, and
+    the `complex` chain between sets), not by their names. For example, the segments are the set holding segment
+    ends, and their organs are the set their `complex` points to. Writers SHOULD declare the standard names of
+    positions, lengths and radii.
 - A **relation** is an edge table between two entity sets of the same data structure. Examples: a cell network, or
   connections between compartments.
 - The **scalars** are a one-row table of values for the whole data structure.
@@ -51,9 +70,11 @@ A frame holding only data structures with parameters, and no geometry, is a **pa
 
 A frame MUST be a GLB file (glTF 2.0 binary):
 
-1. All buffer views MUST be in the GLB's binary chunk. No external `.bin` files and no data URIs are allowed in 0.1.
+1. All buffer views MUST be in the GLB's binary chunk. No external `.bin` files and no data URIs are allowed in 0.2.
 2. Every buffer view holding table values MUST start at a multiple of 8 bytes. The JSON chunk MUST be padded with
-   spaces and the binary chunk with zeros to 8 bytes, as `EXT_structural_metadata` requires.
+   spaces and the binary chunk with zeros to 8 bytes, as `EXT_structural_metadata` requires. The buffer's
+   `byteLength` SHOULD be the binary chunk's padded length (glTF-Validator warns of more than 3 bytes of padding
+   beyond the buffer).
 3. `extensionsUsed` MUST list `FSPM_scene` and `EXT_structural_metadata`, plus `EXT_mesh_features` when there are
    meshes. `FSPM_scene` SHOULD NOT be listed in `extensionsRequired`, so that every glTF viewer opens the file.
 4. The glTF scene's root node, `fspm_scene`, turns the scene's frame (z up) into glTF's (y up), so that glTF viewers
@@ -70,14 +91,16 @@ The glTF root's `extensions.FSPM_scene` MUST follow `fspm_scene.schema.json`:
 
 ```text
 {
- "version": "0.1",
- "vocabulary": "0.1",
+ "version": "0.2",
+ "vocabulary": "0.2",
  "frame": {"time": 1.0, "timeUnit": "d", "step": 24},
  "writer": {"platform": "...", "model": "..."},
  "dataStructures": [{
    "id": "plants", "kind": "graph", "platform": "...", "model": "...",
    "origin": [16 numbers, column-major], "node": 0,
-   "entitySets": [{"name": "Plant", "rank": 1, "propertyTable": 0}, {"name": "SubOrgan", "rank": 6, "propertyTable": 1}],
+   "entitySets": [{"name": "Plant", "rank": 1, "scale": "Plant", "propertyTable": 0},
+                  {"name": "SubOrgan", "rank": 6, "scale": "SubOrgan", "propertyTable": 1}],
+   "labels": {"Internode": "StemInternode"},
    "relations": [{"name": "Connection", "sourceSet": "Cell", "targetSet": "Cell", "propertyTable": 2}],
    "scalars": 3,
    "grid": {"kind": "regular", "shape": [..], "origin": [..], "spacing": [..], "axes": [..], "periodic": [..],
@@ -88,16 +111,21 @@ The glTF root's `extensions.FSPM_scene` MUST follow `fspm_scene.schema.json`:
  "mappings": [{"name": "roots_in_soil", "source": {"dataStructure": "plants", "entitySet": "SubOrgan"},
                "target": {"dataStructure": "soil", "entitySet": "Voxel"}, "method": "overlap", "propertyTable": 4}],
  "variables": {"<class id>": {"<column>": {"unit": "m", "standardName": "length", "kind": "extensive",
-                                            "role": "state", "minimum": 0, "references": [], "doi": []}}}
+                                            "role": "state", "minimum": 0, "references": [], "doi": [],
+                                            "format": "date"}}}
 }
 ```
 
 - **Identifiers.** Data structure ids, entity set, relation and mapping names, and column names MUST be identifiers
-  (`^[a-zA-Z_][a-zA-Z0-9_]*$`). Within a frame, data structure ids are unique, and so are the names of a data
-  structure's entity sets.
+  (`^[a-zA-Z_][a-zA-Z0-9_]*$`). Within a frame, data structure ids are unique. Within a data structure, entity set
+  names are unique, and so are relation names.
+- **Labels.** A data structure MAY carry `labels`, a map from the labels it uses (e.g. a model's class names) to the
+  vocabulary's labels (§6). Readers looking for an entity of the vocabulary (e.g. the leaves) use it; the entities
+  keep the platform's labels.
 - **Extras.** A data structure MAY carry `extras`, a JSON object for the writing platform, e.g. what it needs to
-  rebuild its own data structure exactly. Its keys SHOULD be the platform's name. Other readers MUST NOT need it,
-  and SHOULD keep it.
+  rebuild its own data structure exactly. Its keys SHOULD be the platform's name as in the vocabulary's platform
+  columns, in lower case (`metafspm`, `cplantbox`, `groimp`, `virtualplantlab`). Other readers MUST NOT need it, and
+  SHOULD keep it.
 - **Property tables.** Every table of §1 is one `EXT_structural_metadata` property table of its own class, and no
   property table serves two tables. Writers SHOULD name the classes `<data structure>__<table>` (mappings:
   `mapping__<name>`). Readers MUST find tables through the `propertyTable` indices, not through class names.
@@ -116,11 +144,21 @@ A column is one property of the table's class:
 | text | `STRING` |
 | labels, edge types and relation labels | `ENUM` (§4.2) |
 
-- Variable-length arrays and the other glTF metadata types are not part of 0.1.
+- Variable-length arrays and the other glTF metadata types are not part of 0.2.
 - **NaN.** NaN and infinities are forbidden in property tables. A float column with missing values (NaN) declares
   `noData`: the most negative finite value of its type, −1.7976931348623157e308 for FLOAT64 or
   −3.4028234663852886e38 for FLOAT32, stored where the value is NaN. Readers MUST read `noData` back as NaN. A
   column cannot hold both NaN and that value.
+- **Missing values in other columns.** A variable column whose entities do not all have a value (e.g. a field that
+  only some of a platform's classes have) declares `noData`, and readers MUST read the rows holding it as missing:
+  - an integer column: a value of its type that the column does not hold; writers SHOULD use the type's minimum
+    (signed) or maximum (unsigned) when it is free;
+  - a text (`STRING`) column: a string the column does not hold; writers SHOULD use the empty string when it is free;
+  - booleans: `BOOLEAN` has no `noData`, so a boolean column with missing values is written as `UINT8` (0 false,
+    1 true) with `noData` 255, and its class property declares `"extras": {"FSPM_boolean": true}`. Readers read it as
+    booleans with missing values.
+
+  The reserved columns' `noData` (−1 in `complex` and `parent`) is not a missing value: it is the id of no entity.
 - **Infinities.** A float column holding +∞ or −∞ declares, in its class property's `extras`, `FSPM_infinity`:
   `{"positive": P, "negative": N}`, with P the largest finite value of its type (1.7976931348623157e308 for
   FLOAT64, 3.4028234663852886e38 for FLOAT32) and N the next value after the most negative one
@@ -140,7 +178,8 @@ These columns have fixed meanings, in the tables where they appear:
 | `label` | ENUM | the entity's label (§6) |
 | `complex` | INT64, `noData` −1 | the id of the entity containing it, in a coarser entity set of the graph (MTG decomposition `/`); usually the nearest coarser one, but e.g. a cell wall may belong to its segment directly |
 | `parent` | INT64, `noData` −1 | the id of its predecessor in the same entity set |
-| `edge_type` | ENUM `FSPM_edge_type` | how it follows its parent: `none` (no parent), `successor` (MTG `<`), `branch` (MTG `+`) |
+| `edge_type` | ENUM `FSPM_edge_type` | how it follows its parent: `none` (no parent), `successor` (MTG `<`), `branch` (MTG `+`), `unknown` (it has a parent, but the writer does not know how it follows it) |
+| `order` | INT64, optional | the entity's position, from 0, among the entities that share its parent in the writer's tree (its `parent`, else its bearer, else its `complex`), all entity sets together: for platforms that keep the order of children |
 | `level`, `index` | INT64; INT64 vector, one per dimension | an adaptive grid's leaf cell: its refinement level, and its integer index at that level |
 
 **Relations**
@@ -164,14 +203,20 @@ Rules on these columns:
   complex.
 - `parent` and `edge_type` go together. `edge_type` is `none` exactly where `parent` is −1. The parents MUST form no
   cycle.
+- `parent` MAY be in another complex than the entity's own: the first entity of a branch (e.g. a lateral root's
+  first segment, whose parent is a segment of the bearing root) usually is.
 - Every id referred to MUST exist in the entity set referred to.
 - `parent` links entities of the same scale. When an axis's first entity grows on an entity of another scale (in an
   MTG, a branch axis's first internode, linked to its bearer only through the axes), its `parent` is −1. Its bearer
   MAY be written as a relation named `bearer`, from the entity to the one it is borne on.
+  Its `relation` labels say how: `successor`, `branch` or `decomposition` (MTG `<`, `+`, or `/` to an entity that is
+  not its complex).
 - Other links between entities are relations, one per kind of link. A pair of entities linked in several ways (e.g. a
-  successor edge that is also a platform's own edge) appears in each of these relations.
+  successor edge that is also a platform's own edge) appears in each of these relations. A kind of link between
+  several pairs of entity sets is one relation per pair, named `<kind>`, or `<kind>_<sourceSet>_<targetSet>` when
+  there are several (e.g. `bearer_Axis_Internode`); readers find them by the prefix.
 - Each label column or relation column is an `ENUM` of its own, listing the values used. The enum
-  `FSPM_edge_type` is fixed: `none` = 0, `successor` = 1, `branch` = 2.
+  `FSPM_edge_type` is fixed: `none` = 0, `successor` = 1, `branch` = 2, `unknown` = 3.
 - A grid's cells MAY omit `id`; their ids are then their row numbers. A regular grid's rows are its cells in C order
   of `shape`, the last axis varying fastest, and its ids, if written, MUST be these row numbers.
 
@@ -188,6 +233,7 @@ Every other column is a variable. It SHOULD be declared in `FSPM_scene.variables
 | `role` | required: `state`, `input`, `parameter`, `derived` or `setting` (enums.json) |
 | `minimum`, `maximum` | the variable's plausible range, as documentation (not a constraint on values) |
 | `references`, `doi` | its sources |
+| `format` | for a text column holding dates or times: `date`, `date-time` or `time`, as ISO 8601 (`2022-08-24`, `2022-08-24T13:00:00`, `13:00:00`) |
 
 Parameters are variables with role `parameter`. A parameter goes in the table it applies to:
 
@@ -210,7 +256,7 @@ Units are UCUM codes, with:
 
 ## 6. Vocabulary
 
-The vocabulary (version `0.1`) lists standard names. For each, it gives:
+The vocabulary (version `0.2`) lists standard names. For each, it gives:
 
 - a canonical unit;
 - a kind;
@@ -253,7 +299,7 @@ two platforms.
 A sequence is a folder holding one GLB per frame and an index, `scene.fspm.json`, following `index.schema.json`:
 
 ```text
-{"fspmIndex": "0.1", "timeUnit": "d",
+{"fspmIndex": "0.2", "timeUnit": "d",
  "frames": [{"time": 0.0, "step": 0, "file": "frame_000000.glb"}, ...]}
 ```
 
@@ -263,7 +309,9 @@ A sequence is a folder holding one GLB per frame and an index, `scene.fspm.json`
   given to another entity in a later frame of the same data structure and entity set. Labels and parents MAY change,
   e.g. an apex moved by growth. A platform whose own ids may come back (a counter restarted, a deleted maximum's id
   given again) keeps, across a sequence, a map from its entities to the ids it writes.
-- **Packing.** Packing a sequence into one GLB is not part of 0.1.
+- **Ids are not positions.** Ids may be sparse (e.g. offsets keeping them stable as a plant grows). Readers SHOULD
+  NOT size arrays by the largest id.
+- **Packing.** Packing a sequence into one GLB is not part of 0.2.
 
 ## 9. Conformance
 
@@ -278,15 +326,33 @@ sequence:
 | `soil_and_roots` | a root system, a regular soil grid with z pointing down, and their mapping |
 | `adaptive_soil` | an adaptive grid's leaf cells (`level`, `index`) |
 | `parameter_set` | a `table` data structure with parameters per plant and in the scalars, references and DOIs; an infinite value |
+| `missing_values` | integer, text and boolean columns with missing values; a date column; `unknown` edge types and an `order` column; a `mixed` entity set; a labels map; bearer relations between two pairs of sets |
 | `growing_sequence/` | three frames of a growing root system and their index |
 
-An implementation conforms to 0.1 when two things hold:
+An implementation conforms to 0.2 when two things hold:
 
-- **Reading:** what it reads from every conformance GLB equals the expected JSON. Floats are compared exactly; NaN is
-  null in the JSON, +∞ and −∞ the strings `"Infinity"` and `"-Infinity"`; positions are the FLOAT32 values.
+- **Reading:** what it reads from every conformance GLB equals the expected JSON. Floats are compared exactly; NaN and
+  missing values are null in the JSON, +∞ and −∞ the strings `"Infinity"` and `"-Infinity"`; positions are the
+  FLOAT32 values.
 - **Writing:** what it writes passes `fspm-tf validate` with no error, and Khronos' glTF-Validator with no error.
 
 ## 10. Keeping what one does not read
 
-A reader that writes a file back SHOULD keep the content it does not interpret, as RSML requires. In 0.1 this covers
+A reader that writes a file back SHOULD keep the content it does not interpret, as RSML requires. In 0.2 this covers
 the glTF root's other extensions and `extras`, when they hold no buffer views.
+
+## Changes from 0.1
+
+All additions; a 0.1 file is a valid 0.2 file.
+
+- Sources: `conformance/` is part of the agreement; the order in which the sources prevail.
+- §1: an entity set's `scale`, ranks as base scale positions, reading by content; position columns in their declared
+  length unit.
+- §2: the buffer's `byteLength` holds the padding.
+- §3: unique relation names, a data structure's `labels`, the extras key.
+- §4.1: missing values in integer, text and boolean columns.
+- §4.2: `edge_type` `unknown`, the `order` column, a parent in another complex, bearer relations' labels and names.
+- §5: a variable's `format`.
+- §6: the vocabulary 0.2 (`Seed`, `mtg_index`).
+- §8: sparse ids.
+- §9: the `missing_values` scene.

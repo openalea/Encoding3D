@@ -66,9 +66,10 @@ def _numeric(column: np.ndarray) -> bool:
 
 
 def _codes(column: np.ndarray) -> tuple:
-    names = sorted(set(column.tolist()))
+    """Each text value's code among the column's sorted values; a missing value (None): -1."""
+    names = sorted({value for value in column.tolist() if value is not None})
     code_of = {name: code for code, name in enumerate(names)}
-    return np.array([code_of[value] for value in column.tolist()], dtype=np.int64), names
+    return np.array([code_of.get(value, -1) for value in column.tolist()], dtype=np.int64), names
 
 
 LINKS = ("complex", "parent", "edge_type")
@@ -106,6 +107,8 @@ def _add_columns(data, entity_set, rows: np.ndarray, field_data, settings: bool 
         if not _numeric(column):
             continue
         values = column[taken].astype(np.float64)                       # float64: NaN where no entity
+        if np.ma.isMaskedArray(values):
+            values = values.filled(np.nan)                              # and where a value is missing
         values = np.where(valid.reshape((-1,) + (1,) * (values.ndim - 1)), values, np.nan)
         data.AddArray(_array(label, values))
 

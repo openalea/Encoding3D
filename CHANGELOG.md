@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased: specification 0.1 (draft)
+## Unreleased: specification 0.2 (draft)
+
+- Specification 0.2, additive (0.1 files stay valid), from the bindings' points (`spec/specification.md`, "Changes
+  from 0.1"): missing values in integer, text and boolean columns; an entity set's `scale` and ranks as base scale
+  positions; reading by content; position columns in their declared unit; a data structure's `labels`; the extras
+  key; `edge_type` `unknown`; the `order` column; parents in another complex; bearer relations' labels and names;
+  dates (`format`); sparse ids; the conformance files' status and the sources' precedence.
+- Vocabulary 0.2: `Seed`, `mtg_index`, the new enumerations.
+- The reference codec, the validator, the ParaView reader and the conformance files (a new scene, `missing_values`).
+
+## Specification 0.1 (draft)
 
 - The specification (`spec/specification.md`), its JSON Schemas and the first vocabulary (41 standard names, the
   labels with their Plant Ontology terms, the enumerations, a column of names per platform).

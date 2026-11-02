@@ -17,7 +17,11 @@ def same_columns(a, b):
     for name in a.columns:
         x, y = a.columns[name], b.columns[name]
         assert x.dtype == y.dtype and x.shape == y.shape, name
-        if x.dtype.kind == "f":
+        assert np.ma.isMaskedArray(x) == np.ma.isMaskedArray(y), name
+        if np.ma.isMaskedArray(x):                                    # missing values: the same rows, the same others
+            assert np.array_equal(np.ma.getmaskarray(x), np.ma.getmaskarray(y)), name
+            assert np.array_equal(x.compressed(), y.compressed()), name
+        elif x.dtype.kind == "f":
             assert np.ascontiguousarray(x).tobytes() == np.ascontiguousarray(y).tobytes(), name      # bit for bit
         else:
             assert np.array_equal(x, y), name
@@ -36,6 +40,8 @@ def test_round_trip(name):
         for a, b in zip(written.entity_sets + written.relations, read.entity_sets + read.relations):
             same_columns(a, b)
         assert [entity_set.rank for entity_set in written.entity_sets] == [s.rank for s in read.entity_sets]
+        assert [entity_set.scale for entity_set in written.entity_sets] == [s.scale for s in read.entity_sets]
+        assert written.labels == read.labels
         if written.scalars is not None:
             same_columns(written.scalars, read.scalars)
         assert written.grid == read.grid

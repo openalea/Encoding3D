@@ -109,7 +109,7 @@ def root_system(n_segments: int = 6, lateral_from: int = 2, ids_from: int = 10, 
                                    scalars=Table("scalars", columns=dict(time_step=[3600.]),
                                                  variables=_declare(time_step=dict(unit="s", role="setting"))),
                                    platform="fspm-tf", model="toy root system")
-    return Frame([data_structure], time=time, time_unit="d", step=step, writer=WRITER, vocabulary_version="0.1")
+    return Frame([data_structure], time=time, time_unit="d", step=step, writer=WRITER, vocabulary_version="0.2")
 
 
 def wheat_shoot() -> Frame:
@@ -155,7 +155,7 @@ def wheat_shoot() -> Frame:
                                    platform="fspm-tf", model="toy shoot",
                                    origin=np.array([[1., 0., 0., 0.5], [0., 1., 0., 0.25], [0., 0., 1., 0.],
                                                     [0., 0., 0., 1.]]))
-    return Frame([data_structure], time=12.5, step=300, writer=WRITER, vocabulary_version="0.1")
+    return Frame([data_structure], time=12.5, step=300, writer=WRITER, vocabulary_version="0.2")
 
 
 def section_cells() -> Frame:
@@ -189,7 +189,7 @@ def section_cells() -> Frame:
     data_structure = DataStructure("section", entity_sets=[cells], relations=[connections], meshes=[mesh],
                                    platform="fspm-tf", model="toy cell network",
                                    extras={"fspm-tf": {"note": "extras are the writer's, kept by readers"}})
-    return Frame([data_structure], time=0., step=0, writer=WRITER, vocabulary_version="0.1")
+    return Frame([data_structure], time=0., step=0, writer=WRITER, vocabulary_version="0.2")
 
 
 def soil_and_roots() -> Frame:
@@ -239,7 +239,7 @@ def adaptive_soil() -> Frame:
                          grid=Grid(kind="adaptive", shape=(2, 1, 1), origin=(0., 0., 0.), spacing=(0.1, 0.1, 0.1),
                                    axes=("x", "y", "z"), periodic=(False, False, False), z_up=False, max_level=1,
                                    cells="Cell"), platform="fspm-tf", model="toy adaptive soil")
-    return Frame([soil], time=0., step=0, writer=WRITER, vocabulary_version="0.1")
+    return Frame([soil], time=0., step=0, writer=WRITER, vocabulary_version="0.2")
 
 
 def parameter_set() -> Frame:
@@ -263,7 +263,53 @@ def parameter_set() -> Frame:
                                        method=dict(unit="1", role="setting")))
     data_structure = DataStructure("archisimple_parameters", kind="table", entity_sets=[plants], scalars=scalars,
                                    platform="fspm-tf", model="RootArchitecture parameters")
-    return Frame([data_structure], time=0., step=0, writer=WRITER, vocabulary_version="0.1")
+    return Frame([data_structure], time=0., step=0, writer=WRITER, vocabulary_version="0.2")
+
+
+def missing_values() -> Frame:
+    """A plant as platforms with per-class fields write it (MTG.jl, PlantGraphs, GroIMP): integer, text, boolean and
+    float columns with missing values, a date column, an edge type the writer does not know, the order of children,
+    an entity set mixing base scales (a whole root axis among organs), the platform's labels mapped to the
+    vocabulary's, a branch's first internode whose parent is in another axis, bearer relations between two pairs of
+    sets."""
+    plant = EntitySet("Plant", rank=1, scale="Plant", columns=dict(id=np.array([0], dtype=np.int64),
+                                                                     label=np.array(["Wheat"], dtype=object)))
+    axes = EntitySet("Axis", rank=2, scale="Axis", columns=dict(
+        id=np.array([1, 2], dtype=np.int64), label=np.array(["Axis", "Axis"], dtype=object),
+        complex=np.array([0, 0], dtype=np.int64), parent=np.array([-1, -1], dtype=np.int64),
+        edge_type=np.array(["none", "none"], dtype=object)))
+    organs = EntitySet("Organ", rank=5, scale="mixed", columns=dict(
+        id=np.arange(10, 17, dtype=np.int64),
+        label=np.array(["Internode", "Internode", "Leaf", "Leaf", "Internode", "Bud", "Root"], dtype=object),
+        complex=np.array([1, 1, 1, 1, 2, 2, 0], dtype=np.int64),
+        parent=np.array([-1, 10, 10, 11, 11, 14, -1], dtype=np.int64),
+        edge_type=np.array(["none", "successor", "branch", "unknown", "branch", "successor", "none"], dtype=object),
+        order=np.array([0, 1, 0, 0, 0, 0, 1], dtype=np.int64),
+        length=np.array([0.12, 0.08, 0.2, 0.15, 0.05, np.nan, 0.3]),
+        rank=np.ma.MaskedArray(np.array([1, 2, 1, 2, 1, 0, 0], dtype=np.int32),
+                               mask=[False, False, False, False, False, True, True]),
+        tissue=np.array(["stem", "stem", "blade", None, "stem", None, "root"], dtype=object),
+        alive=np.ma.MaskedArray(np.array([True, True, True, False, True, False, False]),
+                                mask=[False, False, False, False, False, True, False]),
+        emergence=np.array(["2026-03-01", "2026-03-04", "2026-03-02", "2026-03-06", None, None, "2026-02-28"],
+                           dtype=object)),
+        variables=_declare(length=dict(unit="m", standard_name="length", kind="extensive"),
+                           rank=dict(unit="1", kind="descriptor", description="the organ's rank on its axis"),
+                           tissue=dict(unit="1", kind="descriptor"),
+                           alive=dict(unit="1", kind="descriptor"),
+                           emergence=dict(unit="1", kind="descriptor", format="date",
+                                          description="the organ's emergence date")))
+    bearer_axes = Relation("bearer_Axis_Organ", source_set="Axis", target_set="Organ", columns=dict(
+        source=np.array([2], dtype=np.int64), target=np.array([11], dtype=np.int64),
+        relation=np.array(["branch"], dtype=object)))
+    bearer_buds = Relation("bearer_Organ_Axis", source_set="Organ", target_set="Axis", columns=dict(
+        source=np.array([15], dtype=np.int64), target=np.array([1], dtype=np.int64),
+        relation=np.array(["decomposition"], dtype=object)))
+    data_structure = DataStructure("plant", entity_sets=[plant, axes, organs], relations=[bearer_axes, bearer_buds],
+                                   platform="fspm-tf", model="toy plant with per-class fields",
+                                   labels={"Internode": "StemInternode", "Leaf": "Leaf", "Bud": "Meristem",
+                                           "Root": "RootAxis", "Axis": "ShootAxis"})
+    return Frame([data_structure], time=3., time_unit="d", step=72, writer=WRITER, vocabulary_version="0.2")
 
 
 def growing_sequence() -> list:
@@ -272,7 +318,8 @@ def growing_sequence() -> list:
 
 
 SCENES = {"root_system": root_system, "wheat_shoot": wheat_shoot, "section_cells": section_cells,
-          "soil_and_roots": soil_and_roots, "adaptive_soil": adaptive_soil, "parameter_set": parameter_set}
+          "soil_and_roots": soil_and_roots, "adaptive_soil": adaptive_soil, "parameter_set": parameter_set,
+          "missing_values": missing_values}
 
 
 def files() -> dict:

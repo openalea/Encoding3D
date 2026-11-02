@@ -9,6 +9,7 @@ A Report lists its issues: errors (the file does not follow the specification) a
 is likely wrong or incomplete).
 """
 from dataclasses import dataclass, field
+import datetime
 import json
 import os
 
@@ -19,7 +20,7 @@ from openalea.fspm_tf import schema as schemas, ucum, vocabulary
 from openalea.fspm_tf.codec import (DTYPES, EDGE_TYPE_ENUM, EXTENSION, FEATURES, METADATA, Z_UP_TO_Y_UP,
                                     from_bytes)
 from openalea.fspm_tf.glb import unpack
-from openalea.fspm_tf.model import EDGE_TYPES, NO_ID
+from openalea.fspm_tf.model import BASE_SCALES, EDGE_TYPES, NO_ID
 
 
 @dataclass
@@ -157,6 +158,9 @@ def _check_property_storage(where, prop, stored, count, views, enums, report) ->
         return views[index]["byteLength"]
 
     kind = prop.get("type")
+    if prop.get("extras", {}).get("FSPM_boolean") and (kind != "SCALAR" or prop.get("componentType") != "UINT8"
+                                                       or prop.get("noData") != 255 or prop.get("array")):
+        report.error(where, "a boolean column with missing values is UINT8 (0, 1) with noData 255")
     values_length = length("values")
     if values_length is None:
         return
@@ -216,6 +220,19 @@ def _check_frame(frame, document: dict, report: Report) -> None:
                 else:
                     _check_references(f"{where}/{relation.name}/{end}", relation.columns[end], ids[set_name],
                                       report, allow_none=False)
+        names = [relation.name for relation in data_structure.relations]
+        if len(set(names)) != len(names):
+            report.error(where, "two relations have the same name")
+        for relation in data_structure.relations:
+            if relation.name.startswith("bearer") and "relation" in relation.columns:
+                unknown = set(relation.columns["relation"].tolist()) - set(enums["bearer_relation"])
+                if unknown:
+                    report.warning(f"{where}/{relation.name}/relation",
+                                   f"bearer labels {sorted(unknown)}: expected {sorted(enums['bearer_relation'])}")
+        _check_scales_and_labels(data_structure, report)
+        for key in data_structure.extras:
+            if key != key.lower():
+                report.warning(f"{where}/extras", f"key '{key}': the platform's name, in lower case")
         if data_structure.grid is not None:
             _check_grid(data_structure, sets, report)
         elif data_structure.kind in ("regular_grid", "adaptive_grid"):
@@ -323,6 +340,47 @@ def _check_mtg(data_structure, sets: dict, ids: dict, report) -> None:
                 report.error(f"{where}/parent", "the parents form a cycle")
 
 
+def _check_scales_and_labels(data_structure, report) -> None:
+    """Each entity set's scale and rank; its order column; the data structure's label map."""
+    used = set()
+    for entity_set in data_structure.entity_sets:
+        where = f"{data_structure.id}/{entity_set.name}"
+        if entity_set.scale in BASE_SCALES and entity_set.rank is not None \
+                and entity_set.rank != BASE_SCALES.index(entity_set.scale) + 1:
+            report.warning(where, f"rank {entity_set.rank}: the base scale {entity_set.scale}'s position is "
+                                  f"{BASE_SCALES.index(entity_set.scale) + 1}")
+        if "order" in entity_set.columns and (np.asarray(entity_set.columns["order"]) < 0).any():
+            report.error(f"{where}/order", "positions among siblings are non-negative")
+        if "label" in entity_set.columns:
+            used |= {label for label in entity_set.columns["label"].tolist() if label is not None}
+    vocabulary_labels = vocabulary.labels()
+    for label, standard in data_structure.labels.items():
+        if label not in used:
+            report.warning(f"{data_structure.id}/labels", f"'{label}' is no entity's label")
+        if standard not in vocabulary_labels:
+            report.warning(f"{data_structure.id}/labels", f"'{standard}' is not a label of the vocabulary "
+                                                          f"{vocabulary.version()}")
+
+
+def _check_format(where, values, variable_format, report) -> None:
+    """A text column's dates or times, as ISO 8601."""
+    if np.asarray(values).dtype != object:
+        report.error(where, f"format '{variable_format}' is for text columns")
+        return
+    parse = {"date": datetime.date.fromisoformat, "date-time": datetime.datetime.fromisoformat,
+             "time": datetime.time.fromisoformat}[variable_format]
+    bad = []
+    for value in values:
+        if value is None:
+            continue
+        try:
+            parse(value)
+        except ValueError:
+            bad.append(value)
+    if bad:
+        report.error(where, f"{len(bad)} value(s) not ISO 8601 {variable_format}, e.g. {bad[:3]}")
+
+
 def _check_grid(data_structure, sets: dict, report) -> None:
     grid, where = data_structure.grid, f"{data_structure.id}/grid"
     dimensions = len(grid.shape)
@@ -369,6 +427,8 @@ def _check_variables(where, table, standard_names: dict, enums: dict, report) ->
             report.error(f"{where}/{name}", f"kind '{variable.kind}' is not one of {sorted(enums['kind'])}")
         if variable.role not in enums["role"]:
             report.error(f"{where}/{name}", f"role '{variable.role}' is not one of {sorted(enums['role'])}")
+        if variable.format is not None:
+            _check_format(f"{where}/{name}", table.columns[name], variable.format, report)
         if variable.standard_name is None:
             continue
         entry = standard_names.get(variable.standard_name)

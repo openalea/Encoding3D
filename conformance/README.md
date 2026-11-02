@@ -12,6 +12,7 @@ numbers, the same bytes on every run; the CI checks that the committed files are
 | `soil_and_roots` | a root system, a regular soil grid with z pointing down, and their mapping |
 | `adaptive_soil` | an adaptive grid's leaf cells (`level`, `index`) |
 | `parameter_set` | a `table` data structure: parameters per plant and in the scalars, references, an infinite value |
+| `missing_values` | integer, text, boolean and float columns with missing values; a date column (`format`); `unknown` edge types and an `order` column; a `mixed` entity set; a labels map; a parent in another axis; bearer relations between two pairs of sets |
 | `growing_sequence/` | three frames of a growing root system, ids kept, and their index |
 
 ## The expected values
@@ -23,12 +24,14 @@ numbers, the same bytes on every run; the CI checks that the committed files are
  "data_structures": [
    {"id": "...", "kind": "graph", "origin": [[4 numbers] x 4, row by row], "platform": "...", "model": "...",
     "extras": {...},                                                    (when present)
-    "entity_sets": [{"name": "SubOrgan", "rank": 6, "count": 10,
+    "labels": {"Internode": "StemInternode", ...},                      (when present)
+    "entity_sets": [{"name": "SubOrgan", "rank": 6, "scale": "SubOrgan", "count": 10,       (scale when present)
                      "columns": {"id": {"dtype": "int64", "values": [...]},
                                  "label": {"dtype": "string", "values": [...]},      (labels and enums as their names)
                                  "end": {"dtype": "float64", "values": [[x, y, z], ...]}, ...},
                      "variables": {"length": {"unit": "m", "role": "state", "standard_name": "length",
-                                              "kind": "extensive", "description": "..."}, ...}}],
+                                              "kind": "extensive", "description": "...",
+                                              "format": "date"}, ...}}],             (format when present)
     "relations": [... like entity sets, with "source_set" and "target_set"],
     "scalars": {... like an entity set, one row},
     "grid": {"kind", "shape", "origin", "spacing", "axes", "periodic", "z_up", "max_level", "cells"},
@@ -38,10 +41,13 @@ numbers, the same bytes on every run; the CI checks that the committed files are
 ```
 
 - **Floats** are the shortest decimals giving the same double, compared exactly.
-- **NaN** is `null`; +∞ and −∞ are the strings `"Infinity"` and `"-Infinity"`.
+- **NaN and missing values** are `null`, whatever the column's type; +∞ and −∞ are the strings `"Infinity"` and
+  `"-Infinity"`.
 - **Positions** are the FLOAT32 values of the file, widened to doubles.
 - **`dtype`** is the column's numpy type name (`float64`, `int64`, `uint8`, `bool`...), or `string` for text and enums.
-- Keys only appear when the frame has them (no `extras`, `relations`, `scalars`, `grid` or `meshes` when absent).
+  A boolean column with missing values (stored as UINT8) is `bool`.
+- Keys only appear when the frame has them (no `extras`, `labels`, `relations`, `scalars`, `grid`, `meshes`,
+  `scale` or `format` when absent).
 
 ## Checking a codec
 

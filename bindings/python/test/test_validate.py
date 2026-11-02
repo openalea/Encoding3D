@@ -109,3 +109,50 @@ def test_index_order(tmp_path):
     with open(index, "w") as file:
         json.dump(content, file)
     assert "frames are in time order" in str(validate_sequence(index))
+
+
+def organs_of(frame):
+    return frame.data_structures[0].entity_set("Organ")
+
+
+def test_missing_values_scene_is_valid():
+    report = validate_bytes(to_bytes(generate.missing_values()))
+    assert report.ok and not report.warnings, str(report)
+
+
+def test_rules_of_0_2():
+    frame = generate.missing_values()
+    organs_of(frame).columns["emergence"][0] = "1 March 2026"
+    assert "1 value(s) not ISO 8601 date" in messages(frame)
+    frame = generate.missing_values()
+    organs_of(frame).columns["edge_type"][0] = "unknown"           # an unknown link needs a parent
+    assert "'none' exactly for the entities without a parent" in messages(frame)
+    frame = generate.missing_values()
+    organs_of(frame).columns["order"][0] = -1
+    assert "positions among siblings are non-negative" in messages(frame)
+    frame = generate.missing_values()
+    frame.data_structures[0].relations[1].name = "bearer_Axis_Organ"
+    assert "two relations have the same name" in messages(frame)
+    frame = generate.missing_values()
+    frame.data_structures[0].relations[0].columns["relation"][0] = "sideways"
+    assert "bearer labels ['sideways']" in messages(frame)
+    frame = generate.missing_values()
+    organs_of(frame).scale = "Organ"
+    organs_of(frame).rank = 3
+    assert "rank 3: the base scale Organ's position is 5" in messages(frame)
+    frame = generate.missing_values()
+    frame.data_structures[0].labels["Petal"] = "Corolla"
+    text = messages(frame)
+    assert "'Petal' is no entity's label" in text and "'Corolla' is not a label of the vocabulary" in text
+    frame = generate.missing_values()
+    frame.data_structures[0].extras = {"MyPlatform": {}}
+    assert "key 'MyPlatform': the platform's name, in lower case" in messages(frame)
+
+
+def test_boolean_with_missing_values_is_uint8():
+    data = to_bytes(generate.missing_values())
+    document, binary = unpack(data)
+    classes = document["extensions"]["EXT_structural_metadata"]["schema"]["classes"]
+    classes["plant__Organ"]["properties"]["alive"]["noData"] = 2
+    assert "a boolean column with missing values is UINT8 (0, 1) with noData 255" in \
+        str(validate_bytes(pack(document, binary)))

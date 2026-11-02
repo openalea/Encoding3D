@@ -114,3 +114,14 @@ def test_inside_paraview():
     result = subprocess.run([pvpython, script, CONFORMANCE], capture_output=True, text=True, timeout=600)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "fspm-TF reader: ok" in result.stdout
+
+
+def test_missing_values_are_nan_and_code_minus_one():
+    frame = generate.root_system()
+    segments = frame.data_structures[0].entity_set("SubOrgan")
+    count = segments.count
+    segments.columns["tissue"] = np.array([None] + ["cortex"] * (count - 1), dtype=object)
+    segments.columns["rank"] = np.ma.MaskedArray(np.arange(count, dtype=np.int32), mask=[True] + [False] * (count - 1))
+    lines = blocks_of(frame)[("root_system", "SubOrgan segments")]
+    assert np.isnan(cell_array(lines, "SubOrgan.rank")[0]) and cell_array(lines, "SubOrgan.rank")[1] == 1.
+    assert cell_array(lines, "SubOrgan.tissue_code")[0] == -1 and cell_array(lines, "SubOrgan.tissue_code")[1] == 0

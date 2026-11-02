@@ -39,7 +39,7 @@ def test_compare_all(tmp_path):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(os.path.join(folder, name), target)
     results = compare_all(str(dumps), CONFORMANCE)
-    assert len(results) == 9 and not any(results.values())
+    assert len(results) == 10 and not any(results.values())
     assert main(["compare-all", str(dumps), CONFORMANCE]) == 0
     with open(dumps / "root_system.json") as file:
         dump = json.load(file)
