@@ -18,3 +18,5 @@ cmake -S bindings/cpp -B build && cmake --build build && ctest --test-dir build
 
 Its one dependency is nlohmann_json (header-only, MIT), found installed or fetched. It installs as a CMake package:
 `find_package(fspm_tf)`, then `target_link_libraries(... fspm_tf::fspm_tf)`. See [the documentation](../../doc/cpp.md).
+
+Licence: GPL-3.0 (`LICENSE`), as CPlantBox; the rest of fspm-TF is CeCILL-C.

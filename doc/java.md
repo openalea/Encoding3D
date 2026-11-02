@@ -4,6 +4,8 @@
 passes the conformance check. In `bindings/java/groimp/` is GroIMP's adapter. Both have tests, run in
 `.github/workflows/java-codec.yml`.
 
+Licence: GPL-3.0-or-later, as GroIMP (the rest of fspm-TF is CeCILL-C).
+
 ## The format's own tables
 
 ```java

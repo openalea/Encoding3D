@@ -4,6 +4,8 @@
 `bindings/cpp/cplantbox/` is CPlantBox's adapter. Both have tests, run in `.github/workflows/cpp-codec.yml` on
 Linux, macOS and Windows.
 
+Licence: GPL-3.0, as CPlantBox (the rest of fspm-TF is CeCILL-C).
+
 ## Building
 
 ```bash

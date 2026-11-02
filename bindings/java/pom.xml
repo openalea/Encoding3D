@@ -14,6 +14,13 @@
   <name>fspm-TF (Java)</name>
   <description>Reading and writing fspm-TF files: functional-structural plant model scenes as glTF 2.0 binaries</description>
   <url>https://github.com/openalea/fspm-TF</url>
+  <licenses>
+    <license>
+      <name>GPL-3.0-or-later</name>
+      <url>https://www.gnu.org/licenses/gpl-3.0.txt</url>
+      <comments>As GroIMP, the platform this codec serves (bindings/java/LICENSE); the rest of fspm-TF is CeCILL-C</comments>
+    </license>
+  </licenses>
 
   <properties>
     <maven.compiler.release>17</maven.compiler.release>

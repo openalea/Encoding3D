@@ -2,6 +2,8 @@
 # CPlantBox is given (FSPM_TF_CPLANTBOX_SOURCE_DIR and FSPM_TF_CPLANTBOX_LIBRARY), CPlantBox's adapter.
 #
 #   cmake -S bindings/cpp -B build && cmake --build build && ctest --test-dir build
+#
+# Licence: GPL-3.0 (LICENSE), as CPlantBox; the rest of fspm-TF is CeCILL-C.
 cmake_minimum_required(VERSION 3.16)
 project(fspm_tf VERSION 0.1.0 LANGUAGES CXX)
 
@@ -51,6 +53,7 @@ install(TARGETS fspm_tf EXPORT fspm_tfTargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/fspm_tf)
 install(EXPORT fspm_tfTargets NAMESPACE fspm_tf:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fspm_tf)
 configure_package_config_file(cmake/fspm_tfConfig.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/fspm_tfConfig.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fspm_tf)

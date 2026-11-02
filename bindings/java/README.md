@@ -13,4 +13,5 @@ Jackson. GroIMP's adapter is in `groimp/`.
 mvn -f bindings/java/pom.xml verify
 ```
 
-See [the documentation](../../doc/java.md).
+Licence: GPL-3.0-or-later (`LICENSE`), as GroIMP; the rest of fspm-TF is CeCILL-C. See
+[the documentation](../../doc/java.md).
