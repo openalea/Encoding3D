@@ -31,7 +31,7 @@ change there, released as a new version. Everything else implements, checks or d
 | `spec/schema/` | the JSON Schemas of the `FSPM_scene` extension and of a sequence's index | **yes** |
 | `spec/vocabulary/` | the standard names (units, kinds, definitions, and each platform's names for them), the labels with their Plant Ontology terms, the enumerations | **yes** |
 | `conformance/` | reference files, each a GLB with its expected values as JSON, written by `generate.py`: the specification as test cases for every platform's code (`conformance/README.md`; checked with `fspm-tf compare-all` and the action `.github/actions/conformance`) | follows `spec/` |
-| `bindings/<language>/` | each language's codec, with its own build, tests and release; `bindings/python/`: `openalea.fspm_tf`, the reference (codec, validator, display copies, command line), which reads `spec/` and ships it; `bindings/julia/`: FspmTF.jl, the Julia codec, with a MultiScaleTreeGraph.jl extension; `bindings/cpp/`: the C++ codec, with CPlantBox's adapter | no |
+| `bindings/<language>/` | each language's codec, with its own build, tests and release; `bindings/python/`: `openalea.fspm_tf`, the reference (codec, validator, display copies, command line), which reads `spec/` and ships it; `bindings/julia/`: FspmTF.jl, the Julia codec, with a MultiScaleTreeGraph.jl extension; `bindings/cpp/`: the C++ codec, with CPlantBox's adapter; `bindings/java/`: the Java codec, with GroIMP's adapter | no |
 | `paraview/` | the ParaView reader plugin, and the script checking it in a `pvpython` | no |
 | `doc/design_note.md` | how the decisions were reached | no |
 | `pyproject.toml`, `conda/` | the Python package's build, at the root next to `spec/`, which it ships | no |

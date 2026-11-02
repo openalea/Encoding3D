@@ -27,7 +27,7 @@ What it has to handle:
 This is a few hundred lines in any language. Existing libraries help:
 
 - **C++:** done, `bindings/cpp/` ([C++ and CPlantBox](cpp.md)): hand-written, with nlohmann_json.
-- **Java:** JglTF has its JSON classes.
+- **Java:** done, `bindings/java/` ([Java and GroIMP](java.md)): hand-written, with Jackson.
 - **Julia:** done, `bindings/julia/FspmTF/` ([FspmTF.jl](julia.md)): a hand-written GLB container and JSON.jl.
 
 Each codec goes in its own folder, with its usual build files and tests:

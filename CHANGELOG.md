@@ -13,6 +13,9 @@
 - The C++ codec (`bindings/cpp/`): conformant reading and writing, sequences, a CMake package; CPlantBox's adapter
   (`bindings/cpp/cplantbox/`: organisms with their geometry, soil grid and mapping; static root systems from any graph
   with segment ends); its CI, `.github/workflows/cpp-codec.yml`.
+- The Java codec (`bindings/java/`): conformant reading and writing, sequences; GroIMP's adapter (`bindings/java/groimp/`:
+  scales from refinement edges, topology, edge bits as relations, managed fields; graphs back into the model's node
+  classes); its CI, `.github/workflows/java-codec.yml`.
 - FspmTF.jl: VirtualPlantLab's graphs (PlantGraphs: `from_graph`, `to_graph`) and their turtle geometry
   (PlantGeomTurtle: `add_geometry!`), as package extensions.
 - FspmTF.jl: MTGs from graphs with ids from 0 or sparse (numbered 1, 2, ..., ids kept in `fspm_tf_id`), and parents

@@ -1,0 +1,72 @@
+# The Java codec (bindings/java): its tests on Linux, macOS and Windows; the conformance check other codecs run; and
+# GroIMP's adapter (bindings/java/groimp), built on GroIMP's Graph module (a pinned commit). OpenAlea's conda CI builds
+# the Python package only.
+name: Java codec
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  GROIMP_COMMIT: 6c5bbdef616f799c2eadec1097e1a312e43f308d
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Tests, the conformance files included
+        run: mvn -B -f bindings/java/pom.xml verify
+
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Dump and write the conformance scenes with the Java codec
+        run: |
+          mvn -B -q -f bindings/java/pom.xml package -DskipTests dependency:copy-dependencies -DincludeScope=runtime
+          java -cp "bindings/java/target/fspm-tf-0.1.0.jar:bindings/java/target/dependency/*" org.openalea.fspmtf.ConformanceRun conformance out
+      - uses: ./.github/actions/conformance
+        with:
+          dumps: out/dumps
+          written: out/written
+
+  groimp-adapter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: GroIMP's Graph module
+        run: |
+          git clone --quiet https://gitlab.com/grogra/groimp.git groimp
+          git -C groimp checkout --quiet "$GROIMP_COMMIT"
+          mvn -B -q -f groimp/pom.xml -pl Graph -am install -DskipTests -Dmaven.javadoc.skip=true
+      - name: The codec and the adapter
+        run: |
+          mvn -B -q -f bindings/java/pom.xml install -DskipTests
+          mvn -B -f bindings/java/groimp/pom.xml verify
+      - name: What the adapter wrote is valid fspm-TF
+        run: |
+          python -m pip install numpy jsonschema .
+          fspm-tf validate bindings/java/groimp/target/groimp_out/*.glb
