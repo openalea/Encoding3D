@@ -28,7 +28,8 @@ Codec.write(Path.of("plants.glb"), written);
 ```
 
 A `Column` holds a Java array of its type (`long[]`, `double[]`, `boolean[]`, `String[]`, …; unsigned integers in
-the array of their width), with a `width` of 2 or more for a fixed-size vector per row. NaN and infinities are written
+the array of their width), with a `width` of 2 or more for a fixed-size vector per row, and its missing rows
+(`withMissing(...)`, `isMissing(row)`; NaN in a float column). NaN and infinities are written
 with the specification's stand-ins and read back as they were.
 
 ## GroIMP
@@ -44,8 +45,10 @@ with the specification's stand-ins and read back as they were.
 | relations | the other edge bits (containment, mark, notifies, user edges), one relation per bit and pair of sets |
 | variables | the managed fields of the model's classes (numbers, booleans, text; vecmath tuples as vectors) |
 
-`options.scaleNames` and `options.scaleRanks` give each scale its entity set's name and rank, e.g. the vocabulary's
-`Organ`, rank 5. `options.variables` declares the fields' units and standard names. GroIMP's fields have no units.
+`options.scaleNames`, `options.scaleRanks` and `options.scaleScales` give each scale its entity set's name, rank and
+base scale, e.g. the vocabulary's `Organ`, rank 5. `options.labels` maps the model's class names to the vocabulary's
+labels, and `options.variables` declares the fields' units and standard names (GroIMP's fields have no units). A field
+that other classes of the same scale lack is missing in their rows.
 `GroImp.toGraph(dataStructure, label -> new Internode(), ids)` builds the nodes back: their fields, refinement,
 successor and branch edges, and edge bits. It does this for any graph, e.g. metafspm's Plant, Axis and SubOrgan
 become three scales linked by refinement edges.

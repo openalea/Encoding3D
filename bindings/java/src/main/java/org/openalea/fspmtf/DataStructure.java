@@ -23,6 +23,8 @@ public final class DataStructure {
     public String platform;
     public String model;
     public ObjectNode extras = JsonNodeFactory.instance.objectNode();
+    /** The platform's labels to the vocabulary's. */
+    public final java.util.Map<String, String> labels = new java.util.LinkedHashMap<>();
 
     public DataStructure(String id) {
         this.id = id;

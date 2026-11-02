@@ -18,6 +18,8 @@ public final class Variable {
     public Double maximum;
     public List<String> references = new ArrayList<>();
     public List<String> doi = new ArrayList<>();
+    /** A text column of dates or times: "date", "date-time" or "time" (ISO 8601). */
+    public String format;
 
     public Variable() {}
 
@@ -35,7 +37,7 @@ public final class Variable {
                 && Objects.equals(kind, variable.kind) && Objects.equals(role, variable.role)
                 && Objects.equals(description, variable.description) && Objects.equals(minimum, variable.minimum)
                 && Objects.equals(maximum, variable.maximum) && references.equals(variable.references)
-                && doi.equals(variable.doi);
+                && doi.equals(variable.doi) && Objects.equals(format, variable.format);
     }
 
     @Override

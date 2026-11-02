@@ -26,13 +26,15 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  */
 public final class Codec {
     /** The version of the specification this library reads and writes. */
-    public static final String SPECIFICATION_VERSION = "0.1";
-    public static final List<String> EDGE_TYPES = List.of("none", "successor", "branch");
+    public static final String SPECIFICATION_VERSION = "0.2";
+    public static final List<String> EDGE_TYPES = List.of("none", "successor", "branch", "unknown");
 
     private static final String EXTENSION = "FSPM_scene", METADATA = "EXT_structural_metadata",
             FEATURES = "EXT_mesh_features", EDGE_TYPE_ENUM = "FSPM_edge_type";
     private static final List<String> ENUM_COLUMNS = List.of("label", "edge_type", "relation");
-    private static final List<String> ID_COLUMNS = List.of("id", "complex", "parent", "source", "target", "level", "index");
+    private static final List<String> ID_COLUMNS = List.of("id", "complex", "parent", "source", "target", "level", "index",
+            "order");
+    private static final int BOOLEAN_NO_DATA = 255;   // a boolean column with missing values: UINT8 0, 1, and 255 missing
     private static final int ARRAY_BUFFER = 34962, ELEMENT_ARRAY_BUFFER = 34963;
     private static final int FLOAT = 5126, UNSIGNED_INT = 5125, UNSIGNED_SHORT = 5123, UNSIGNED_BYTE = 5121;
     private static final long MAX_FLOAT_FEATURE = 1L << 24;    // feature rows are float vertex attributes
@@ -78,6 +80,7 @@ public final class Codec {
             for (EntitySet set : dataStructure.entitySets) {
                 ObjectNode item = sets.addObject().put("name", set.name);
                 if (set.rank == null) item.putNull("rank"); else item.put("rank", set.rank);
+                if (set.scale != null) item.put("scale", set.scale);
                 item.put("propertyTable", addTable(set, dataStructure.id + "__" + set.name, buffers, schema, tables, variables));
             }
             if (!dataStructure.relations.isEmpty()) {
@@ -90,6 +93,10 @@ public final class Codec {
             if (dataStructure.scalars != null)
                 entry.put("scalars", addTable(dataStructure.scalars, dataStructure.id + "__scalars", buffers, schema, tables, variables));
             if (dataStructure.grid != null) entry.set("grid", gridJson(dataStructure.grid));
+            if (!dataStructure.labels.isEmpty()) {
+                ObjectNode labels = entry.putObject("labels");
+                dataStructure.labels.forEach(labels::put);
+            }
             if (!dataStructure.extras.isEmpty()) entry.set("extras", dataStructure.extras);
             ObjectNode node = nodes.addObject().put("name", dataStructure.id);
             if (!isIdentity(dataStructure.origin)) putNumbers(node.putArray("matrix"), columnMajor);
@@ -201,6 +208,7 @@ public final class Codec {
         if (variable.maximum != null) declaration.put("maximum", variable.maximum);
         if (!variable.references.isEmpty()) variable.references.forEach(declaration.putArray("references")::add);
         if (!variable.doi.isEmpty()) variable.doi.forEach(declaration.putArray("doi")::add);
+        if (variable.format != null) declaration.put("format", variable.format);
         return declaration;
     }
 
@@ -237,6 +245,12 @@ public final class Codec {
             if (column.width != 1) throw new FspmTfException(where + ": text vectors are not supported");
             property.put("type", "STRING");
             String[] values = column.strings();
+            if (column.hasMissing()) {                           // missing text: noData, a string the column lacks
+                String noData = freeString(column);
+                property.put("noData", noData);
+                values = values.clone();
+                for (int row = 0; row < values.length; row++) if (column.missing[row]) values[row] = noData;
+            }
             byte[][] encoded = new byte[values.length][];
             long[] offsets = new long[values.length + 1];
             for (int row = 0; row < values.length; row++) {
@@ -250,6 +264,14 @@ public final class Codec {
             ByteBuffer offsetBytes = little(offsets.length * (narrow ? 4 : 8));
             for (long offset : offsets) if (narrow) offsetBytes.putInt((int) offset); else offsetBytes.putLong(offset);
             item.put("stringOffsets", buffers.add(offsetBytes.array())).put("stringOffsetType", narrow ? "UINT32" : "UINT64");
+        } else if (column.type == ComponentType.BOOLEAN && column.hasMissing()) {   // UINT8 0, 1, 255 missing
+            property.put("type", "SCALAR").put("componentType", "UINT8").put("noData", BOOLEAN_NO_DATA);
+            property.putObject("extras").put("FSPM_boolean", true);
+            boolean[] values = column.booleans();
+            byte[] codes = new byte[values.length];
+            for (int row = 0; row < values.length; row++)
+                codes[row] = column.missing[row] ? (byte) BOOLEAN_NO_DATA : (byte) (values[row] ? 1 : 0);
+            stored.putObject(name).put("values", buffers.add(codes));
         } else if (column.type == ComponentType.BOOLEAN) {
             if (column.width != 1) throw new FspmTfException(where + ": boolean vectors are not supported");
             property.put("type", "BOOLEAN");
@@ -272,13 +294,90 @@ public final class Codec {
                 if (column.width < 2) throw new FspmTfException(where + ": vectors have at least 2 components");
                 property.put("array", true).put("count", column.width);
             }
-            if (type == ComponentType.FLOAT64) data = standIns(data.doubles().clone(), property, where);
-            else if (type == ComponentType.FLOAT32) data = standIns(data.floats().clone(), property, where);
-            else if (reserved && (name.equals("complex") || name.equals("parent"))) property.put("noData", EntitySet.NO_ID);
+            if (type == ComponentType.FLOAT64) {
+                double[] values = data.doubles().clone();
+                for (int row = 0; column.missing != null && row < values.length; row++)    // a missing float: NaN
+                    if (column.missing[row]) values[row] = Double.NaN;
+                data = standIns(values, property, where);
+            } else if (type == ComponentType.FLOAT32) {
+                float[] values = data.floats().clone();
+                for (int row = 0; column.missing != null && row < values.length; row++)
+                    if (column.missing[row]) values[row] = Float.NaN;
+                data = standIns(values, property, where);
+            } else if (reserved && (name.equals("complex") || name.equals("parent"))) {
+                property.put("noData", EntitySet.NO_ID);
+            } else if (column.hasMissing()) {                // missing integers: noData, a value the column lacks
+                long noData = freeInteger(column);
+                property.put("noData", noData);
+                data = withValueAt(column, noData);
+            }
             if (data.width != column.width) data = new Column(data.type, data.values, column.width);
             stored.putObject(name).put("values", buffers.add(bytesOf(data)));
         }
         if (name.equals("id") && table.kind() == Table.Kind.ENTITY_SET) property.put("required", true);
+    }
+
+    /** A value of the column's integer type that it does not hold: its minimum (signed) or maximum (unsigned) first. */
+    private static long freeInteger(Column column) {
+        java.util.Set<Long> present = new java.util.HashSet<>();
+        for (int row = 0; row < column.size(); row++)
+            if (!column.isMissing(row)) present.add(rawLong(column, row));
+        long minimum, maximum;
+        switch (column.type) {
+            case INT8 -> { minimum = Byte.MIN_VALUE; maximum = Byte.MAX_VALUE; }
+            case INT16 -> { minimum = Short.MIN_VALUE; maximum = Short.MAX_VALUE; }
+            case INT32 -> { minimum = Integer.MIN_VALUE; maximum = Integer.MAX_VALUE; }
+            case INT64 -> { minimum = Long.MIN_VALUE; maximum = Long.MAX_VALUE; }
+            case UINT8 -> { minimum = 0; maximum = 0xFFL; }
+            case UINT16 -> { minimum = 0; maximum = 0xFFFFL; }
+            case UINT32 -> { minimum = 0; maximum = 0xFFFFFFFFL; }
+            default -> { minimum = 0; maximum = -1; }                       // UINT64: its maximum's bits
+        }
+        boolean signed = !column.type.isUnsigned();
+        long first = signed ? minimum : maximum, second = signed ? maximum : minimum;
+        if (!present.contains(first)) return first;
+        if (!present.contains(second)) return second;
+        long candidate = first;
+        while (present.contains(candidate)) candidate = signed ? candidate + 1 : candidate - 1;
+        return candidate;
+    }
+
+    /** A value's bits as a long, unsigned values as stored (UINT8 255 as 255). */
+    private static long rawLong(Column column, int index) {
+        return switch (column.type) {
+            case INT8 -> ((byte[]) column.values)[index];
+            case UINT8 -> Byte.toUnsignedLong(((byte[]) column.values)[index]);
+            case INT16 -> ((short[]) column.values)[index];
+            case UINT16 -> Short.toUnsignedLong(((short[]) column.values)[index]);
+            case INT32 -> ((int[]) column.values)[index];
+            case UINT32 -> Integer.toUnsignedLong(((int[]) column.values)[index]);
+            case INT64, UINT64 -> ((long[]) column.values)[index];
+            default -> throw new FspmTfException("a " + column.type + " column has no integers");
+        };
+    }
+
+    /** The column's values with {@code value} at its missing rows. */
+    private static Column withValueAt(Column column, long value) {
+        Object copy = java.lang.reflect.Array.newInstance(column.values.getClass().getComponentType(), column.size());
+        System.arraycopy(column.values, 0, copy, 0, column.size());
+        for (int row = 0; row < column.size(); row++)
+            if (column.isMissing(row))
+                switch (column.type) {
+                    case INT8, UINT8 -> ((byte[]) copy)[row] = (byte) value;
+                    case INT16, UINT16 -> ((short[]) copy)[row] = (short) value;
+                    case INT32, UINT32 -> ((int[]) copy)[row] = (int) value;
+                    default -> ((long[]) copy)[row] = value;
+                }
+        return new Column(column.type, copy, column.width);
+    }
+
+    /** A string the column does not hold: the empty string first, then NUL characters. */
+    private static String freeString(Column column) {
+        java.util.Set<String> present = new java.util.HashSet<>();
+        for (int row = 0; row < column.size(); row++) if (!column.isMissing(row)) present.add(column.strings()[row]);
+        String candidate = "";
+        while (present.contains(candidate)) candidate += "\0";
+        return candidate;
     }
 
     // EXT_structural_metadata forbids NaN and infinities: NaN is written as noData, the most negative finite value;
@@ -507,6 +606,10 @@ public final class Codec {
             if (entry.hasNonNull("platform")) dataStructure.platform = entry.get("platform").asText();
             if (entry.hasNonNull("model")) dataStructure.model = entry.get("model").asText();
             if (entry.get("extras") instanceof ObjectNode extras) dataStructure.extras = extras;
+            for (Iterator<Map.Entry<String, JsonNode>> labels = entry.path("labels").fields(); labels.hasNext(); ) {
+                Map.Entry<String, JsonNode> label = labels.next();
+                dataStructure.labels.put(label.getKey(), label.getValue().asText());
+            }
             if (entry.has("origin")) {
                 JsonNode origin = entry.get("origin");
                 if (origin.size() != 16) throw new FspmTfException("data structure '" + dataStructure.id + "': an origin of 16 numbers");
@@ -517,6 +620,7 @@ public final class Codec {
             Map<Integer, String> tableNames = new HashMap<>();
             for (JsonNode item : entry.path("entitySets")) {
                 EntitySet set = new EntitySet("", item.hasNonNull("rank") ? item.get("rank").asLong() : null);
+                if (item.hasNonNull("scale")) set.scale = item.get("scale").asText();
                 decodeTable(document, binary, metadata, variables, item.get("propertyTable").asInt(), set);
                 tableNames.put(item.get("propertyTable").asInt(), item.get("name").asText());
                 dataStructure.entitySets.add(set);
@@ -630,6 +734,17 @@ public final class Codec {
                         text[row] = new String(bytes, (int) offsets[row], (int) (offsets[row + 1] - offsets[row]), StandardCharsets.UTF_8);
                     }
                     column = new Column(ComponentType.STRING, text);
+                    if (property.has("noData")) {                // missing text
+                        String noData = property.get("noData").asText();
+                        boolean[] missing = new boolean[count];
+                        boolean any = false;
+                        for (int row = 0; row < count; row++)
+                            if (text[row].equals(noData)) {
+                                missing[row] = any = true;
+                                text[row] = "";
+                            }
+                        if (any) column.missing = missing;
+                    }
                 }
                 case "BOOLEAN" -> {
                     if (raw.remaining() * 8L < count) throw new FspmTfException("'" + classId + "." + name + "': too few bits");
@@ -650,6 +765,29 @@ public final class Codec {
                     }
                     column = readScalars(componentType, raw, count, width);
                     restoreStandIns(column, property);
+                    if (property.path("extras").path("FSPM_boolean").asBoolean(false)) {    // booleans with missing values
+                        long noData = property.path("noData").asLong(BOOLEAN_NO_DATA);
+                        boolean[] values = new boolean[count], missing = new boolean[count];
+                        boolean any = false;
+                        for (int row = 0; row < count; row++) {
+                            long code = (long) column.doubleAt(row);
+                            missing[row] = code == noData;
+                            any |= missing[row];
+                            values[row] = !missing[row] && code == 1;
+                        }
+                        column = new Column(ComponentType.BOOLEAN, values);
+                        if (any) column.missing = missing;
+                    } else if (width == 1 && !componentType.isFloat() && property.has("noData")
+                            && !name.equals("complex") && !name.equals("parent")) {         // missing integers
+                        long noData = property.get("noData").asLong();
+                        boolean[] missing = new boolean[count];
+                        boolean any = false;
+                        for (int row = 0; row < count; row++) {
+                            missing[row] = rawLong(column, row) == noData;
+                            any |= missing[row];
+                        }
+                        if (any) column.missing = missing;
+                    }
                 }
                 default -> throw new FspmTfException("'" + classId + "." + name + "': property type " + type + " is not part of fspm-TF 0.1");
             }
@@ -666,6 +804,7 @@ public final class Codec {
                     if (declared.hasNonNull("maximum")) variable.maximum = declared.get("maximum").asDouble();
                     for (JsonNode reference : declared.path("references")) variable.references.add(reference.asText());
                     for (JsonNode doi : declared.path("doi")) variable.doi.add(doi.asText());
+                    if (declared.hasNonNull("format")) variable.format = declared.get("format").asText();
                 }
                 if (property.has("description")) variable.description = property.get("description").asText();
                 table.variables.put(name, variable);

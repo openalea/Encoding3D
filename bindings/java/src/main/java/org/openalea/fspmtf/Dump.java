@@ -18,6 +18,10 @@ public final class Dump {
     private Dump() {}
 
     private static void addValue(ArrayNode array, Column column, int index) {
+        if (column.width == 1 && column.isMissing(index)) {        // missing values: null
+            array.addNull();
+            return;
+        }
         switch (column.type) {
             case FLOAT32, FLOAT64 -> {
                 double value = column.type == ComponentType.FLOAT32 ? column.floats()[index] : column.doubles()[index];
@@ -64,6 +68,7 @@ public final class Dump {
             if (variable.maximum != null) declared.put("maximum", variable.maximum);
             if (!variable.references.isEmpty()) variable.references.forEach(declared.putArray("references")::add);
             if (!variable.doi.isEmpty()) variable.doi.forEach(declared.putArray("doi")::add);
+            if (variable.format != null) declared.put("format", variable.format);
         }
         if (!declarations.isEmpty()) entry.set("variables", declarations);
         return entry;
@@ -90,11 +95,16 @@ public final class Dump {
             for (EntitySet set : dataStructure.entitySets) {
                 ObjectNode item = tableJson(set);
                 if (set.rank == null) item.putNull("rank"); else item.put("rank", set.rank);
+                if (set.scale != null) item.put("scale", set.scale);
                 sets.add(item);
             }
             if (dataStructure.platform != null) entry.put("platform", dataStructure.platform);
             if (dataStructure.model != null) entry.put("model", dataStructure.model);
             if (!dataStructure.extras.isEmpty()) entry.set("extras", dataStructure.extras);
+            if (!dataStructure.labels.isEmpty()) {
+                ObjectNode labels = entry.putObject("labels");
+                dataStructure.labels.forEach(labels::put);
+            }
             if (!dataStructure.relations.isEmpty()) {
                 ArrayNode relations = entry.putArray("relations");
                 for (Relation relation : dataStructure.relations)

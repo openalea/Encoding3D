@@ -11,6 +11,8 @@ public class EntitySet extends Table {
     public static final long NO_ID = -1;
 
     public Long rank;
+    /** Its base scale (Plant, Axis, ..., Connection), or "mixed". */
+    public String scale;
 
     public EntitySet(String name, Long rank) {
         super(name);

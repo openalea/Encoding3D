@@ -40,8 +40,8 @@ class CodecTest {
     }
 
     @Test
-    void nineConformanceFiles() throws IOException {
-        assertEquals(9, conformanceFiles().count());
+    void tenConformanceFiles() throws IOException {
+        assertEquals(10, conformanceFiles().count());
     }
 
     @ParameterizedTest

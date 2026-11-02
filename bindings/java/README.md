@@ -1,6 +1,6 @@
 # fspm-tf (Java)
 
-The Java codec of fspm-TF (Java 17, Maven): reading and writing frames and sequences (spec 0.1), with one dependency,
+The Java codec of fspm-TF (Java 17, Maven): reading and writing frames and sequences (spec 0.2), with one dependency,
 Jackson. GroIMP's adapter is in `groimp/`.
 
 - `src/main/java/org/openalea/fspmtf/`: the data model (`Frame`, `DataStructure`, `EntitySet`, `Column`, …), the GLB

@@ -9,6 +9,10 @@
   dates (`format`); sparse ids; the conformance files' status and the sources' precedence.
 - Vocabulary 0.2: `Seed`, `mtg_index`, the new enumerations.
 - The reference codec, the validator, the ParaView reader and the conformance files (a new scene, `missing_values`).
+- The Julia, C++ and Java codecs on 0.2, and their adapters using it instead of their extras: MTG.jl (missing
+  attributes, dates, children's order, `mtg_index`), PlantGraphs (`unknown` edges, children's order), CPlantBox (a
+  `mixed` Organ set, segment ends in cm, `branching_order`), GroIMP (missing fields, scales, labels); extras keys in
+  lower case (`virtualplantlab`, `cplantbox`, `groimp`).
 
 ## Specification 0.1 (draft)
 

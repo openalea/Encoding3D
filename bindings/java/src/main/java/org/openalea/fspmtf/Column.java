@@ -5,12 +5,14 @@ import java.util.Arrays;
 
 /**
  * A column: its values (a Java array, see {@link ComponentType}), {@code width} per row (1: one value per row; 2 or more:
- * a fixed-size vector per row, row after row).
+ * a fixed-size vector per row, row after row), and which rows are missing ({@code missing}, one flag per row, null when
+ * none is; NaN in a float column).
  */
 public final class Column {
     public final ComponentType type;
     public final Object values;
     public final int width;
+    public boolean[] missing;
 
     public Column(ComponentType type, Object values, int width) {
         if (!values.getClass().isArray()) throw new FspmTfException("a column's values are an array");
@@ -44,6 +46,22 @@ public final class Column {
     public static Column of(String... values) { return new Column(ComponentType.STRING, values); }
     /** A vector column: {@code width} values per row, row after row. */
     public static Column vectors(int width, double... values) { return new Column(ComponentType.FLOAT64, values, width); }
+
+    /** Marks rows as missing (one flag per row); returns the column, for chaining. */
+    public Column withMissing(boolean... rows) {
+        if (rows.length != rows()) throw new FspmTfException("one missing flag per row");
+        missing = rows;
+        return this;
+    }
+
+    public boolean isMissing(int row) {
+        return missing != null && missing[row];
+    }
+
+    public boolean hasMissing() {
+        if (missing != null) for (boolean flag : missing) if (flag) return true;
+        return false;
+    }
 
     /** The number of values (rows × width). */
     public int size() {
@@ -81,7 +99,8 @@ public final class Column {
     @Override
     public boolean equals(Object other) {
         if (!(other instanceof Column column)) return false;
-        return type == column.type && width == column.width && Arrays.deepEquals(new Object[] {values}, new Object[] {column.values});
+        return type == column.type && width == column.width && Arrays.deepEquals(new Object[] {values}, new Object[] {column.values})
+                && hasMissing() == column.hasMissing() && (!hasMissing() || Arrays.equals(missing, column.missing));
     }
 
     @Override

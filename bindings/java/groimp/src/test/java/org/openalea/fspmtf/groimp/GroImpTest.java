@@ -58,6 +58,8 @@ class GroImpTest {
         GroImp.Options options = new GroImp.Options();
         options.scaleNames.put(2, "Organ");
         options.scaleRanks.put(2, 5L);                                   // the vocabulary's Organ
+        options.scaleScales.put(2, "Organ");
+        options.labels.put("Internode", "StemInternode");
         options.variables.put("length", new Variable("m", "length", "extensive", "state"));
         DataStructure written = GroImp.toDataStructure(root, options);
 
@@ -77,8 +79,11 @@ class GroImpTest {
         assertArrayEquals(new boolean[] {false, false, false, true}, organs.column("alive").booleans());
         assertEquals("mark", written.relations.get(0).name);
         assertArrayEquals(new long[] {ids[3]}, written.relations.get(0).column("source").longs());
-        assertEquals(List.of(0, 1), List.of(written.extras.get("groimp").get("missing").get("Organ").get("alive").get(0).asInt(),
-                written.extras.get("groimp").get("missing").get("Organ").get("alive").get(1).asInt()));
+        assertArrayEquals(new boolean[] {true, true, false, false}, organs.column("alive").missing);   // internodes
+        assertArrayEquals(new boolean[] {false, false, true, true}, organs.column("rank").missing);   // leaves
+        assertEquals("Organ", organs.scale);
+        assertEquals("StemInternode", written.labels.get("Internode"));
+        assertTrue(!written.extras.get("groimp").has("missing"));
 
         Files.createDirectories(OUT);
         Frame frame = new Frame();
@@ -97,6 +102,7 @@ class GroImpTest {
         assertArrayEquals(lengths, againOrgans.column("length").doubles());
         assertArrayEquals(organs.column("edge_type").strings(), againOrgans.column("edge_type").strings());
         assertArrayEquals(organs.column("alive").booleans(), againOrgans.column("alive").booleans());
+        assertArrayEquals(organs.column("alive").missing, againOrgans.column("alive").missing);
         assertEquals(0.004f, ((Organs.Internode) nodes.get(ids[0])).radius);
         assertEquals("Wheat", ((Organs.Plant) nodes.get(plantId)).species);
         assertEquals(1, again.relations.size());

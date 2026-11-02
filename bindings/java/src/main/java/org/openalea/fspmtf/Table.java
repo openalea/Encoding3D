@@ -10,7 +10,7 @@ public class Table {
     /** The kinds of tables, each with its reserved columns. */
     public enum Kind {
         SCALARS(List.of()),
-        ENTITY_SET(List.of("id", "label", "complex", "parent", "edge_type", "level", "index")),
+        ENTITY_SET(List.of("id", "label", "complex", "parent", "edge_type", "level", "index", "order")),
         RELATION(List.of("id", "source", "target", "relation")),
         MAPPING(List.of("source", "target", "weight"));
 
@@ -73,6 +73,9 @@ public class Table {
     public void checkLengths() {
         for (Map.Entry<String, Column> entry : columns.entrySet()) {
             Column column = entry.getValue();
+            if (column.hasMissing() && (isReserved(entry.getKey()) || column.width != 1))
+                throw new FspmTfException("column '" + entry.getKey() + "' of '" + name
+                        + "': missing values only in variables of one value per row");
             if (column.size() % column.width != 0)
                 throw new FspmTfException("column '" + entry.getKey() + "' of '" + name + "': its values are not whole rows");
             if (column.rows() != rowCount()) throw new FspmTfException("table '" + name + "': columns of different lengths");

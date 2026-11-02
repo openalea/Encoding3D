@@ -47,7 +47,8 @@ import de.grogra.reflect.TypeId;
  * </table>
  *
  * <p>The graph's root (e.g. an RGG root) is the data structure itself, not an entity. What fspm-TF 0.1 cannot say is
- * kept in {@code extras["groimp"]}: the rows where a node's class has no such field, and the classes' names.</p>
+ * kept in {@code extras["groimp"]}: the classes' names. A field that other classes of the same scale lack is missing in
+ * their rows.</p>
  */
 public final class GroImp {
     /** The name of GroIMP's entry in a data structure's extras. */
@@ -66,6 +67,10 @@ public final class GroImp {
         /** The rank of each scale's entity set (by default its refinement depth); e.g. the vocabulary's base scales'
          * positions (Plant 1, Axis 2, Organ 5, SubOrgan 6). */
         public final Map<Integer, Long> scaleRanks = new HashMap<>();
+        /** The base scale of each scale's entity set (e.g. "Organ"), or "mixed". */
+        public final Map<Integer, String> scaleScales = new HashMap<>();
+        /** The model's class names to the vocabulary's labels (e.g. Internode to StemInternode). */
+        public final Map<String, String> labels = new LinkedHashMap<>();
         /** The declarations of the fields (by name): unit, standard name, kind, role. */
         public final Map<String, Variable> variables = new HashMap<>();
         public String model;
@@ -149,13 +154,13 @@ public final class GroImp {
         dataStructure.platform = "GroIMP";
         dataStructure.model = options.model;
         ObjectNode extras = JsonNodeFactory.instance.objectNode();
-        ObjectNode missing = extras.putObject("missing");
         ObjectNode classes = extras.putObject("classes");
         int coarsest = byScale.isEmpty() ? 0 : byScale.keySet().iterator().next();
         for (Map.Entry<Integer, List<Entity>> item : byScale.entrySet()) {
             String setName = setNames.get(item.getKey());
             List<Entity> rows = item.getValue();
             EntitySet set = new EntitySet(setName, options.scaleRanks.getOrDefault(item.getKey(), (long) item.getKey()));
+            set.scale = options.scaleScales.get(item.getKey());
             long[] ids = new long[rows.size()], complexes = new long[rows.size()], parents = new long[rows.size()];
             String[] labels = new String[rows.size()], edgeTypes = new String[rows.size()];
             for (int row = 0; row < rows.size(); row++) {
@@ -170,14 +175,12 @@ public final class GroImp {
             set.set("id", Column.of(ids)).set("label", Column.of(labels));
             if (item.getKey() != coarsest) set.set("complex", Column.of(complexes));
             set.set("parent", Column.of(parents)).set("edge_type", Column.of(edgeTypes));
-            ObjectNode missingOfSet = JsonNodeFactory.instance.objectNode();
-            addFields(set, rows, options, missingOfSet);
-            if (!missingOfSet.isEmpty()) missing.set(setName, missingOfSet);
+            addFields(set, rows, options);
             dataStructure.entitySets.add(set);
         }
-        if (missing.isEmpty()) extras.remove("missing");
         addRelations(dataStructure, order, entities, setNames);
         dataStructure.extras.set(PLATFORM, extras);
+        dataStructure.labels.putAll(options.labels);
         return dataStructure;
     }
 
@@ -243,8 +246,8 @@ public final class GroImp {
         return null;
     }
 
-    /** The rows' managed fields as columns (in order of first appearance), the missing rows of each in {@code missing}. */
-    private static void addFields(EntitySet set, List<Entity> rows, Options options, ObjectNode missing) {
+    /** The rows' managed fields as columns (in order of first appearance), missing where a row's class has none. */
+    private static void addFields(EntitySet set, List<Entity> rows, Options options) {
         Map<String, Object[]> values = new LinkedHashMap<>();
         for (int row = 0; row < rows.size(); row++) {
             Node node = rows.get(row).node;
@@ -260,10 +263,11 @@ public final class GroImp {
         for (Map.Entry<String, Object[]> item : values.entrySet()) {
             Column column = column(item.getValue());
             if (column == null) continue;                          // values of several kinds: not written
+            boolean[] absent = new boolean[item.getValue().length];
+            boolean any = false;
+            for (int row = 0; row < absent.length; row++) any |= absent[row] = item.getValue()[row] == null;
+            if (any && column.width == 1) column.withMissing(absent);      // a missing vector: NaN
             set.set(item.getKey(), column);
-            var absent = JsonNodeFactory.instance.arrayNode();
-            for (int row = 0; row < item.getValue().length; row++) if (item.getValue()[row] == null) absent.add(row);
-            if (!absent.isEmpty()) missing.set(item.getKey(), absent);
             Variable declared = options.variables.get(item.getKey());
             if (declared != null) set.declare(item.getKey(), declared);
         }
@@ -371,7 +375,6 @@ public final class GroImp {
         List<EntitySet> sets = new ArrayList<>();
         for (EntitySet set : dataStructure.entitySets) if (set.rank != null && set.has("id")) sets.add(set);
         sets.sort((left, right) -> Long.compare(left.rank, right.rank));
-        ObjectNode missing = dataStructure.extras.path(PLATFORM).path("missing") instanceof ObjectNode found ? found : null;
         Node root = new Node();
         for (EntitySet set : sets) {
             long[] ids = set.column("id").longs();
@@ -379,7 +382,7 @@ public final class GroImp {
             for (int row = 0; row < ids.length; row++) {
                 Node node = nodes.apply(labels == null ? set.name : labels[row]);
                 if (node == null) throw new FspmTfException("no node made for label '" + labels[row] + "'");
-                setFields(node, set, row, missing != null && missing.get(set.name) instanceof ObjectNode ofSet ? ofSet : null);
+                setFields(node, set, row);
                 idsOf.put(ids[row], node);
             }
         }
@@ -433,17 +436,13 @@ public final class GroImp {
         return null;
     }
 
-    private static void setFields(Node node, EntitySet set, int row, ObjectNode missing) {
+    private static void setFields(Node node, EntitySet set, int row) {
         ManageableType type = node.getNType();
         for (String name : set.variableNames()) {
             ManageableType.Field field = type.getManagedField(name);
             if (field == null || !isOwnField(field)) continue;
-            if (missing != null && missing.has(name)) {
-                boolean absent = false;
-                for (var absentRow : missing.get(name)) absent |= absentRow.asInt() == row;
-                if (absent) continue;
-            }
             Column column = set.column(name);
+            if (column.isMissing(row)) continue;                  // the field keeps its class's default
             switch (field.getType().getTypeId()) {
                 case TypeId.BOOLEAN -> field.setBoolean(node, column.booleans()[row]);
                 case TypeId.BYTE -> field.setByte(node, (byte) column.doubleAt(row));
