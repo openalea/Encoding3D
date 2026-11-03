@@ -102,7 +102,7 @@ A codec that passes is listed in [Implementations](implementations.md) with the 
 
 ## Taking part in a coupling session
 
-To couple its models with other platforms' (specification §11, draft for 0.3), a codec adds a participant's side;
+To couple its models with other platforms' (specification §11), a codec adds a participant's side;
 the coordinator is fspm-TF's own (`fspm-tf couple`), so no platform implements it. A participant:
 
 1. reads and writes **partial frames**: `FSPM_scene.update` (its sender, and a property table of the removed ids per

@@ -12,7 +12,8 @@ scene at one time step:
 - **the environment:** soil grids, and which soil cells each root element lies in.
 
 A simulation writes one file per time step. Any platform can read them back. ParaView, Blender or any glTF viewer
-can display them.
+can display them. Platforms can also run their models together, step by step, exchanging their values through the
+same format ([Coupling platforms](coupling.md)).
 
 ```{image} _static/images/archisimple.png
 :alt: An ArchiSimple root system read from an fspm-TF file in ParaView, coloured by root order

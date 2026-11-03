@@ -2,8 +2,9 @@
 
 *An exchange format for whole FSPM scenes, across platforms and languages.*
 
-Status (2026-10-29): the decisions of §7 are taken on the metafspm side; P1 to P3 are done (§6). The specification
-itself is `spec/specification.md`, version 0.1, a draft until the partner platforms have reviewed it. This note keeps
+Status (2026-10-29; updated 2026-11-03): the decisions of §7 are taken on the metafspm side; P1 to P5 are done (§6).
+The specification itself is `spec/specification.md`, now version 0.3, a draft until the partner platforms have
+reviewed it. This note keeps
 the review of the existing formats and the reasons for the choices; where the two differ, the specification is the
 reference. Points marked **[to verify]** have not been checked on real files or code yet.
 
@@ -405,6 +406,14 @@ A coupling **protocol** shaped like BMI:
 
 This is a later phase (§6). The data model is specified first, so that the coupling inherits it.
 
+**Update (2026-11-03): built differently.** The coupling is the specification's §11. A coordinator (fspm-TF's, in
+Python) holds the shared structure and applies the links; each platform's participant declares what it works on,
+provides and requires, then answers turns with updates. The messages carry **partial frames**, the same GLB as a time
+step, not Arrow batches: every codec already reads and writes GLB, Arrow would have been a large new dependency in
+all four (heavy in Java and C++), and measurements showed the format is not the cost (encoding 10 ms of a 100 ms step
+at 100,000 segments; the rest is the coordinator's work). Transports: ZeroMQ, and a folder of files. A BMI-like
+in-process interface is not part of it.
+
 ### 4.7 VTKHDF (dropped)
 
 A VTKHDF export was considered for viewing long simulations in ParaView. It is dropped, to keep fspm-TF free of an
@@ -552,6 +561,11 @@ That is a few hundred lines in any language, and existing libraries can help:
 These codecs live in the platforms' repositories, maintained by their teams. `implementations.md` lists them with
 the specification version each one passes. fspm-TF itself maintains only Python.
 
+**Update (2026-11-03): decided otherwise.** The codecs live in this repository (`bindings/<language>/`: Python, Julia,
+C++, Java), each passing the conformance files; the adapters (a platform's model to and from the codec's tables)
+belong to the platforms, as Julia package extensions where the platform's library is a plain dependency.
+`implementations.md` lists them.
+
 ## 6. Plan
 
 | Phase | Content | Done when | Status |
@@ -560,8 +574,8 @@ the specification version each one passes. fspm-TF itself maintains only Python.
 | P1 | Specification v0.1: data model, glTF binding, JSON Schema, first vocabulary; the `openalea.fspm_tf` package (codec, validator, display tool), the conformance files, CI | the validator and glTF-Validator accept the conformance files | done |
 | P2 | metafspm reference implementation: `export_frame` and `import_frame` for MPG, Array and AdaptiveGrid DataStructures, mappings and triangles | round-trip tests bit-exact on the ported models' scenes (ArchiSimple, Adel, Caribu, GRANAP and MECHA, soil) | done, with `Scene(frame_period=)`; the continuation after an import is exact too |
 | P3 | The ParaView reader plugin (Python, on the `openalea.fspm_tf` codec: every variable as cell data, frames as time steps); viewer checks of display copies: ParaView without the plugin, three.js/3DTilesRenderer, Blender | the example files viewed with their variables | ParaView done (6.0.1, the plugin and ParaView's own glTF reader); three.js and Blender skipped |
-| P4 | A second platform: CPlantBox through its Python layer (the easiest), or VPL through PlantGeom.jl | a file written by one platform and read by the other, with the same values | not started |
-| P5 | Arrow binding and coupling protocol; a two-platform coupled run | one component in metafspm and one in another platform exchanging tables at each step | not started |
+| P4 | A second platform: CPlantBox through its Python layer (the easiest), or VPL through PlantGeom.jl | a file written by one platform and read by the other, with the same values | done, and more: the Julia (VirtualPlantLab, MTG.jl), C++ (CPlantBox) and Java (GroIMP) codecs and adapters ([Implementations](implementations.md)) |
+| P5 | Arrow binding and coupling protocol; a two-platform coupled run | one component in metafspm and one in another platform exchanging tables at each step | done without Arrow (§4.6's update): the coupling sessions of the specification's §11; metafspm coupled with VirtualPlantLab |
 
 ## 7. Open decisions
 

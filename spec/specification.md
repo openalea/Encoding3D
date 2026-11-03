@@ -131,6 +131,8 @@ The glTF root's `extensions.FSPM_scene` MUST follow `fspm_scene.schema.json`:
 - **Property tables.** Every table of §1 is one `EXT_structural_metadata` property table of its own class, and no
   property table serves two tables. Writers SHOULD name the classes `<data structure>__<table>` (mappings:
   `mapping__<name>`). Readers MUST find tables through the `propertyTable` indices, not through class names.
+- **Update.** A frame with an `update` object is a partial frame, a coupling session's message (§11.1); a frame
+  written as a time step has none.
 
 ## 4. Tables
 

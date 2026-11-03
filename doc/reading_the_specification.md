@@ -17,6 +17,7 @@ Everything the platforms agree on is in the repository's `spec/` folder, togethe
 | `spec/specification.md` | the rules, in words (MUST, SHOULD, MAY as in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119)) | by the validator, `fspm-tf validate` |
 | `spec/schema/fspm_scene.schema.json` | the shape of the `FSPM_scene` JSON (its fields and their types) | by any JSON Schema validator |
 | `spec/schema/index.schema.json` | the shape of a sequence's index, `scene.fspm.json` | by any JSON Schema validator |
+| `spec/schema/coupling.schema.json` | the shape of a coupling session's messages (their JSON headers, §11) | by any JSON Schema validator |
 | `spec/schema/views.schema.json` | the shape of a sequence's optional views, `views.json` (how to look at it) | by any JSON Schema validator; names against a frame by `openalea.fspm_tf.views.check_views` |
 | `spec/vocabulary/standard_names.csv` | the shared quantities: canonical unit, kind, definition, and each platform's names for them | by the validator (units, kinds) |
 | `spec/vocabulary/labels.csv` | the entity labels, with their scale and Plant Ontology term | by the validator (warnings) |
@@ -37,6 +38,8 @@ defect of the lower one. A change of the format is a pull request to `spec/`, wi
    recognise the same quantity.
 4. **§2, §3, §4.1, §7, the encoding.** These come with the example below; a codec's writer needs them in full.
 5. **§8 and §9, sequences and conformance.**
+6. **§11, coupling**, for a platform whose models run with other platforms' in a session: partial frames, the
+   messages, the shared structure, the transports. Its conformance sessions are in §9.
 
 ## The three layers of a file
 
@@ -54,7 +57,7 @@ Here is the JSON part of `conformance/root_system.glb`, abridged:
 ```text
 "extensions": {
   "FSPM_scene": {
-    "version": "0.2", "vocabulary": "0.2",
+    "version": "0.3", "vocabulary": "0.2",
     "frame": {"time": 0.0, "timeUnit": "d", "step": 0},
     "dataStructures": [{
       "id": "root_system", "kind": "graph", "origin": [1, 0, 0, 0, ...],     a 4×4 matrix, column by column

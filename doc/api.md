@@ -14,7 +14,7 @@ the vocabulary and units.
 
 ```{eval-rst}
 .. automodule:: openalea.fspm_tf.model
-   :members: Frame, DataStructure, EntitySet, Relation, Table, Grid, Mesh, Mapping, Variable, Update
+   :members: Frame, DataStructure, EntitySet, Relation, Table, Grid, Mesh, Mapping, Variable, Update, LazyColumns, LazyList
 ```
 
 ## Validation
@@ -80,6 +80,9 @@ the vocabulary and units.
 
 .. automodule:: openalea.fspm_tf.coupling.replay
    :members: Replay
+
+.. automodule:: openalea.fspm_tf.coupling.conformance
+   :members: run_session, run_all, subject
 ```
 
 ## Command line
