@@ -31,6 +31,14 @@ the vocabulary and units.
    :members: add_display, remove_display
 ```
 
+## Views
+
+```{eval-rst}
+.. automodule:: openalea.fspm_tf.views
+   :members: read_views, write_views, views_path, check_views, configuration, configuration_names, selected,
+             display_settings, layer_from_display, save_configuration, block_selector
+```
+
 ## Vocabulary and units
 
 ```{eval-rst}

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased: frame views (specification §8.1, draft for 0.3)
+
+- Views, an optional companion of a sequence (`views.json`, `spec/schema/views.schema.json`): named configurations
+  of layers, each a mesh's, segments' or grid's entities selected by `where` conditions, coloured by a variable (or a
+  solid colour), with a colour map, range, log scale, opacity, visibility, representation, and tubes for segments.
+- `openalea.fspm_tf.views`: reading, writing and checking views (the schema, and every name against a frame), the
+  selection, and the display options the ParaView macros apply and save back.
+- The ParaView reader: "Views" and "Configuration" (a drop-down), one block per layer holding only its entities;
+  `frame_to_vtk(frame, views=, configuration=)`, unchanged without views. The macros `apply_fspm_tf_views.py` (each
+  layer its own pipeline item) and `save_fspm_tf_views.py` (the items' display options back into `views.json`).
+
 ## Unreleased: specification 0.3 (draft), coupling platforms
 
 - Specification 0.3: the frames say 0.3 (0.1 and 0.2 files stay valid); "Changes from 0.2"; the conformance files

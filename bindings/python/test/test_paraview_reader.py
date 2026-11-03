@@ -125,3 +125,67 @@ def test_missing_values_are_nan_and_code_minus_one():
     lines = blocks_of(frame)[("root_system", "SubOrgan segments")]
     assert np.isnan(cell_array(lines, "SubOrgan.rank")[0]) and cell_array(lines, "SubOrgan.rank")[1] == 1.
     assert cell_array(lines, "SubOrgan.tissue_code")[0] == -1 and cell_array(lines, "SubOrgan.tissue_code")[1] == 0
+
+
+# ── Views: one block per layer ───────────────────────────────────────────
+
+def layers_of(frame, views, configuration=None) -> dict:
+    output = reader.frame_to_vtk(frame, views=views, configuration=configuration)
+    return {output.GetMetaData(number).Get(output.NAME()): output.GetBlock(number)
+            for number in range(output.GetNumberOfBlocks())}
+
+
+def test_views_give_a_block_per_layer_with_its_entities_only():
+    from test_views import roots_views
+    frame = generate.root_system()
+    source = frame.data_structures[0]
+    blocks = layers_of(frame, roots_views())
+    assert list(blocks) == ["first order", "roots"]                       # the hidden layer too
+    mesh = blocks["first order"]
+    triangles = source.meshes[0].feature_rows["Axis"][::3]
+    first_order = source.entity_set("Axis").columns["branching_order"][triangles] == 1
+    assert 0 < mesh.GetNumberOfCells() == first_order.sum() < len(triangles)
+    assert set(cell_array(mesh, "Axis.branching_order")) == {1.}
+    assert mesh.GetCellData().GetScalars().GetName() == "SubOrgan.water_potential"
+    segments = source.entity_set("SubOrgan")
+    lines = blocks["roots"]
+    kept = (segments.columns["label"] == "RootSegment") & (segments.columns["length"] > 0)
+    assert lines.GetNumberOfCells() == kept.sum()
+    np.testing.assert_array_equal(cell_array(lines, "SubOrgan.radius"), segments.columns["radius"][kept])
+    radius = vtk_to_numpy(lines.GetPointData().GetArray("tube_radius"))
+    np.testing.assert_array_equal(radius, np.concatenate([segments.columns["radius"][kept]] * 2) * 2)
+    assert lines.GetCellData().GetScalars().GetName() == "SubOrgan.label_code"     # text: its codes
+    plain = layers_of(frame, roots_views(), "plain")["all"]
+    assert plain.GetNumberOfCells() == len(triangles) and plain.GetCellData().GetScalars() is None
+
+
+def test_grid_layers_hide_the_cells_not_selected():
+    frame = generate.soil_and_roots()
+    layer = {"name": "wet", "source": {"data_structure": "soil", "kind": "grid"},
+             "select": {"entity_set": "Voxel", "where": {"soil_water_potential": ">=-15000"}},
+             "color_by": {"entity_set": "Voxel", "variable": "soil_water_potential"}, "opacity": 0.3}
+    image = layers_of(frame, {"fspm_tf_views": 1, "configurations": {"soil": {"layers": [layer]}}})["wet"]
+    ghosts = vtk_to_numpy(image.GetCellData().GetArray("vtkGhostType"))
+    voxels = frame.data_structures[1].entity_set("Voxel")
+    order = np.arange(12).reshape((2, 2, 3)).ravel(order="F")
+    np.testing.assert_array_equal(ghosts == 0, voxels.columns["soil_water_potential"][order] >= -15000)
+    assert 0 < (ghosts == 0).sum() < 12
+    assert image.GetCellData().GetScalars().GetName() == "Voxel.soil_water_potential"
+    adaptive = generate.adaptive_soil()
+    layer = {"name": "fine", "source": {"data_structure": "soil", "kind": "grid"},
+             "select": {"entity_set": "Cell", "where": {"level": ">0"}}}
+    cells = layers_of(adaptive, {"fspm_tf_views": 1, "configurations": {"soil": {"layers": [layer]}}})["fine"]
+    assert cells.GetNumberOfCells() == (adaptive.data_structures[0].entity_set("Cell").columns["level"] > 0).sum()
+
+
+def test_views_from_a_file_and_wrong_names(tmp_path):
+    from openalea.fspm_tf import views
+    from test_views import roots_views
+    path = str(tmp_path / "views.json")
+    views.write_views(path, roots_views())
+    assert list(layers_of(generate.root_system(), path)) == ["first order", "roots"]
+    empty = layers_of(generate.wheat_shoot(), path)                       # names the frame lacks: empty blocks
+    assert list(empty) == ["first order", "roots"] and all(block.GetNumberOfCells() == 0 for block in empty.values())
+    with pytest.raises(ValueError, match="fspm_tf_views"):
+        reader.frame_to_vtk(generate.root_system(), views={"fspm_tf_views": 2, "configurations": {}})
+    assert reader.frame_to_vtk(generate.root_system()).GetNumberOfBlocks() == 1          # no views: as before

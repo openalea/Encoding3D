@@ -12,6 +12,7 @@ The language-neutral files of this version are part of the specification:
 |---|---|
 | `spec/schema/fspm_scene.schema.json` | JSON Schema of the `FSPM_scene` extension (§3) |
 | `spec/schema/index.schema.json` | JSON Schema of a sequence's index (§8) |
+| `spec/schema/views.schema.json` | JSON Schema of a sequence's optional views, `views.json` (§8.1) |
 | `spec/vocabulary/standard_names.csv` | the standard names, their canonical units and kinds, and each platform's names for them (§6) |
 | `spec/vocabulary/labels.csv` | entity labels, their scales and Plant Ontology terms (§6) |
 | `spec/vocabulary/enums.json` | the values of `edge_type`, `kind`, `role`, data structure and grid kinds; the base scales |
@@ -314,6 +315,39 @@ A sequence is a folder holding one GLB per frame and an index, `scene.fspm.json`
   NOT size arrays by the largest id.
 - **Packing.** Packing a sequence into one GLB is not part of 0.3.
 
+### 8.1 Views
+
+A sequence (or a frame) MAY come with a companion `views.json`, next to its `scene.fspm.json` (or its GLB), following
+`views.schema.json`. It says how to look at the frames, not what they hold: readers MAY ignore it, and a sequence is
+valid without it. It is platform-independent; any viewer may apply it.
+
+```text
+{"fspm_tf_views": 1, "active": "default",
+ "configurations": {"default": {"layers": [
+   {"name": "roots", "source": {"data_structure": "plants", "kind": "segments", "entity_set": "SubOrgan"},
+    "select": {"entity_set": "SubOrgan", "where": {"label": ["RootSegment"], "length": ">0"}},
+    "color_by": {"entity_set": "SubOrgan", "variable": "water_potential"}, "colormap": "Viridis (matplotlib)",
+    "range": "auto", "log": false, "opacity": 1, "visible": true, "representation": "Surface",
+    "tube": {"radius": "radius", "scale": 1}}]}}}
+```
+
+- **Configurations.** Named lists of layers; `active` names the one shown first (else the first).
+- **A layer** draws one part of a data structure: `source.kind` `mesh` (with the mesh's `name`), `segments` (an entity
+  set with segment ends, `entity_set`) or `grid` (the grid's cells). Its name is unique in its configuration.
+- **Selection.** `select` keeps the entities whose row in `select.entity_set` holds every condition of `where`: a
+  value, a list of values (labels and other text by name), or a comparison (`">=0"`, `"!=2"`); a missing value never
+  holds. For a mesh, the entity set is any the mesh represents (a triangle is kept when its feature row in that set
+  is); for segments and grids, the source's own set.
+- **Drawing.** `color_by` names a variable of an entity set the layer's entities are in (as `select`), or is null
+  (then `solid_color`, RGB in [0, 1]); `colormap` is a colour map's name (ParaView's preset names), `range` `"auto"`
+  or `[min, max]`, `log` a log scale; `opacity`, `visible` (when opened), `representation`; `tube` (segments only)
+  draws them as tubes of radius the `radius` column times `scale`.
+- **Defaults.** `colormap` `"Viridis (matplotlib)"`, `range` `"auto"`, `log` false, `opacity` 1, `visible` true,
+  `representation` `"Surface"`, `solid_color` white, a tube's `scale` 1.
+- Every name a layer gives (data structure, mesh, entity sets, columns) SHOULD be in the frames it goes with;
+  the Python reference implementation checks them (`openalea.fspm_tf.views.check_views(views, frame)`). In a frame
+  that lacks one (e.g. a mesh drawn from a later frame on), a viewer draws the layer empty.
+
 ## 9. Conformance
 
 `conformance/` holds reference scenes, each a GLB with its expected values in `*.expected.json`, and a growing
@@ -503,6 +537,8 @@ Both transports carry the same messages.
 
 All additions; a 0.2 file is a valid 0.3 file.
 
+- §8.1: views, an optional companion of a sequence (`views.json`, `spec/schema/views.schema.json`): configurations of
+  layers, each a selection of a mesh's, segments' or grid's entities and how they are drawn.
 
 - §11: coupling sessions: partial frames (`FSPM_scene.update`), the messages (`spec/schema/coupling.schema.json`),
   declarations and rights, links (units, factors, changes of scale, mappings between data structures), stages, the

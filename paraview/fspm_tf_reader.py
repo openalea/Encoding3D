@@ -24,6 +24,14 @@ The graph's links (complex, parent, edge_type) and the columns of role "setting"
 metafspm's MPG links) are left out unless "Show Settings" is ticked.
 Data structures are placed by their origin.
 
+With views (specification §8.1: a views.json next to the file, or the one "Views" names), the output is instead one
+block per layer of the chosen "Configuration" (the file's active one by default), named by the layer: only its
+selected entities (a mesh's triangles whose rows at the select entity set match, the segments whose rows match, the
+grid's cells, the others hidden), its colour variable as the active scalars, a segments layer's tube radius as point
+data "tube_radius"; hidden layers are there too, and a layer whose names a frame lacks is an empty block. The macros
+apply_fspm_tf_views.py and save_fspm_tf_views.py (next to this file; Macros > Import new macro...) make each layer its
+own pipeline item, and write the items' display options back into the views file.
+
 frame_to_vtk(frame) builds the output without ParaView (VTK only), e.g. for scripts and tests.
 """
 import os
@@ -32,8 +40,8 @@ import sys
 import numpy as np
 from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
 from vtkmodules.vtkCommonCore import vtkPoints, vtkStringArray
-from vtkmodules.vtkCommonDataModel import (VTK_HEXAHEDRON, vtkCellArray, vtkImageData, vtkMultiBlockDataSet,
-                                           vtkPolyData, vtkUnstructuredGrid)
+from vtkmodules.vtkCommonDataModel import (VTK_HEXAHEDRON, vtkCellArray, vtkDataSetAttributes, vtkImageData,
+                                           vtkMultiBlockDataSet, vtkPolyData, vtkUnstructuredGrid)
 from vtkmodules.vtkCommonExecutionModel import vtkStreamingDemandDrivenPipeline
 
 
@@ -46,6 +54,12 @@ def _fspm_tf():
             sys.path.insert(0, source)
         from openalea import fspm_tf
     return fspm_tf
+
+
+def _views():
+    _fspm_tf()
+    from openalea.fspm_tf import views
+    return views
 
 
 SEGMENT_ENDS = (("proximal_end_x", "x1"), ("proximal_end_y", "y1"), ("proximal_end_z", "z1"),
@@ -84,16 +98,17 @@ def _shown(entity_set, name: str, settings: bool) -> bool:
     return name not in LINKS and (declared is None or declared.role != "setting")
 
 
-def _add_columns(data, entity_set, rows: np.ndarray, field_data, settings: bool = False) -> None:
-    """Cell data of *entity_set*'s columns, one value per cell from *rows* (-1: no entity, NaN)."""
+def _add_columns(data, entity_set, rows: np.ndarray, field_data, settings: bool = False, forced=()) -> None:
+    """Cell data of *entity_set*'s columns, one value per cell from *rows* (-1: no entity, NaN); the columns
+    *forced* (a layer's colour variable) whatever their role."""
     valid = rows >= 0
     taken = np.where(valid, rows, 0)
     for name, column in entity_set.columns.items():
-        if not _shown(entity_set, name, settings):
+        if not _shown(entity_set, name, settings) and name not in forced:
             continue
         label = f"{entity_set.name}.{name}"
         if column.dtype == object:
-            if name not in ("label", "relation") and len(set(column.tolist())) > 64:
+            if name not in ("label", "relation") and name not in forced and len(set(column.tolist())) > 64:
                 continue                                    # free text: not a colouring
             codes, names = _codes(column)
             values = np.where(valid, codes[taken], -1)
@@ -119,13 +134,16 @@ def _transform(points: np.ndarray, origin: np.ndarray) -> np.ndarray:
     return points @ origin[:3, :3].T + origin[:3, 3]
 
 
-def _mesh(mesh, data_structure, settings: bool = False):
+def _mesh(mesh, data_structure, settings: bool = False, kept: np.ndarray = None, forced: dict = None):
+    """The mesh's triangles (those *kept*, a mask, when given); *forced*: {entity set: columns}, see _add_columns."""
     polydata = vtkPolyData()
     points = vtkPoints()
     points.SetData(numpy_to_vtk(np.ascontiguousarray(_transform(mesh.positions, data_structure.origin)), deep=True))
     polydata.SetPoints(points)
     corners = mesh.indices if mesh.indices is not None else np.arange(len(mesh.positions))
     triangles = corners.reshape(-1, 3)
+    if kept is not None:
+        triangles = triangles[kept]
     offsets = np.arange(0, 3 * len(triangles) + 1, 3, dtype=np.int64)
     cells = vtkCellArray()
     cells.SetData(numpy_to_vtkIdTypeArray(offsets, deep=True),
@@ -133,7 +151,7 @@ def _mesh(mesh, data_structure, settings: bool = False):
     polydata.SetPolys(cells)
     for set_name, rows in mesh.feature_rows.items():
         _add_columns(polydata.GetCellData(), data_structure.entity_set(set_name), rows[triangles[:, 0]],
-                     polydata.GetFieldData(), settings)
+                     polydata.GetFieldData(), settings, (forced or {}).get(set_name, ()))
     for name, values in mesh.display.items():
         polydata.GetPointData().AddArray(_array(f"display.{name}", np.asarray(values, dtype=np.float32)))
     return polydata
@@ -151,9 +169,12 @@ def _segment_columns(entity_set) -> list:
     return found
 
 
-def _segments(entity_set, columns: list, data_structure, settings: bool = False):
-    ends = np.stack([entity_set.columns[name].astype(np.float64) for name in columns], axis=1)
-    count = entity_set.count
+def _segments(entity_set, columns: list, data_structure, settings: bool = False, rows: np.ndarray = None,
+              forced=(), tube_radius: np.ndarray = None):
+    """One line per entity (per row of *rows* when given); *tube_radius*: a radius per entity, as point data."""
+    rows = np.arange(entity_set.count) if rows is None else rows
+    ends = np.stack([entity_set.columns[name].astype(np.float64)[rows] for name in columns], axis=1)
+    count = len(rows)
     points_array = _transform(np.concatenate([ends[:, :3], ends[:, 3:]]), data_structure.origin)
     polydata = vtkPolyData()
     points = vtkPoints()
@@ -164,11 +185,15 @@ def _segments(entity_set, columns: list, data_structure, settings: bool = False)
     cells.SetData(numpy_to_vtkIdTypeArray(np.arange(0, 2 * count + 1, 2, dtype=np.int64), deep=True),
                   numpy_to_vtkIdTypeArray(connectivity, deep=True))
     polydata.SetLines(cells)
-    _add_columns(polydata.GetCellData(), entity_set, np.arange(count), polydata.GetFieldData(), settings)
+    _add_columns(polydata.GetCellData(), entity_set, rows, polydata.GetFieldData(), settings, forced)
+    if tube_radius is not None:
+        radius = np.asarray(tube_radius, dtype=np.float64)[rows]
+        polydata.GetPointData().AddArray(_array(_views().TUBE_RADIUS, np.concatenate([radius, radius])))
     return polydata
 
 
-def _regular_grid(data_structure, settings: bool = False):
+def _regular_grid(data_structure, settings: bool = False, kept: np.ndarray = None, forced=()):
+    """The grid as image data; the cells not *kept* (a mask over the cells' rows) hidden."""
     grid = data_structure.grid
     cells = data_structure.entity_set(grid.cells)
     dimensions = len(grid.shape)
@@ -182,15 +207,20 @@ def _regular_grid(data_structure, settings: bool = False):
     if not grid.z_up and dimensions == 3:
         image.SetDirectionMatrix(1., 0., 0., 0., 1., 0., 0., 0., -1.)      # z pointing down
     order = np.arange(int(np.prod(shape))).reshape(shape).ravel(order="F")   # VTK: the first axis varies fastest
-    _add_columns(image.GetCellData(), cells, order, image.GetFieldData(), settings)
+    _add_columns(image.GetCellData(), cells, order, image.GetFieldData(), settings, forced)
+    if kept is not None:
+        ghosts = np.where(kept[order], 0, vtkDataSetAttributes.HIDDENCELL).astype(np.uint8)
+        image.GetCellData().AddArray(_array(vtkDataSetAttributes.GhostArrayName(), ghosts))
     return image
 
 
-def _adaptive_grid(data_structure, settings: bool = False):
+def _adaptive_grid(data_structure, settings: bool = False, kept: np.ndarray = None, forced=()):
+    """The grid's leaf cells as hexahedra (those *kept*, a mask, when given)."""
     grid = data_structure.grid
     cells = data_structure.entity_set(grid.cells)
-    level = cells.columns["level"].astype(np.int64)
-    index = cells.columns["index"].astype(np.float64)
+    rows = np.arange(cells.count) if kept is None else np.flatnonzero(kept)
+    level = cells.columns["level"].astype(np.int64)[rows]
+    index = cells.columns["index"].astype(np.float64)[rows]
     size = np.asarray(grid.spacing, dtype=np.float64)[None, :] / (2. ** level)[:, None]
     lower = np.asarray(grid.origin, dtype=np.float64)[None, :] + index * size
     upper = lower + size
@@ -206,12 +236,12 @@ def _adaptive_grid(data_structure, settings: bool = False):
     points = vtkPoints()
     points.SetData(numpy_to_vtk(np.ascontiguousarray(points_array), deep=True))
     unstructured.SetPoints(points)
-    count = cells.count
+    count = len(rows)
     cell_array = vtkCellArray()
     cell_array.SetData(numpy_to_vtkIdTypeArray(np.arange(0, 8 * count + 1, 8, dtype=np.int64), deep=True),
                        numpy_to_vtkIdTypeArray(np.arange(8 * count, dtype=np.int64), deep=True))
     unstructured.SetCells(VTK_HEXAHEDRON, cell_array)
-    _add_columns(unstructured.GetCellData(), cells, np.arange(count), unstructured.GetFieldData(), settings)
+    _add_columns(unstructured.GetCellData(), cells, rows, unstructured.GetFieldData(), settings, forced)
     return unstructured
 
 
@@ -221,10 +251,64 @@ def _named(blocks: vtkMultiBlockDataSet, data_set, name: str) -> None:
     blocks.GetMetaData(number).Set(vtkMultiBlockDataSet.NAME(), name)
 
 
-def frame_to_vtk(frame, settings: bool = False) -> vtkMultiBlockDataSet:
+def _layer(frame, layer: dict, settings: bool = False):
+    """The data set of a layer (views.configuration's, its defaults filled): its selected entities only, its colour
+    variable as the active scalars; empty when the frame lacks a name it gives (e.g. a mesh drawn from a later frame
+    on), so that every frame of a sequence has the same blocks."""
+    views = _views()
+    report = views.check_views({"fspm_tf_views": views.FORMAT, "configurations": {"layer": {"layers": [layer]}}}, frame)
+    if not report.ok:
+        return vtkPolyData()
+    source = layer["source"]
+    data_structure = frame.data_structure(source["data_structure"])
+    select = layer.get("select")
+    chosen = (data_structure.entity_set(select["entity_set"]), select["where"]) if select else None
+    colour = layer.get("color_by")
+    forced = {colour["entity_set"]: (colour["variable"],)} if colour else {}
+    if source["kind"] == "mesh":
+        mesh = next(mesh for mesh in data_structure.meshes if mesh.name == source["mesh"])
+        kept = None
+        if chosen is not None:
+            corners = mesh.indices if mesh.indices is not None else np.arange(len(mesh.positions))
+            rows = mesh.feature_rows[chosen[0].name][corners.reshape(-1, 3)[:, 0]]
+            matching = views.selected(*chosen)
+            kept = (rows >= 0) & matching[np.where(rows >= 0, rows, 0)]
+        data_set = _mesh(mesh, data_structure, settings, kept, forced)
+    elif source["kind"] == "segments":
+        entity_set = data_structure.entity_set(source["entity_set"])
+        rows = np.flatnonzero(views.selected(*chosen)) if chosen is not None else None
+        tube = layer.get("tube")
+        radius = entity_set.columns[tube["radius"]].astype(np.float64) * float(tube.get("scale", 1.)) if tube else None
+        data_set = _segments(entity_set, _segment_columns(entity_set), data_structure, settings, rows,
+                             forced.get(entity_set.name, ()), radius)
+    else:
+        kept = views.selected(*chosen) if chosen is not None else None
+        build = _regular_grid if data_structure.grid.kind == "regular" else _adaptive_grid
+        data_set = build(data_structure, settings, kept, forced.get(data_structure.grid.cells, ()))
+    array = views.colour_array(layer, {data_set.GetCellData().GetArrayName(number)
+                                       for number in range(data_set.GetCellData().GetNumberOfArrays())})
+    if array is not None:
+        data_set.GetCellData().SetActiveScalars(array)
+    return data_set
+
+
+def frame_to_vtk(frame, settings: bool = False, views=None, configuration: str = None) -> vtkMultiBlockDataSet:
     """The frame as a multiblock data set: one block per data structure, holding its meshes, its entity sets with
     segment ends as lines, and its grid. *settings*: also the graph's links (complex, parent, edge_type) and the
-    columns of role "setting"."""
+    columns of role "setting".
+
+    *views* (a views document, or the path of a views.json): instead, one block per layer of the *configuration*
+    (None: the active one), named by the layer, hidden layers included (see _layer)."""
+    if views is not None:
+        views_module = _views()
+        document = views_module.read_views(views) if isinstance(views, (str, os.PathLike)) else views
+        report = views_module.check_views(document)
+        if not report.ok:
+            raise ValueError(str(report))
+        output = vtkMultiBlockDataSet()
+        for layer in views_module.configuration(document, configuration)[1]:
+            _named(output, _layer(frame, layer, settings), layer["name"])
+        return output
     output = vtkMultiBlockDataSet()
     for data_structure in frame.data_structures:
         blocks = vtkMultiBlockDataSet()
@@ -276,12 +360,18 @@ except ImportError:                                  # VTK without ParaView: fra
     VTKPythonAlgorithmBase = None
 
 if VTKPythonAlgorithmBase is not None:
+    try:
+        _fspm_tf()                                   # on ParaView's path now: the views macros import it too
+    except ImportError:
+        pass
+
     @smproxy.reader(name="fspmTFReader", label="fspm-TF reader", extensions="glb json",
                     file_description="fspm-TF frames (.glb) and sequences (scene.fspm.json)")
     class FspmTFReader(VTKPythonAlgorithmBase):
         def __init__(self):
             VTKPythonAlgorithmBase.__init__(self, nInputPorts=0, nOutputPorts=1, outputType="vtkMultiBlockDataSet")
             self._file_name, self._source, self._settings = None, None, False
+            self._views, self._configuration = "", ""
 
         @smproperty.stringvector(name="FileName")
         @smdomain.filelist()
@@ -300,6 +390,35 @@ if VTKPythonAlgorithmBase is not None:
         def SetShowSettings(self, value):
             if bool(value) != self._settings:
                 self._settings = bool(value)
+                self.Modified()
+
+        @smproperty.stringvector(name="Views", default_values="")
+        @smdomain.filelist()
+        @smhint.filechooser(extensions="json", file_description="fspm-TF views (views.json)")
+        def SetViews(self, name):
+            """The views file (empty: the views.json next to the file, when there is one; none: today's blocks)."""
+            if (name or "") != self._views:
+                self._views = name or ""
+                self.Modified()
+
+        def _views_path(self):
+            return _views().views_path(self._file_name, self._views) if self._file_name else None
+
+        @smproperty.stringvector(name="ConfigurationNames", information_only="1")
+        def GetConfigurationNames(self):
+            path = self._views_path()
+            return _views().configuration_names(_views().read_views(path)) if path else []
+
+        @smproperty.stringvector(name="Configuration", number_of_elements="1", default_values="")
+        @smdomain.xml("""<StringListDomain name="list">
+                           <RequiredProperties>
+                             <Property name="ConfigurationNames" function="StringInfo"/>
+                           </RequiredProperties>
+                         </StringListDomain>""")
+        def SetConfiguration(self, name):
+            """The configuration shown (empty: the views' active one)."""
+            if (name or "") != self._configuration:
+                self._configuration = name or ""
                 self.Modified()
 
         def _opened(self):
@@ -332,7 +451,9 @@ if VTKPythonAlgorithmBase is not None:
                 else None
             frame = self._opened().frame_at(time)
             output = vtkMultiBlockDataSet.GetData(out_info, 0)
-            output.ShallowCopy(frame_to_vtk(frame, settings=self._settings))
+            path = self._views_path()
+            output.ShallowCopy(frame_to_vtk(frame, settings=self._settings, views=path,
+                                            configuration=self._configuration or None))
             if time is not None:
                 output.GetInformation().Set(output.DATA_TIME_STEP(), frame.time)
             return 1

@@ -17,6 +17,7 @@ Everything the platforms agree on is in the repository's `spec/` folder, togethe
 | `spec/specification.md` | the rules, in words (MUST, SHOULD, MAY as in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119)) | by the validator, `fspm-tf validate` |
 | `spec/schema/fspm_scene.schema.json` | the shape of the `FSPM_scene` JSON (its fields and their types) | by any JSON Schema validator |
 | `spec/schema/index.schema.json` | the shape of a sequence's index, `scene.fspm.json` | by any JSON Schema validator |
+| `spec/schema/views.schema.json` | the shape of a sequence's optional views, `views.json` (how to look at it) | by any JSON Schema validator; names against a frame by `openalea.fspm_tf.views.check_views` |
 | `spec/vocabulary/standard_names.csv` | the shared quantities: canonical unit, kind, definition, and each platform's names for them | by the validator (units, kinds) |
 | `spec/vocabulary/labels.csv` | the entity labels, with their scale and Plant Ontology term | by the validator (warnings) |
 | `spec/vocabulary/enums.json` | the allowed values: edge types, kinds, roles, base scales, formats… | by the schemas and the validator |

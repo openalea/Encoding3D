@@ -1,6 +1,7 @@
 """
 The reader inside ParaView: loads the plugin, opens conformance files and a sequence, checks their blocks, arrays and
-time steps, and renders a picture of each.
+time steps, and renders a picture of each; then a frame with views (one block per layer, the configurations'
+drop-down) and the macros applying and saving them.
 
     pvpython paraview/check_in_paraview.py conformance [output folder]
 """
@@ -85,4 +86,38 @@ with tempfile.TemporaryDirectory() as directory:
         names.add(point_data.GetArrayInformation(number).GetName())
     print("glTF reader", type(plain).__name__, "point data", sorted(names))
     assert any("WATER_POTENTIAL" in name for name in names), sorted(names)
+
+# Views: a views.json next to the frame gives one block per layer; the macros make and save the layers' items
+import runpy  # noqa: E402
+import shutil  # noqa: E402
+
+from openalea.fspm_tf import views  # noqa: E402
+
+with tempfile.TemporaryDirectory() as directory:
+    shutil.copy(os.path.join(conformance, "root_system.glb"), directory)
+    layers = [{"name": "roots",
+               "source": {"data_structure": "root_system", "kind": "segments", "entity_set": "SubOrgan"},
+               "color_by": {"entity_set": "SubOrgan", "variable": "water_potential"}, "tube": {"radius": "radius"}},
+              {"name": "mesh", "source": {"data_structure": "root_system", "kind": "mesh", "mesh": "roots"},
+               "color_by": None, "opacity": 0.3, "visible": False}]
+    path = os.path.join(directory, views.VIEWS_FILE)
+    views.write_views(path, {"fspm_tf_views": 1, "active": "default",
+                             "configurations": {"default": {"layers": layers}, "mesh only": {"layers": layers[1:]}}})
+    viewed = fspmTFreader(FileName=os.path.join(directory, "root_system.glb"))  # noqa: F821
+    viewed.UpdatePropertyInformation()
+    assert list(viewed.ConfigurationNames) == ["default", "mesh only"], list(viewed.ConfigurationNames)
+    viewed.UpdatePipeline()
+    assert viewed.GetDataInformation().DataInformation.GetNumberOfLeaves() == 2
+    simple.SetActiveSource(viewed)
+    runpy.run_path(os.path.join(HERE, "apply_fspm_tf_views.py"))
+    tube = simple.FindSource("roots")
+    assert tube is not None and simple.FindSource("mesh") is not None
+    simple.GetDisplayProperties(tube).Opacity = 0.5
+    simple.SetActiveSource(viewed)
+    runpy.run_path(os.path.join(HERE, "save_fspm_tf_views.py"))
+    assert views.read_views(path)["configurations"]["default"]["layers"][0]["opacity"] == 0.5
+    picture(tube, "root_system_views", "SubOrgan.water_potential", side=True)
+    viewed.Configuration = "mesh only"
+    viewed.UpdatePipeline()
+    assert viewed.GetDataInformation().DataInformation.GetNumberOfLeaves() == 1
 print("fspm-TF reader: ok")

@@ -1,5 +1,6 @@
 """The JSON Schemas of fspm-TF (spec/schema/): fspm_scene.schema.json (the FSPM_scene extension),
-index.schema.json (a sequence's scene.fspm.json) and coupling.schema.json (a coupling session's messages)."""
+index.schema.json (a sequence's scene.fspm.json), views.schema.json (a sequence's views.json) and coupling.schema.json
+(a coupling session's messages)."""
 import json
 from functools import lru_cache
 
