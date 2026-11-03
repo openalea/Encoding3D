@@ -27,13 +27,16 @@ class Replay:
         self._cache = {}
         self.id_offset = 0
         self.linear = set()                       # (data structure, entity set, variable) interpolated
+        self.needed = None                        # (data structure, entity set, variable) some link uses (None: all)
         self.sent = {}                            # (data structure, entity set): ids sent at the last turn
         self.id_map = {}                          # recorded id: session id
         self.declaration = self._declare()
 
     def _frame(self, position: int) -> Frame:
-        if position not in self._cache:
-            self._cache = {position: read(self.paths[position])}     # one frame kept
+        if position not in self._cache:                  # one frame kept, read lazily: only the columns used
+            for frame in self._cache.values():
+                frame.close()
+            self._cache = {position: read(self.paths[position], lazy=True)}
         return self._cache[position]
 
     def _declare(self) -> Declaration:
@@ -75,14 +78,18 @@ class Replay:
         frame = self._frame(position)
         following = None
         if self.linear and position + 1 < len(self.times) and recorded_time > self.times[position]:
-            following = read(self.paths[position + 1])
+            following = read(self.paths[position + 1], lazy=True)
             weight = (recorded_time - self.times[position]) / (self.times[position + 1] - self.times[position])
         structures, removed = [], {}
         for data_structure in frame.data_structures:
             out = DataStructure(data_structure.id)
             for entity_set in data_structure.entity_sets:
                 columns = {}
-                for name, values in entity_set.columns.items():
+                for name in entity_set.columns:
+                    if name not in entity_set.reserved and self.needed is not None \
+                            and (data_structure.id, entity_set.name, name) not in self.needed:
+                        continue                          # a variable no link uses: not decoded
+                    values = entity_set.columns[name]
                     if name in _ID_COLUMNS:
                         values = np.array([self._session_id(int(value)) for value in np.asarray(values).tolist()],
                                           dtype=np.int64)
@@ -90,7 +97,8 @@ class Replay:
                 if following is not None:
                     self._interpolate(data_structure.id, entity_set, following, weight, columns)
                 out.entity_sets.append(EntitySet(entity_set.name, columns=columns, rank=entity_set.rank,
-                                                 variables=dict(entity_set.variables)))
+                                                 variables={name: variable for name, variable in
+                                                            entity_set.variables.items() if name in columns}))
                 key = (data_structure.id, entity_set.name)
                 ids = set(columns["id"].tolist()) if "id" in columns else set()
                 gone = self.sent.get(key, set()) - ids
@@ -126,7 +134,8 @@ class Replay:
         rows = np.array([later_rows.get(identifier, -1) for identifier in entity_set.columns["id"].tolist()])
         found = rows >= 0
         for name in entity_set.variable_names():
-            if (data_structure_id, entity_set.name, name) not in self.linear or name not in later.columns:
+            if (data_structure_id, entity_set.name, name) not in self.linear or name not in later.columns \
+                    or name not in columns:
                 continue
             values = np.asarray(columns[name])
             if values.dtype.kind != "f":

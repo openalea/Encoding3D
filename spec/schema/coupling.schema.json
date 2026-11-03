@@ -79,7 +79,8 @@
       "start": {"type": "number"}, "interval": {"type": "number", "exclusiveMinimum": 0},
       "timeUnit": {"type": "string"}, "steps": {"type": "integer", "minimum": 0},
       "stages": {"type": "array", "items": {"type": "array", "items": {"$ref": "#/$defs/identifier"}}},
-      "participants": {"type": "array", "items": {"$ref": "#/$defs/identifier"}}
+      "participants": {"type": "array", "items": {"$ref": "#/$defs/identifier"}},
+      "keepMessages": {"description": "Over a folder: every message kept (else each deleted by its reader once read).", "type": "boolean"}
      }
     },
     "couplings": {"type": "array", "items": {"type": "object"}}, "payload": {"$ref": "#/$defs/payload"}

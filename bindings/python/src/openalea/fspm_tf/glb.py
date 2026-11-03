@@ -24,7 +24,8 @@ def pack(document: dict, binary: bytes) -> bytes:
 
 
 def unpack(data: bytes) -> tuple:
-    """(JSON document, binary buffer) of a GLB file."""
+    """(JSON document, binary buffer) of a GLB file (*data*: bytes, or a memoryview: the binary chunk then a view of
+    it, not a copy)."""
     if len(data) < 20:
         raise ValueError("not a GLB file: too short")
     magic, version, length = struct.unpack_from("<III", data, 0)
@@ -39,7 +40,7 @@ def unpack(data: bytes) -> tuple:
         chunk_length, chunk_type = struct.unpack_from("<II", data, offset)
         chunk = data[offset + 8:offset + 8 + chunk_length]
         if chunk_type == JSON_CHUNK:
-            document = json.loads(chunk.decode("utf-8"))
+            document = json.loads(bytes(chunk).decode("utf-8"))
         elif chunk_type == BIN_CHUNK:
             binary = chunk
         offset += 8 + chunk_length

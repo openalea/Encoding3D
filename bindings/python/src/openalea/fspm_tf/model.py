@@ -17,6 +17,7 @@ reserved by the specification (RESERVED) are the structure: ids, the MTG relatio
 Missing values: NaN in float columns; elsewhere a numpy masked array (np.ma, the masked rows missing) for integers and
 booleans, None in a text column.
 """
+from collections.abc import MutableMapping, MutableSequence
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -40,6 +41,78 @@ FORMATS = ("date", "date-time", "time")         # a text variable holding ISO 86
 ENUM_COLUMNS = ("label", "edge_type", "relation")
 DATA_STRUCTURE_KINDS = ("graph", "regular_grid", "adaptive_grid", "table")
 ROLES = ("state", "input", "parameter", "derived", "setting")
+
+
+class LazyColumns(MutableMapping):
+    """A table's columns read lazily (codec.read(path, lazy=True)): their names known, each column decoded from the
+    file on first access, then kept. Setting or deleting a column works as on a dict."""
+
+    def __init__(self, loaders: dict, count: int):
+        self._loaders = dict(loaders)                  # name: a function decoding the column
+        self._values = {}
+        self._order = list(loaders)
+        self.count = count
+
+    def __getitem__(self, name):
+        if name not in self._values:
+            if name not in self._loaders:
+                raise KeyError(name)
+            self._values[name] = self._loaders.pop(name)()
+        return self._values[name]
+
+    def __setitem__(self, name, values):
+        if name not in self._order:
+            self._order.append(name)
+        self._loaders.pop(name, None)
+        self._values[name] = _as_column(name, values)
+
+    def __delitem__(self, name):
+        if name not in self._order:
+            raise KeyError(name)
+        self._order.remove(name)
+        self._loaders.pop(name, None)
+        self._values.pop(name, None)
+
+    def __contains__(self, name):                    # without decoding it
+        return name in self._order
+
+    def __iter__(self):
+        return iter(list(self._order))
+
+    def __len__(self):
+        return len(self._order)
+
+    def decoded(self) -> list:
+        """The names of the columns decoded so far."""
+        return [name for name in self._order if name in self._values]
+
+
+class LazyList(MutableSequence):
+    """A list whose items (a data structure's meshes, read lazily) are decoded on first access."""
+
+    def __init__(self, loaders=()):
+        self._items = [(False, loader) for loader in loaders]
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return [self[position] for position in range(*index.indices(len(self)))]
+        done, item = self._items[index]
+        if not done:
+            item = item()
+            self._items[index] = (True, item)
+        return item
+
+    def __setitem__(self, index, value):
+        self._items[index] = (True, value)
+
+    def __delitem__(self, index):
+        del self._items[index]
+
+    def __len__(self):
+        return len(self._items)
+
+    def insert(self, index, value):
+        self._items.insert(index, (True, value))
 
 
 @dataclass
@@ -70,6 +143,8 @@ class Table:
     table_kind = "scalars"
 
     def __post_init__(self):
+        if isinstance(self.columns, LazyColumns):        # read lazily: each column checked as it is decoded
+            return
         self.columns = {name: _as_column(name, values) for name, values in self.columns.items()}
         for name in set(self.columns) & set(ID_COLUMNS) & set(self.reserved):    # ids are int64, whatever the platform's
             if self.columns[name].dtype.kind in "iu":                            # default integer
@@ -82,6 +157,8 @@ class Table:
 
     @property
     def count(self) -> int:
+        if isinstance(self.columns, LazyColumns):
+            return self.columns.count
         return len(next(iter(self.columns.values()))) if self.columns else 0
 
     @property
@@ -237,6 +314,26 @@ class Frame:
             if data_structure.id == id:
                 return data_structure
         raise KeyError(f"the frame has no data structure '{id}'")
+
+    def close(self) -> None:
+        """Release the file of a frame read lazily (codec.read(path, lazy=True)); its columns not decoded yet can no
+        longer be read. Nothing to do for a frame read whole."""
+        source = getattr(self, "_source", None)
+        if source is None:
+            return
+        mapped, binary = source
+        self._source = None
+        try:
+            binary.release()
+            mapped.close()
+        except BufferError:                  # a view of the file still alive: closed when it goes
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exception):
+        self.close()
 
 
 def _as_column(name: str, values) -> np.ndarray:

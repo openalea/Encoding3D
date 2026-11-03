@@ -14,7 +14,7 @@ sequences.
 5. Stop. A participant's error, or its update the store refuses, stops the session: every participant is told why.
 
 *record*: a folder where the session is written as a sequence of full frames (every entity set and output), after the
-initial state and each step.
+initial state and each step. *keep_messages*: over a folder, every message kept (else each deleted once read).
 """
 import os
 import subprocess
@@ -33,8 +33,9 @@ from openalea.fspm_tf.coupling.store import SessionStore
 class Coordinator:
     def __init__(self, endpoint: str = "tcp://127.0.0.1:*", steps: int = 1, interval: float = 1.,
                  time_unit: str = "d", start: float = 0., links=(), stages=None, expect=(), replays=None,
-                 record: str = None, timeout: float = 600.):
-        self.channel = coordinator_channel(endpoint)
+                 record: str = None, timeout: float = 600., keep_messages: bool = False):
+        self.channel = coordinator_channel(endpoint, keep_messages)
+        self.keep_messages = keep_messages
         self.endpoint = self.channel.endpoint
         self.steps, self.interval, self.time_unit, self.start = steps, interval, time_unit, start
         self.links = [link if isinstance(link, Link) else Link.from_json(link) for link in links]
@@ -130,8 +131,11 @@ class Coordinator:
             replay.linear = {(coupling.source.data_structure, coupling.source.entity_set, coupling.source.name)
                              for coupling in self.couplings
                              if coupling.provider == name and coupling.interpolation == "linear"}
+            replay.needed = {(coupling.source.data_structure, coupling.source.entity_set, coupling.source.name)
+                             for coupling in self.couplings if coupling.provider == name}
         session = {"start": self.start, "interval": self.interval, "timeUnit": self.time_unit, "steps": self.steps,
-                   "stages": self.stages, "participants": list(self.declarations)}
+                   "stages": self.stages, "participants": list(self.declarations),
+                   "keepMessages": self.keep_messages}
         for name in self.declarations:
             if name in self.replays:
                 continue

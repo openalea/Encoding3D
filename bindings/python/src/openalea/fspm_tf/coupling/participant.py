@@ -62,6 +62,8 @@ class Participant:
             raise CouplingError(f"expected a welcome, got {header['type']}")
         participant.id_offset = header["idOffset"]
         participant.session = header["session"]
+        if hasattr(participant.channel, "keep_messages"):          # the folder transport
+            participant.channel.keep_messages(header["session"].get("keepMessages", True))
         participant.couplings = header.get("couplings", [])
         return participant
 

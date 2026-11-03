@@ -12,6 +12,9 @@ public interface Channel extends AutoCloseable {
     /** The next message; FspmTfException after {@code timeout} seconds without one (null: wait). */
     Message receive(Double timeout);
 
+    /** As the session says (its welcome's keepMessages): keep the messages read, or delete them (the folder transport). */
+    default void keepMessages(boolean keep) {}
+
     @Override
     default void close() {}
 

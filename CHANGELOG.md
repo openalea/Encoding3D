@@ -13,6 +13,13 @@
 
 ## Unreleased: specification 0.3 (draft), coupling platforms
 
+- Lazy reading (`read(path, lazy=True)`): the file mapped in memory, its JSON parsed, each column and mesh decoded on
+  first access (`LazyColumns`, `LazyList`), `frame.close()` or a `with` block; used by the ParaView reader and by
+  replays (only the columns links use).
+- The folder transport deletes each message once read, unless the session keeps them (`keepMessages`,
+  `--keep-messages`); every participant (Python, Julia, C++, Java) applies it, and the conformance sessions check
+  that the folder is left empty.
+
 - Specification 0.3: the frames say 0.3 (0.1 and 0.2 files stay valid); "Changes from 0.2"; the conformance files
   regenerated (their expected values unchanged).
 - Links between two data structures, through a mapping a participant provides (declared, sent in its updates):

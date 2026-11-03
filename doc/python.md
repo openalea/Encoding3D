@@ -71,6 +71,22 @@ for frame in fspm_tf.read_sequence("outputs/frames/scene.fspm.json"):
     ...
 ```
 
+## Large frames: reading lazily
+
+`fspm_tf.read(path, lazy=True)` maps the file in memory and parses only its JSON: names, declarations, ranks and
+counts are there at once, and each column (and each mesh) is decoded when first read. A reader using a few columns of
+a large frame decodes only those (a GroIMP frame of 7.4 MB with a 456,000-vertex mesh: 17 ms read whole, 0.8 ms for
+one column). The frame holds the file until it is closed:
+
+```python
+with fspm_tf.read("plant.glb", lazy=True) as frame:
+    segments = frame.data_structure("plant").entity_set("SubOrgan")
+    lengths = segments.columns["length"]          # decoded now; the other columns are not
+```
+
+The ParaView reader and a coupling session's replay read frames this way (a replay decodes only the columns some
+link uses).
+
 ## The vocabulary
 
 ```python

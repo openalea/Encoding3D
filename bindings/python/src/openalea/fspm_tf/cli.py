@@ -117,7 +117,8 @@ def _couple(arguments) -> int:
     coordinator = Coordinator(arguments.endpoint, steps=arguments.steps, interval=arguments.interval,
                               time_unit=arguments.time_unit, start=arguments.start, links=links, stages=stages,
                               expect=arguments.expect or [], replays=_pairs(arguments.replay, "replay"),
-                              record=arguments.record, timeout=arguments.timeout)
+                              record=arguments.record, timeout=arguments.timeout,
+                              keep_messages=arguments.keep_messages)
     print(f"coordinator at {coordinator.endpoint}", flush=True)
     for name, command in _pairs(arguments.participant, "participant").items():
         coordinator.launch(name, command)
@@ -187,6 +188,8 @@ def main(argv=None) -> int:
     couple.add_argument("--endpoint", default="tcp://127.0.0.1:*", help="a ZeroMQ endpoint, or files:FOLDER")
     couple.add_argument("--record", help="a folder: the session recorded as a sequence")
     couple.add_argument("--timeout", type=float, default=600., help="seconds to wait for a message")
+    couple.add_argument("--keep-messages", action="store_true", help="over a folder, keep every message (else each "
+                                                                     "is deleted once read)")
     couple.set_defaults(run=_couple)
     sessions = commands.add_parser("couple-conformance", help="a participant's side against the coupling "
                                                               "conformance sessions")

@@ -18,6 +18,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 public final class FolderChannel implements Channel {
     private final Path incoming, outgoing;
     private long nextRead = 0, nextWrite = 0;
+    private boolean keep = true;                                       // false: a message's files deleted once read
+    private final java.util.List<Path> readFiles = new java.util.ArrayList<>();   // those read and kept
 
     public FolderChannel(String folder, String participant) {
         incoming = Path.of(folder, participant, "to_participant");
@@ -53,6 +55,18 @@ public final class FolderChannel implements Channel {
     }
 
     @Override
+    public void keepMessages(boolean keep) {
+        if (keep) return;
+        this.keep = false;
+        try {
+            for (Path file : readFiles) Files.deleteIfExists(file);
+        } catch (IOException error) {
+            throw new UncheckedIOException(error);
+        }
+        readFiles.clear();
+    }
+
+    @Override
     public Message receive(Double timeout) {
         Path header = incoming.resolve(numbered(nextRead) + ".json");
         long start = System.nanoTime();
@@ -63,12 +77,16 @@ public final class FolderChannel implements Channel {
                 Thread.sleep(5);
             }
             ObjectNode read = (ObjectNode) Json.MAPPER.readTree(Files.readString(header));
+            java.util.List<Path> files = new java.util.ArrayList<>(java.util.List.of(header));
             byte[] payload = null;
             if (read.has("payload")) {
-                payload = Files.readAllBytes(incoming.resolve(read.get("payload").asText()));
+                files.add(incoming.resolve(read.get("payload").asText()));
+                payload = Files.readAllBytes(files.get(1));
                 read.remove("payload");
             }
             nextRead++;
+            if (keep) readFiles.addAll(files);
+            else for (Path file : files) Files.delete(file);
             return new Message(read, payload);
         } catch (IOException error) {
             throw new UncheckedIOException(error);

@@ -112,8 +112,9 @@ fspm-tf couple --steps 30 --interval 1 --time-unit d \
 - `--replay name=run/scene.fspm.json`: a recorded run takes part as a participant, without its platform running.
   A platform's routine log can thus feed another platform's model. CPlantBox's and GroIMP's logs are tested this way.
 - `--endpoint files:folder`: the participants exchange files in a folder instead of ZeroMQ messages. It is slower,
-  but needs nothing but a file system, and the folder keeps every message: plan its disk space (a turn of 100,000
-  segments with five variables is about 5 MB), and use a new folder for each session.
+  but needs nothing but a file system. Each message is deleted once read; `--keep-messages` keeps them all, as the
+  session's log (a turn of 100,000 segments with five variables is about 5 MB: plan the disk space). The usual log
+  is `--record`.
 - `--stages "growth;function"`: who runs first in each step (by default, the participants creating entities, then
   the others). Each step, a stage sees what the previous stages did in that step.
 
@@ -132,9 +133,12 @@ variables on every segment:
 
 | Segments | ZeroMQ | A folder |
 |---|---|---|
-| 1,000 | 3 ms | 13 ms |
-| 10,000 | 9 ms | 21 ms |
-| 100,000 | 99 ms | 110 ms |
+| 1,000 | 3 ms | 12 ms |
+| 10,000 | 9–11 ms | 21 ms |
+| 100,000 | 99–108 ms | 110–122 ms |
+
+ZeroMQ here goes through the local network interface (`tcp://127.0.0.1`), its messages held in memory; the folder's
+messages are files. The folder costs about 10 ms more per step (its polling and file writes).
 
 Encoding and decoding the frames is about a tenth of it (10 ms for 100,000 segments); the rest is the coordinator's
 work on the shared structure, in Python.

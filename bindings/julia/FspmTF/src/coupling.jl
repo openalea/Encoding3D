@@ -177,7 +177,12 @@ mutable struct FolderChannel <: CouplingChannel
     outgoing::String
     next_read::Int
     next_write::Int
+    keep::Bool                       # false: a message's files deleted once read
+    read_files::Vector{String}       # those of the messages read and kept
 end
+
+FolderChannel(incoming, outgoing, next_read, next_write) =
+    FolderChannel(incoming, outgoing, next_read, next_write, true, String[])
 
 function FolderChannel(folder::AbstractString, participant::AbstractString)
     incoming = joinpath(folder, participant, "to_participant")
@@ -210,12 +215,28 @@ function receive_message(channel::FolderChannel, timeout = nothing)
         sleep(0.005)
     end
     header = JSON.parse(read(path * ".json", String))
-    payload = haskey(header, "payload") ? read(joinpath(channel.incoming, pop!(header, "payload"))) : nothing
+    files = [path * ".json"]
+    payload = nothing
+    if haskey(header, "payload")
+        push!(files, joinpath(channel.incoming, pop!(header, "payload")))
+        payload = read(files[end])
+    end
     channel.next_read += 1
+    channel.keep ? append!(channel.read_files, files) : foreach(rm, files)
     return header, payload
 end
 
 close_channel(::CouplingChannel) = nothing
+
+"""As the session says (its welcome's `keepMessages`): keep the messages read, or delete them, those read so far too."""
+keep_messages!(::CouplingChannel, keep::Bool) = nothing
+function keep_messages!(channel::FolderChannel, keep::Bool)
+    keep && return nothing
+    channel.keep = false
+    foreach(path -> isfile(path) && rm(path), channel.read_files)
+    empty!(channel.read_files)
+    return nothing
+end
 
 """
     zmq_channel(endpoint, participant) -> CouplingChannel
@@ -281,6 +302,7 @@ function Participant(declaration::Declaration; endpoint = get(ENV, ENDPOINT_VARI
     header, _ = receive_message(channel, timeout)
     header["type"] == "stop" && error("the coordinator refused $(declaration.participant): $(get(header, "reason", ""))")
     header["type"] == "welcome" || error("expected a welcome, got $(header["type"])")
+    keep_messages!(channel, get(header["session"], "keepMessages", true))
     return Participant(channel, declaration, Int64(header["idOffset"]), Int64(header["idCount"]), header["session"],
                        collect(get(header, "couplings", Any[])), -1, nothing, timeout === nothing ? nothing :
                        Float64(timeout))

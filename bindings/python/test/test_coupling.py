@@ -169,7 +169,7 @@ def test_the_messages_follow_their_schema(tmp_path):
     import json
     import jsonschema
     from openalea.fspm_tf.schema import load
-    run_session(f"files:{tmp_path / 'session'}")
+    run_session(f"files:{tmp_path / 'session'}", keep_messages=True)
     validator = jsonschema.Draft202012Validator(load("coupling"))
     headers = sorted(glob.glob(str(tmp_path / "session" / "*" / "*" / "*.json")))
     types = set()
@@ -265,7 +265,7 @@ def test_the_command_line(tmp_path):
                  "--timeout", "60"])
     assert code == 0
     assert validate_sequence(str(tmp_path / "again" / "scene.fspm.json")).ok
-    assert (tmp_path / "session" / "reader" / "to_coordinator" / "00000000.json").exists()   # the session's log
+    assert not list((tmp_path / "session" / "reader" / "to_coordinator").iterdir())   # each message read, deleted
 
 
 WATER = np.array([0.1, 0.2, 0.3])                   # the soil's three cells

@@ -68,6 +68,12 @@ def run_session(session: str, command: str, out: str, transport: str = "zmq") ->
     coordinator.launch("subject", f"{command} {session} {turns}")
     coordinator.run()
     differences = []
+    if transport == "files":                        # each message deleted by its reader once read
+        left = [os.path.join(root, name) for root, _, names in os.walk(os.path.join(out, "messages"))
+                for name in names]
+        if left:
+            differences.append(f"{len(left)} message file(s) left in the folder, e.g. "
+                               f"{os.path.relpath(left[0], out)}: a reader deletes each message once read")
     expected_folder = os.path.join(session, "expected")
     for name in sorted(os.listdir(expected_folder)):
         if name.startswith("turn_") and name.endswith(".json"):

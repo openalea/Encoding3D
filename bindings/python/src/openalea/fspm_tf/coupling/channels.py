@@ -7,7 +7,8 @@ bytes. Both transports carry the same messages:
 - a folder (endpoint "files:path"): each participant has a folder <path>/<participant>/ with two message queues,
   to_coordinator/ and to_participant/; message n is n.json (its header) and n.glb (its payload), the payload written
   first and the header renamed into place last (a header present: a complete message). Nothing else is needed than
-  files, so any platform can take part, and the folder is the session's log.
+  files, so any platform can take part. Each message is deleted by its reader once read, unless the session keeps
+  them (keepMessages: the folder is then the session's log; a record, Coordinator(record=), is the usual one).
 
 Both sides poll; every wait has a timeout (seconds, None: none).
 """
@@ -90,6 +91,16 @@ class _Queue:
         os.makedirs(folder, exist_ok=True)
         self.next_read = 0
         self.next_write = 0
+        self.keep = True                                # False: a message's files deleted once read
+        self.read_files = []                            # those of the messages read and kept
+
+    def discard_read(self) -> None:
+        """Delete the files of the messages read so far, and from now on each message once read."""
+        self.keep = False
+        for path in self.read_files:
+            if os.path.exists(path):
+                os.remove(path)
+        self.read_files = []
 
     def write(self, header: dict, payload: bytes = None) -> None:
         stem = os.path.join(self.folder, f"{self.next_write:08d}")
@@ -109,28 +120,37 @@ class _Queue:
             return None
         with open(stem + ".json", "rb") as file:
             header = _header(file.read())
-        payload = None
+        payload, files = None, [stem + ".json"]
         if "payload" in header:
-            with open(os.path.join(self.folder, header.pop("payload")), "rb") as file:
+            files.append(os.path.join(self.folder, header.pop("payload")))
+            with open(files[-1], "rb") as file:
                 payload = file.read()
         self.next_read += 1
+        if self.keep:
+            self.read_files += files
+        else:
+            for path in files:
+                os.remove(path)
         return header, payload
 
 
 class FolderCoordinatorChannel:
-    def __init__(self, folder: str):
+    def __init__(self, folder: str, keep: bool = False):
         self.folder = os.path.abspath(folder)
         os.makedirs(self.folder, exist_ok=True)
         for name in os.listdir(self.folder):            # a session's folder is the log of that session only
             if os.path.exists(os.path.join(self.folder, name, "to_participant", f"{0:08d}.json")):
                 raise ValueError(f"{self.folder} holds a previous session ({name}): use a new folder")
         self.endpoint = "files:" + self.folder
+        self.keep = keep
         self.incoming, self.outgoing = {}, {}
 
     def _discover(self) -> None:
         for name in sorted(os.listdir(self.folder)):
             if name not in self.incoming and os.path.isdir(os.path.join(self.folder, name, "to_coordinator")):
                 self.incoming[name] = _Queue(os.path.join(self.folder, name, "to_coordinator"))
+                if not self.keep:
+                    self.incoming[name].discard_read()
                 self.outgoing[name] = _Queue(os.path.join(self.folder, name, "to_participant"))
 
     def receive(self, timeout=None):
@@ -172,15 +192,20 @@ class FolderParticipantChannel:
     def send(self, header: dict, payload: bytes = None) -> None:
         self.outgoing.write(header, payload)
 
+    def keep_messages(self, keep: bool) -> None:
+        """As the session says (its welcome): keep the messages read, or delete them (those read so far too)."""
+        if not keep:
+            self.incoming.discard_read()
+
     def close(self) -> None:
         pass
 
 
-def coordinator_channel(endpoint: str):
+def coordinator_channel(endpoint: str, keep_messages: bool = False):
     """The coordinator's side of *endpoint*: "files:path", or a ZeroMQ endpoint to bind ("tcp://127.0.0.1:*": a
-    free port)."""
+    free port). *keep_messages*: the folder transport keeps every message (the session's log)."""
     if endpoint.startswith("files:"):
-        return FolderCoordinatorChannel(endpoint[len("files:"):])
+        return FolderCoordinatorChannel(endpoint[len("files:"):], keep_messages)
     return ZmqCoordinatorChannel(endpoint)
 
 

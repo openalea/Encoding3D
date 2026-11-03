@@ -41,6 +41,8 @@ class Channel {
     virtual void send(const json &header, const std::vector<std::uint8_t> *payload = nullptr) = 0;
     /// The next message; throws Error after `timeout` seconds without one (none: wait).
     virtual Message receive(std::optional<double> timeout) = 0;
+    /// As the session says (its welcome's keepMessages): keep the messages read, or delete them (the folder transport).
+    virtual void keep_messages(bool) {}
 };
 
 /// A participant's channel to `endpoint` ("files:path", or a ZeroMQ endpoint).

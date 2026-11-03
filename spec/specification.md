@@ -418,7 +418,7 @@ A message is a JSON header and, for a turn or an update, a payload: a partial fr
 | Message | From | Header | Payload |
 |---|---|---|---|
 | hello | participant | `type`, `protocol` (`"0.3"`), `declaration`, `links` (the links it proposes, may be empty) | – |
-| welcome | coordinator | `type`, `idOffset`, `idCount`, `session` (`start`, `interval`, `timeUnit`, `steps`, `stages`, `participants`), `couplings` (its inputs' providers) | – |
+| welcome | coordinator | `type`, `idOffset`, `idCount`, `session` (`start`, `interval`, `timeUnit`, `steps`, `stages`, `participants`, `keepMessages`), `couplings` (its inputs' providers) | – |
 | turn | coordinator | `type`, `step`, `phase` (`"init"` at step 0, else `"step"`), `time`, `until` | its inputs |
 | update | participant | `type`, `step` | its outputs |
 | error | participant | `type`, `message` | – |
@@ -523,7 +523,10 @@ Both transports carry the same messages.
   - Its payload is `n.glb`, named in the header's `payload` key.
   - The payload is written first, and the header is renamed into place last, so a header present means a complete
     message.
-  - The folder is the session's log; a session needs a new folder.
+  - Its reader deletes a message's files once read, unless the session keeps them (`keepMessages` true in the
+    welcome's `session`; absent: kept). A participant applies it from the welcome on, deleting the welcome too; the
+    coordinator, from the start. Kept, the folder is the session's log; a session needs a new folder. The usual log of
+    a session is its record, a sequence of full frames (§8) the coordinator writes when asked.
 - **Launching.** A participant launched by the coordinator finds the endpoint in the environment variable
   `FSPM_TF_ENDPOINT` and its name in `FSPM_TF_PARTICIPANT`.
 - **Replay.** A recorded sequence (§8) may be a participant, so a platform's log feeds another platform's inputs without

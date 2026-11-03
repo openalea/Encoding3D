@@ -338,7 +338,8 @@ class Source:
             self.times = [float(entry["time"]) for entry in index["frames"]]
         else:
             self.paths = [path]
-            self.times = [float(fspm_tf.read(path).time)]
+            with fspm_tf.read(path, lazy=True) as frame:         # its time, from the file's JSON alone
+                self.times = [float(frame.time)]
         self._cache = {}
 
     def frame_at(self, time: float = None):
@@ -347,8 +348,10 @@ class Source:
         if time is not None:
             earlier = [n for n, frame_time in enumerate(self.times) if frame_time <= time + 1e-12 * max(1., abs(time))]
             number = earlier[-1] if earlier else 0
-        if number not in self._cache:
-            self._cache = {number: _fspm_tf().read(self.paths[number])}
+        if number not in self._cache:                     # read lazily: only what the display reads is decoded
+            for frame in self._cache.values():
+                frame.close()
+            self._cache = {number: _fspm_tf().read(self.paths[number], lazy=True)}
         return self._cache[number]
 
 

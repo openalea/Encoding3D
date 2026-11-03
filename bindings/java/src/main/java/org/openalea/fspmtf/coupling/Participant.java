@@ -62,6 +62,7 @@ public final class Participant implements AutoCloseable {
         idOffset = welcome.header().get("idOffset").asLong();
         idCount = welcome.header().get("idCount").asLong();
         session = welcome.header().get("session");
+        channel.keepMessages(session.path("keepMessages").asBoolean(true));
         couplings = welcome.header().path("couplings");
     }
 

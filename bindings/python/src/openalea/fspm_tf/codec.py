@@ -19,8 +19,9 @@ import numpy as np
 
 from openalea.fspm_tf import SPECIFICATION_VERSION
 from openalea.fspm_tf.glb import BufferBuilder, pack, unpack, view_bytes
-from openalea.fspm_tf.model import (DataStructure, EDGE_TYPES, ENUM_COLUMNS, EntitySet, Frame, Grid, Mapping, Mesh, NO_ID,
-                           Relation, Table, Update, Variable)
+from openalea.fspm_tf.model import (DataStructure, EDGE_TYPES, ENUM_COLUMNS, EntitySet, Frame, Grid, ID_COLUMNS,
+                           LazyColumns, LazyList, Mapping, Mesh, NO_ID, Relation, Table, Update, Variable,
+                           _as_column)
 
 EXTENSION = "FSPM_scene"
 METADATA = "EXT_structural_metadata"
@@ -383,6 +384,10 @@ def _encode_mesh(mesh: Mesh, data_structure: DataStructure, entry: dict, buffers
 def from_bytes(data: bytes) -> Frame:
     """The Frame of a GLB file's bytes."""
     document, binary = unpack(data)
+    return _frame_of(document, binary, lazy=False)
+
+
+def _frame_of(document: dict, binary, lazy: bool) -> Frame:
     extensions = document.get("extensions", {})
     if EXTENSION not in extensions:
         raise ValueError(f"not an fspm-TF file: no {EXTENSION} extension")
@@ -392,7 +397,7 @@ def from_bytes(data: bytes) -> Frame:
     def table(index: int, kind, **fields):
         description = metadata["propertyTables"][index]
         class_id = description["class"]
-        columns, declarations = _decode_table(document, binary, description, metadata["schema"], variables)
+        columns, declarations = _decode_table(document, binary, description, metadata["schema"], variables, lazy)
         return kind(name=description.get("name", class_id), columns=columns, variables=declarations, **fields)
 
     frame_info = scene.get("frame", {})
@@ -418,8 +423,10 @@ def from_bytes(data: bytes) -> Frame:
                                        periodic=tuple(grid["periodic"]), z_up=grid.get("zUp", True),
                                        max_level=grid.get("maxLevel", 0), cells=grid["cells"])
         tables = {item["propertyTable"]: item["name"] for item in entry.get("entitySets", [])}
-        for mesh_entry in entry.get("meshes", []):
-            data_structure.meshes.append(_decode_mesh(document, binary, mesh_entry, tables, data_structure))
+        meshes = [(lambda mesh_entry=mesh_entry, data_structure=data_structure, tables=tables:
+                   _decode_mesh(document, binary, mesh_entry, tables, data_structure))
+                  for mesh_entry in entry.get("meshes", [])]
+        data_structure.meshes = LazyList(meshes) if lazy else [mesh() for mesh in meshes]
         frame.data_structures.append(data_structure)
     for entry in scene.get("mappings", []):
         frame.mappings.append(table(entry["propertyTable"], Mapping,
@@ -429,7 +436,7 @@ def from_bytes(data: bytes) -> Frame:
     if "update" in scene:
         update = scene["update"]
         frame.update = Update(participant=update["participant"], removed={
-            (item["dataStructure"], item["entitySet"]): table(item["propertyTable"], Table).columns["id"]
+            (item["dataStructure"], item["entitySet"]): np.asarray(table(item["propertyTable"], Table).columns["id"])
             for item in update.get("removed", [])})
     unknown_extensions = {name: value for name, value in extensions.items()
                           if name not in (METADATA, EXTENSION, FEATURES)}
@@ -440,61 +447,50 @@ def from_bytes(data: bytes) -> Frame:
     return frame
 
 
-def read(path: str) -> Frame:
-    """The Frame of the GLB file *path*."""
+def read(path: str, lazy: bool = False) -> Frame:
+    """The Frame of the GLB file *path*. *lazy*: the file is mapped in memory and only its JSON parsed; each column
+    (LazyColumns) and each mesh (LazyList) is decoded when first read, so that a reader using a few columns of a large
+    frame decodes only those. A lazy frame holds the file open until frame.close() (or the end of a with block)."""
+    if not lazy:
+        with open(path, "rb") as file:
+            return from_bytes(file.read())
+    import mmap
     with open(path, "rb") as file:
-        return from_bytes(file.read())
+        mapped = mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ)
+    document, binary = unpack(memoryview(mapped))
+    frame = _frame_of(document, binary, lazy=True)
+    frame._source = (mapped, binary)
+    return frame
 
 
-def _decode_table(document: dict, binary: bytes, description: dict, schema: dict, variables: dict) -> tuple:
+def _decode_table(document: dict, binary: bytes, description: dict, schema: dict, variables: dict,
+                  lazy: bool = False) -> tuple:
+    """(columns, declarations) of a property table; *lazy*: the columns a LazyColumns, each decoded when first read."""
     class_id = description["class"]
-    properties = schema["classes"][class_id]["properties"]
     count = description["count"]
-    columns, declarations = {}, {}
-    for name, stored in description["properties"].items():
+    if lazy:
+        columns = LazyColumns({name: (lambda name=name, stored=stored: _checked(
+            name, _decode_column(document, binary, schema, class_id, name, stored, count)))
+            for name, stored in description["properties"].items()}, count)
+    else:
+        columns = {name: _decode_column(document, binary, schema, class_id, name, stored, count)
+                   for name, stored in description["properties"].items()}
+    return columns, _decode_declarations(schema, class_id, description, variables)
+
+
+def _checked(name: str, column):
+    """A column decoded lazily, as a table checks it (ids int64)."""
+    column = _as_column(name, column)
+    if name in ID_COLUMNS and column.dtype.kind in "iu" and not np.ma.isMaskedArray(column):
+        column = column.astype(np.int64)
+    return column
+
+
+def _decode_declarations(schema: dict, class_id: str, description: dict, variables: dict) -> dict:
+    properties = schema["classes"][class_id]["properties"]
+    declarations = {}
+    for name in description["properties"]:
         prop = properties[name]
-        raw = view_bytes(document, binary, stored["values"])
-        if prop["type"] == "ENUM":
-            enum = schema["enums"][prop["enumType"]]
-            codes = np.frombuffer(raw, dtype=enum.get("valueType", "UINT16").lower(), count=count)
-            values = np.array([item["value"] for item in enum["values"]], dtype=np.int64)
-            names = np.empty(int(values.max()) + 1 if values.size else 0, dtype=object)
-            names[values] = [item["name"] for item in enum["values"]]
-            column = names[codes.astype(np.int64)] if count else np.zeros(0, dtype=object)
-        elif prop["type"] == "STRING":
-            offset_type = stored.get("stringOffsetType", "UINT32").lower()
-            offsets = np.frombuffer(view_bytes(document, binary, stored["stringOffsets"]), dtype=offset_type,
-                                    count=count + 1)
-            column = np.array([raw[offsets[i]:offsets[i + 1]].decode("utf-8") for i in range(count)], dtype=object)
-            if "noData" in prop:                                 # missing text
-                column = np.array([None if value == prop["noData"] else value for value in column], dtype=object)
-        elif prop["type"] == "BOOLEAN":
-            column = np.unpackbits(np.frombuffer(raw, dtype=np.uint8), bitorder="little", count=count).astype(bool)
-        elif prop["type"] == "SCALAR":
-            dtype = DTYPES[prop["componentType"]]
-            width = prop.get("count", 1) if prop.get("array") else 1
-            if prop.get("array") and "count" not in prop:
-                raise ValueError(f"'{class_id}.{name}': variable-length arrays are not part of fspm-TF 0.1")
-            column = np.frombuffer(raw, dtype=dtype.newbyteorder("<"), count=count * width).astype(dtype)
-            if width > 1:
-                column = column.reshape(count, width)
-            if dtype.kind == "f" and "noData" in prop:
-                column = np.where(column == np.asarray(prop["noData"], dtype=dtype), np.nan, column).astype(dtype)
-            infinity = prop.get("extras", {}).get("FSPM_infinity")
-            if dtype.kind == "f" and infinity:
-                column = np.where(column == np.asarray(infinity["positive"], dtype=dtype), np.inf,
-                                  np.where(column == np.asarray(infinity["negative"], dtype=dtype), -np.inf, column)
-                                  ).astype(dtype)
-            if prop.get("extras", {}).get("FSPM_boolean"):         # booleans with missing values
-                missing = column == prop.get("noData", BOOLEAN_NO_DATA)
-                column = np.ma.MaskedArray(column == 1, mask=missing) if missing.any() else column == 1
-            elif dtype.kind in "iu" and "noData" in prop and name not in ("complex", "parent"):   # missing integers
-                missing = column == prop["noData"]
-                if missing.any():
-                    column = np.ma.MaskedArray(column, mask=missing)
-        else:
-            raise ValueError(f"'{class_id}.{name}': property type {prop['type']} is not part of fspm-TF 0.1")
-        columns[name] = column
         declared = variables.get(class_id, {}).get(name)
         if declared is not None or "description" in prop:
             declared = declared or {}
@@ -504,7 +500,55 @@ def _decode_table(document: dict, binary: bytes, description: dict, schema: dict
                 minimum=declared.get("minimum"), maximum=declared.get("maximum"),
                 references=tuple(declared.get("references", ())), doi=tuple(declared.get("doi", ())),
                 format=declared.get("format"))
-    return columns, declarations
+    return declarations
+
+
+def _decode_column(document: dict, binary, schema: dict, class_id: str, name: str, stored: dict, count: int):
+    """One column of a property table, decoded from the binary chunk (a copy, not a view of it)."""
+    prop = schema["classes"][class_id]["properties"][name]
+    raw = view_bytes(document, binary, stored["values"])
+    if prop["type"] == "ENUM":
+        enum = schema["enums"][prop["enumType"]]
+        codes = np.frombuffer(raw, dtype=enum.get("valueType", "UINT16").lower(), count=count)
+        values = np.array([item["value"] for item in enum["values"]], dtype=np.int64)
+        names = np.empty(int(values.max()) + 1 if values.size else 0, dtype=object)
+        names[values] = [item["name"] for item in enum["values"]]
+        return names[codes.astype(np.int64)] if count else np.zeros(0, dtype=object)
+    if prop["type"] == "STRING":
+        offset_type = stored.get("stringOffsetType", "UINT32").lower()
+        offsets = np.frombuffer(view_bytes(document, binary, stored["stringOffsets"]), dtype=offset_type,
+                                count=count + 1)
+        raw = bytes(raw)
+        column = np.array([raw[offsets[i]:offsets[i + 1]].decode("utf-8") for i in range(count)], dtype=object)
+        if "noData" in prop:                                 # missing text
+            column = np.array([None if value == prop["noData"] else value for value in column], dtype=object)
+        return column
+    if prop["type"] == "BOOLEAN":
+        return np.unpackbits(np.frombuffer(raw, dtype=np.uint8), bitorder="little", count=count).astype(bool)
+    if prop["type"] != "SCALAR":
+        raise ValueError(f"'{class_id}.{name}': property type {prop['type']} is not part of fspm-TF")
+    dtype = DTYPES[prop["componentType"]]
+    width = prop.get("count", 1) if prop.get("array") else 1
+    if prop.get("array") and "count" not in prop:
+        raise ValueError(f"'{class_id}.{name}': variable-length arrays are not part of fspm-TF")
+    column = np.frombuffer(raw, dtype=dtype.newbyteorder("<"), count=count * width).astype(dtype)
+    if width > 1:
+        column = column.reshape(count, width)
+    if dtype.kind == "f" and "noData" in prop:
+        column = np.where(column == np.asarray(prop["noData"], dtype=dtype), np.nan, column).astype(dtype)
+    infinity = prop.get("extras", {}).get("FSPM_infinity")
+    if dtype.kind == "f" and infinity:
+        column = np.where(column == np.asarray(infinity["positive"], dtype=dtype), np.inf,
+                          np.where(column == np.asarray(infinity["negative"], dtype=dtype), -np.inf, column)
+                          ).astype(dtype)
+    if prop.get("extras", {}).get("FSPM_boolean"):         # booleans with missing values
+        missing = column == prop.get("noData", BOOLEAN_NO_DATA)
+        return np.ma.MaskedArray(column == 1, mask=missing) if missing.any() else column == 1
+    if dtype.kind in "iu" and "noData" in prop and name not in ("complex", "parent"):   # missing integers
+        missing = column == prop["noData"]
+        if missing.any():
+            return np.ma.MaskedArray(column, mask=missing)
+    return column
 
 
 def _accessor_array(document: dict, binary: bytes, index: int) -> np.ndarray:
@@ -538,7 +582,7 @@ def _decode_mesh(document: dict, binary: bytes, mesh_entry: dict, tables: dict,
         feature_rows[set_name] = rows
     display, sources = {}, {}
     for item in mesh_entry.get("display", []):
-        display[item["variable"]] = _accessor_array(document, binary, attributes[item["attribute"]])
+        display[item["variable"]] = _accessor_array(document, binary, attributes[item["attribute"]]).copy()
         if item.get("entitySet") is not None:
             sources[item["variable"]] = item["entitySet"]
     indices = (_accessor_array(document, binary, primitive["indices"]).astype(np.int64)

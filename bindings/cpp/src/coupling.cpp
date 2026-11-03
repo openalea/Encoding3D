@@ -73,17 +73,30 @@ class FolderChannel : public Channel {
         }
         const auto text = read_bytes(stem.string() + ".json");
         Message message{json::parse(text.begin(), text.end()), std::nullopt};
+        std::vector<filesystem::path> files{stem.string() + ".json"};
         if (message.header.contains("payload")) {
-            message.payload = read_bytes(incoming_ / message.header["payload"].get<std::string>());
+            files.push_back(incoming_ / message.header["payload"].get<std::string>());
+            message.payload = read_bytes(files.back());
             message.header.erase("payload");
         }
         ++next_read_;
+        if (keep_) read_files_.insert(read_files_.end(), files.begin(), files.end());
+        else for (const auto &path : files) filesystem::remove(path);
         return message;
+    }
+
+    void keep_messages(bool keep) override {
+        if (keep) return;
+        keep_ = false;
+        for (const auto &path : read_files_) filesystem::remove(path);
+        read_files_.clear();
     }
 
   private:
     filesystem::path incoming_, outgoing_;
     std::int64_t next_read_ = 0, next_write_ = 0;
+    bool keep_ = true;                               // false: a message's files deleted once read
+    std::vector<filesystem::path> read_files_;       // those of the messages read and kept
 };
 
 #ifdef FSPM_TF_WITH_ZMQ
@@ -181,6 +194,7 @@ Participant::Participant(json declaration, std::string endpoint, json links, std
     id_offset = welcome.header.at("idOffset").get<std::int64_t>();
     id_count = welcome.header.at("idCount").get<std::int64_t>();
     session = welcome.header.at("session");
+    channel_->keep_messages(session.value("keepMessages", true));
     couplings = welcome.header.value("couplings", json::array());
 }
 
