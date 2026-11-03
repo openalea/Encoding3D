@@ -263,4 +263,34 @@ expected_of(relative) = JSON.parse(read(joinpath(CONFORMANCE, relative[1:end-4] 
             end
         end
     end
+
+    @testset "coupling" begin
+        # a partial frame: its sender and removed entities kept
+        frame = Frame(data_structures = [DataStructure("plant"; entity_sets = [
+                          EntitySet("SubOrgan"; rank = 6, columns = FspmTF.Columns(
+                              "id" => Int64[10, 11], "complex" => Int64[3, 3], "parent" => Int64[NO_ID, 10],
+                              "edge_type" => ["none", "successor"], "sugar" => [1.0, 2.0]))])],
+                      update = Update("vpl"; removed = Dict(("plant", "SubOrgan") => Int64[5])))
+        again = from_bytes(to_bytes(frame))
+        @test again.update.participant == "vpl"
+        @test again.update.removed[("plant", "SubOrgan")] == [5]
+        @test entity_set(data_structure(again, "plant"), "SubOrgan").columns["complex"] == [3, 3]
+        # a declaration as JSON: an entity set followed for each variable's
+        declaration = Declaration("function"; entity_sets = [EntitySetSpec("plant", "SubOrgan"; rights = "refines")],
+                                  variables = [VariableSpec("plant", "Organ", "length", "requires"; unit = "m",
+                                                            standard_name = "length")])
+        value = FspmTF.declaration_json(declaration)
+        @test [item["name"] for item in value["entitySets"]] == ["SubOrgan", "Organ"]
+        @test value["entitySets"][1]["rank"] == 6 && value["entitySets"][2]["rights"] == "follows"
+        @test value["variables"][1]["standardName"] == "length"
+        # the folder transport: a participant's queues, a message and its payload
+        folder = mktempdir()
+        participant = FspmTF.FolderChannel(folder, "function")
+        FspmTF.send_message(participant, Dict("type" => "update", "step" => 0), to_bytes(frame))
+        coordinator = FspmTF.FolderChannel(joinpath(folder, "function", "to_coordinator"), mktempdir(), 0, 0)
+        header, payload = FspmTF.receive_message(coordinator, 5)
+        @test header["type"] == "update" && from_bytes(payload).update.participant == "vpl"
+        @test isfile(joinpath(folder, "function", "to_coordinator", "00000000.glb"))
+        @test_throws ErrorException FspmTF.receive_message(coordinator, 0.05)          # nothing more: a timeout
+    end
 end

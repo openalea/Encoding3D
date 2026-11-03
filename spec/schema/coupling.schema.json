@@ -1,0 +1,102 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://github.com/openalea/fspm-TF/spec/schema/coupling.schema.json",
+ "title": "fspm-TF coupling messages",
+ "description": "The JSON header of a coupling session's message (specification §11, draft for 0.3). Turns and updates also carry a payload: a partial frame's GLB bytes.",
+ "oneOf": [
+  {"$ref": "#/$defs/hello"}, {"$ref": "#/$defs/welcome"}, {"$ref": "#/$defs/turn"}, {"$ref": "#/$defs/update"},
+  {"$ref": "#/$defs/error"}, {"$ref": "#/$defs/stop"}
+ ],
+ "$defs": {
+  "identifier": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+  "name": {"type": "string", "minLength": 1},
+  "payload": {"description": "In the folder transport: the payload's file name.", "type": "string"},
+  "entitySet": {
+   "type": "object", "required": ["dataStructure", "name", "rights"],
+   "properties": {
+    "dataStructure": {"$ref": "#/$defs/identifier"}, "name": {"$ref": "#/$defs/name"},
+    "rank": {"type": ["integer", "null"]}, "rights": {"enum": ["owns", "refines", "follows"]}
+   },
+   "additionalProperties": false
+  },
+  "variable": {
+   "type": "object", "required": ["dataStructure", "entitySet", "name", "direction", "unit"],
+   "properties": {
+    "dataStructure": {"$ref": "#/$defs/identifier"}, "entitySet": {"$ref": "#/$defs/name"},
+    "name": {"$ref": "#/$defs/name"}, "direction": {"enum": ["provides", "requires"]}, "unit": {"type": "string"},
+    "standardName": {"type": "string"}, "kind": {"type": "string"}, "optional": {"type": "boolean"}
+   },
+   "additionalProperties": false
+  },
+  "declaration": {
+   "type": "object", "required": ["participant", "entitySets", "variables"],
+   "properties": {
+    "participant": {"$ref": "#/$defs/identifier"}, "platform": {"type": "string"},
+    "entitySets": {"type": "array", "items": {"$ref": "#/$defs/entitySet"}},
+    "variables": {"type": "array", "items": {"$ref": "#/$defs/variable"}}
+   },
+   "additionalProperties": false
+  },
+  "link": {
+   "type": "object", "required": ["receiver", "variable", "provider", "source"],
+   "properties": {
+    "receiver": {"$ref": "#/$defs/identifier"}, "variable": {"$ref": "#/$defs/name"},
+    "provider": {"$ref": "#/$defs/identifier"}, "source": {"$ref": "#/$defs/name"},
+    "entitySet": {"$ref": "#/$defs/name"}, "sourceEntitySet": {"$ref": "#/$defs/name"},
+    "factor": {"type": "number"}, "aggregation": {"enum": ["sum", "mean", "max", "min", "copy"]},
+    "interpolation": {"enum": ["hold", "linear"]}
+   },
+   "additionalProperties": false
+  },
+  "hello": {
+   "type": "object", "required": ["type", "protocol", "declaration"],
+   "properties": {
+    "type": {"const": "hello"}, "protocol": {"type": "string"}, "declaration": {"$ref": "#/$defs/declaration"},
+    "links": {"type": "array", "items": {"$ref": "#/$defs/link"}}, "payload": {"$ref": "#/$defs/payload"}
+   },
+   "additionalProperties": false
+  },
+  "welcome": {
+   "type": "object", "required": ["type", "idOffset", "idCount", "session"],
+   "properties": {
+    "type": {"const": "welcome"}, "idOffset": {"type": "integer", "minimum": 0},
+    "idCount": {"type": "integer", "minimum": 1},
+    "session": {
+     "type": "object", "required": ["start", "interval", "timeUnit", "steps", "stages", "participants"],
+     "properties": {
+      "start": {"type": "number"}, "interval": {"type": "number", "exclusiveMinimum": 0},
+      "timeUnit": {"type": "string"}, "steps": {"type": "integer", "minimum": 0},
+      "stages": {"type": "array", "items": {"type": "array", "items": {"$ref": "#/$defs/identifier"}}},
+      "participants": {"type": "array", "items": {"$ref": "#/$defs/identifier"}}
+     }
+    },
+    "couplings": {"type": "array", "items": {"type": "object"}}, "payload": {"$ref": "#/$defs/payload"}
+   },
+   "additionalProperties": false
+  },
+  "turn": {
+   "type": "object", "required": ["type", "step", "phase", "time", "until"],
+   "properties": {
+    "type": {"const": "turn"}, "step": {"type": "integer", "minimum": 0}, "phase": {"enum": ["init", "step"]},
+    "time": {"type": "number"}, "until": {"type": "number"}, "payload": {"$ref": "#/$defs/payload"}
+   },
+   "additionalProperties": false
+  },
+  "update": {
+   "type": "object", "required": ["type", "step"],
+   "properties": {"type": {"const": "update"}, "step": {"type": "integer", "minimum": 0},
+                  "payload": {"$ref": "#/$defs/payload"}},
+   "additionalProperties": false
+  },
+  "error": {
+   "type": "object", "required": ["type", "message"],
+   "properties": {"type": {"const": "error"}, "message": {"type": "string"}, "payload": {"$ref": "#/$defs/payload"}},
+   "additionalProperties": false
+  },
+  "stop": {
+   "type": "object", "required": ["type"],
+   "properties": {"type": {"const": "stop"}, "reason": {"type": "string"}, "payload": {"$ref": "#/$defs/payload"}},
+   "additionalProperties": false
+  }
+ }
+}

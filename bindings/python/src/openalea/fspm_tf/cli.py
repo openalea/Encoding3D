@@ -9,6 +9,11 @@ The fspm-tf command line::
                                                 differ
     fspm-tf compare-all DUMPS CONFORMANCE       every conformance file's expected values against the dump at the same
                                                 path (x.expected.json: DUMPS/x.json); exit 1 if any differ
+    fspm-tf couple --steps N --interval DT [--participant NAME=COMMAND]... [--expect NAME]...
+                   [--replay NAME=INDEX]... [--links LINKS.json] [--stages A,B;C] [--endpoint E] [--record DIR]
+                                                run a coupling session (specification §11): launch the participants'
+                                                commands, wait for the expected ones, replay sequences; exit 1 if it
+                                                stops on an error
 """
 import argparse
 import sys
@@ -87,8 +92,47 @@ def _compare_all(arguments) -> int:
     return 1 if failed or not results else 0
 
 
+def _pairs(values, what: str) -> dict:
+    pairs = {}
+    for value in values or []:
+        name, separator, rest = value.partition("=")
+        if not separator or not name or not rest:
+            raise SystemExit(f"--{what} {value}: NAME=VALUE expected")
+        pairs[name] = rest
+    return pairs
+
+
+def _couple(arguments) -> int:
+    import json
+    from openalea.fspm_tf.coupling import Coordinator, CouplingError
+    links = []
+    if arguments.links:
+        with open(arguments.links, encoding="utf-8") as file:
+            links = json.load(file)
+    stages = None if not arguments.stages else [stage.split(",") for stage in arguments.stages.split(";")]
+    coordinator = Coordinator(arguments.endpoint, steps=arguments.steps, interval=arguments.interval,
+                              time_unit=arguments.time_unit, start=arguments.start, links=links, stages=stages,
+                              expect=arguments.expect or [], replays=_pairs(arguments.replay, "replay"),
+                              record=arguments.record, timeout=arguments.timeout)
+    print(f"coordinator at {coordinator.endpoint}", flush=True)
+    for name, command in _pairs(arguments.participant, "participant").items():
+        coordinator.launch(name, command)
+    try:
+        coordinator.run()
+    except CouplingError as error:
+        print(f"the session stopped: {error}", file=sys.stderr)
+        return 1
+    for coupling in coordinator.couplings:
+        source = "-" if coupling.source is None else f"{coupling.provider}.{coupling.source.name}"
+        print(f"  {coupling.receiver}.{coupling.variable.name} <- {source} ({coupling.how}"
+              f"{', ' + coupling.aggregation if coupling.aggregation else ''}, factor {coupling.factor:g})")
+    print(f"{arguments.steps} steps, stages {coordinator.stages}" +
+          (f", recorded in {arguments.record}" if arguments.record else ""))
+    return 0
+
+
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(prog="fspm-tf", description="fspm-TF files: validate, inspect, display")
+    parser = argparse.ArgumentParser(prog="fspm-tf", description="fspm-TF files: validate, inspect, display; couple platforms")
     commands = parser.add_subparsers(dest="command", required=True)
     validate = commands.add_parser("validate", help="check frames (.glb) or sequences (scene.fspm.json)")
     validate.add_argument("files", nargs="+")
@@ -112,6 +156,21 @@ def main(argv=None) -> int:
     compare_all.add_argument("dumps", help="the folder of the codec's dumps (x.json for x.expected.json)")
     compare_all.add_argument("conformance", help="fspm-TF's conformance folder")
     compare_all.set_defaults(run=_compare_all)
+    couple = commands.add_parser("couple", help="run a coupling session between platforms")
+    couple.add_argument("--steps", type=int, required=True)
+    couple.add_argument("--interval", type=float, required=True, help="the exchange interval")
+    couple.add_argument("--time-unit", default="d")
+    couple.add_argument("--start", type=float, default=0.)
+    couple.add_argument("--participant", action="append", help="NAME=COMMAND: a participant to launch")
+    couple.add_argument("--expect", action="append", help="NAME: a participant started separately")
+    couple.add_argument("--replay", action="append", help="NAME=INDEX: a recorded sequence as a participant")
+    couple.add_argument("--links", help="a JSON file: the session's links")
+    couple.add_argument("--stages", help="the stages, e.g. 'growth;function,light' (default: owners, refiners, "
+                                         "others)")
+    couple.add_argument("--endpoint", default="tcp://127.0.0.1:*", help="a ZeroMQ endpoint, or files:FOLDER")
+    couple.add_argument("--record", help="a folder: the session recorded as a sequence")
+    couple.add_argument("--timeout", type=float, default=600., help="seconds to wait for a message")
+    couple.set_defaults(run=_couple)
     arguments = parser.parse_args(argv)
     return arguments.run(arguments)
 

@@ -14,7 +14,7 @@ the vocabulary and units.
 
 ```{eval-rst}
 .. automodule:: openalea.fspm_tf.model
-   :members: Frame, DataStructure, EntitySet, Relation, Table, Grid, Mesh, Mapping, Variable
+   :members: Frame, DataStructure, EntitySet, Relation, Table, Grid, Mesh, Mapping, Variable, Update
 ```
 
 ## Validation
@@ -38,7 +38,7 @@ the vocabulary and units.
    :members: standard_names, platform_names, labels, enums, version
 
 .. automodule:: openalea.fspm_tf.ucum
-   :members: dimension, is_valid, convertible
+   :members: dimension, is_valid, convertible, conversion_factor
 ```
 
 ## Comparing with expected values
@@ -53,6 +53,25 @@ the vocabulary and units.
 ```{eval-rst}
 .. automodule:: openalea.fspm_tf.dump
    :members: frame_to_dict
+```
+
+## Coupling
+
+```{eval-rst}
+.. automodule:: openalea.fspm_tf.coupling.messages
+   :members: Declaration, EntitySetSpec, VariableSpec, Link, CouplingError
+
+.. automodule:: openalea.fspm_tf.coupling.participant
+   :members: Participant, Turn
+
+.. automodule:: openalea.fspm_tf.coupling.coordinator
+   :members: Coordinator
+
+.. automodule:: openalea.fspm_tf.coupling.resolution
+   :members: resolve, stages, Coupling
+
+.. automodule:: openalea.fspm_tf.coupling.replay
+   :members: Replay
 ```
 
 ## Command line

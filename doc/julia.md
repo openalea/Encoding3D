@@ -121,6 +121,13 @@ write_sequence("frames", frames)               # one GLB per frame, and scene.fs
 A column is a `Vector` (numbers, `Bool`, `String`) or a `Matrix` (one row per entity: a fixed-size vector per
 entity). NaN and infinities are written with the specification's stand-ins and read back as they were.
 
+## Coupling with other platforms
+
+FspmTF.jl takes part in coupling sessions run by fspm-TF's coordinator ([Coupling platforms](coupling.md)):
+`Participant(declaration)` joins one (its address and name from the environment when the coordinator launches it),
+`turns(participant)` gives each turn's inputs, `send_update(participant, frame)` answers with its outputs. The folder
+transport needs nothing more; ZeroMQ needs `using ZMQ` (the `FspmTFZMQExt` extension).
+
 ## Checking it
 
 ```bash

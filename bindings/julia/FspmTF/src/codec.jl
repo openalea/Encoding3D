@@ -115,11 +115,24 @@ function to_bytes(frame::Frame)
         push!(mappings, entry)
     end
 
+    update = nothing
+    if frame.update !== nothing
+        check_identifier(frame.update.participant, "participant")
+        update = json_object("participant" => frame.update.participant)
+        if !isempty(frame.update.removed)
+            update["removed"] = Any[json_object("dataStructure" => key[1], "entitySet" => key[2],
+                                                "propertyTable" => add_table(Table("$(key[2])__removed";
+                                                    columns = Columns("id" => ids)), "$(key[1])__$(key[2])__removed"))
+                                    for (key, ids) in frame.update.removed]
+        end
+    end
+
     scene = json_object("version" => SPECIFICATION_VERSION,
                         "frame" => json_object("time" => Float64(frame.time), "timeUnit" => frame.time_unit,
                                                "step" => frame.step))
     frame.vocabulary_version === nothing || (scene["vocabulary"] = frame.vocabulary_version)
     isempty(frame.writer) || (scene["writer"] = frame.writer)
+    update === nothing || (scene["update"] = update)
     scene["dataStructures"] = data_structures
     isempty(mappings) || (scene["mappings"] = mappings)
     isempty(variables) || (scene["variables"] = variables)
@@ -420,6 +433,12 @@ function from_bytes(data::AbstractVector{UInt8})
         target = (entry["target"]["dataStructure"], entry["target"]["entitySet"])
         push!(frame.mappings, table(entry["propertyTable"], (name, columns, declarations) ->
                                     Mapping(name, columns, declarations, source, target, get(entry, "method", nothing))))
+    end
+    if haskey(scene, "update")
+        entry = scene["update"]
+        frame.update = Update(entry["participant"]; removed = OrderedDict(
+            (item["dataStructure"], item["entitySet"]) => Vector{Int64}(table(item["propertyTable"], Table).columns["id"])
+            for item in get(entry, "removed", Any[])))
     end
     other_extensions = json_object(name => value for (name, value) in extensions
                                    if !(name in (METADATA, EXTENSION, FEATURES)))

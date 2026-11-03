@@ -210,14 +210,16 @@ def _check_frame(frame, document: dict, report: Report) -> None:
                     if not (data_structure.grid is not None and name == data_structure.grid.cells)]
         if explicit and sum(len(values) for values in explicit) != len(set().union(*explicit)):
             report.error(where, "ids are unique across the data structure's entity sets and relations")
-        _check_mtg(data_structure, sets, ids, report)
+        partial = frame.update is not None              # a partial frame refers to entities it does not hold
+        _check_mtg(data_structure, sets, ids, report, partial=partial)
         for relation in data_structure.relations:
             for end, set_name in (("source", relation.source_set), ("target", relation.target_set)):
                 if set_name not in ids:
-                    report.error(f"{where}/{relation.name}", f"{end} set '{set_name}' does not exist")
+                    if not partial:
+                        report.error(f"{where}/{relation.name}", f"{end} set '{set_name}' does not exist")
                 elif end not in relation.columns:
                     report.error(f"{where}/{relation.name}", f"no '{end}' column")
-                else:
+                elif not partial:
                     _check_references(f"{where}/{relation.name}/{end}", relation.columns[end], ids[set_name],
                                       report, allow_none=False)
         names = [relation.name for relation in data_structure.relations]
@@ -248,7 +250,13 @@ def _check_frame(frame, document: dict, report: Report) -> None:
     data_structures = {data_structure.id: data_structure for data_structure in frame.data_structures}
     if len(data_structures) != len(frame.data_structures):
         report.error("dataStructures", "two data structures have the same id")
+    if frame.update is not None:
+        for (data_structure_id, set_name), removed in frame.update.removed.items():
+            if (removed < 0).any():
+                report.error(f"update/removed/{data_structure_id}/{set_name}", "ids are non-negative")
     for mapping in frame.mappings:
+        if frame.update is not None:
+            continue
         where = f"mapping {mapping.name}"
         for end, (data_structure_id, set_name) in (("source", mapping.source), ("target", mapping.target)):
             try:
@@ -297,14 +305,17 @@ def _check_references(where, values, ids: set, report, allow_none: bool = True) 
         report.error(where, f"{len(missing)} id(s) not in the referenced entity set, e.g. {missing[:5]}")
 
 
-def _check_mtg(data_structure, sets: dict, ids: dict, report) -> None:
-    """complex points to an entity of a coarser entity set; parent and edge_type agree; parents form no cycle."""
+def _check_mtg(data_structure, sets: dict, ids: dict, report, partial: bool = False) -> None:
+    """complex points to an entity of a coarser entity set; parent and edge_type agree; parents form no cycle. In a
+    partial frame (*partial*), complex and parent may refer to entities it does not hold, and may be absent."""
     ranked = sorted((entity_set for entity_set in data_structure.entity_sets if entity_set.rank is not None),
                     key=lambda entity_set: entity_set.rank)
     for position, entity_set in enumerate(ranked):
         where = f"{data_structure.id}/{entity_set.name}"
         columns = entity_set.columns
-        if position > 0:
+        if partial:
+            pass
+        elif position > 0:
             coarser = ranked[position - 1]
             if "complex" not in columns:
                 report.error(where, f"no 'complex' column (its entities belong to {coarser.name})")
@@ -322,7 +333,8 @@ def _check_mtg(data_structure, sets: dict, ids: dict, report) -> None:
         if "parent" not in columns:
             continue
         parent, edge_type = columns["parent"], columns["edge_type"]
-        _check_references(f"{where}/parent", parent, ids[entity_set.name], report)
+        if not partial:
+            _check_references(f"{where}/parent", parent, ids[entity_set.name], report)
         unknown = set(edge_type.tolist()) - set(EDGE_TYPES)
         if unknown:
             report.error(f"{where}/edge_type", f"unknown values {sorted(unknown)}")

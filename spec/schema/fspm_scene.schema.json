@@ -14,6 +14,19 @@
                   "step": {"type": "integer", "minimum": 0}},
    "additionalProperties": false},
   "writer": {"type": "object"},
+  "update": {
+   "description": "Set in a partial frame, a coupling session's message (specification §11): its sender, and the entities it removed.",
+   "type": "object", "required": ["participant"],
+   "properties": {
+    "participant": {"$ref": "#/$defs/identifier"},
+    "removed": {"type": "array", "items": {
+     "type": "object", "required": ["dataStructure", "entitySet", "propertyTable"],
+     "properties": {"dataStructure": {"$ref": "#/$defs/identifier"}, "entitySet": {"type": "string", "minLength": 1},
+                    "propertyTable": {"$ref": "#/$defs/index"}},
+     "additionalProperties": false}}
+   },
+   "additionalProperties": false
+  },
   "dataStructures": {"type": "array", "items": {"$ref": "#/$defs/dataStructure"}},
   "mappings": {"type": "array", "items": {"$ref": "#/$defs/mapping"}},
   "variables": {

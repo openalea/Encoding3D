@@ -67,3 +67,27 @@ jobs:
         with:
           dumps: out/dumps
           written: out/written
+
+  # FspmTF.jl as a participant of coupling sessions run by the Python coordinator (specification §11), over ZeroMQ
+  # and over a folder
+  coupling:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1"
+      - uses: julia-actions/cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: The Python coordinator
+        run: pip install -e . pytest pyzmq jsonschema
+      - name: A Julia project with FspmTF and ZMQ
+        run: |
+          mkdir -p coupling-env
+          julia --project=coupling-env -e 'using Pkg; Pkg.develop(path="bindings/julia/FspmTF"); Pkg.add("ZMQ")'
+      - name: The coupling tests, with the Julia participant
+        env:
+          FSPM_TF_JULIA: julia --project=coupling-env
+        run: pytest -v bindings/python/test/test_coupling.py

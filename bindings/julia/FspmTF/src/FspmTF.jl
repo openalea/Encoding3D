@@ -13,6 +13,9 @@ binary (GLB) file per time step. The specification is `spec/specification.md` in
 With MultiScaleTreeGraph loaded, `from_mtg` and `to_mtg` convert an MTG to and from a data structure. With
 VirtualPlantLab's PlantGraphs loaded, `from_graph` and `to_graph` convert its graphs; with PlantGeomTurtle too,
 `add_geometry!` adds a graph's turtle geometry as a mesh.
+
+A platform takes part in a coupling session (specification §11) with `Participant(declaration)`, then answers each of
+`turns(participant)` with `send_update(participant, frame)`; over a folder ("files:path"), or ZeroMQ with ZMQ loaded.
 """
 module FspmTF
 
@@ -29,11 +32,14 @@ include("codec.jl")
 include("sequence.jl")
 include("dump.jl")
 include("values.jl")
+include("coupling.jl")
 
 export Frame, DataStructure, EntitySet, Relation, Table, Mapping, Grid, Mesh, Variable, NO_ID, EDGE_TYPES
 export read_frame, write_frame, from_bytes, to_bytes, read_index, read_sequence, write_sequence, write_index
 export frame_to_dict, write_dump, row_count, variable_names, entity_ids, entity_set, data_structure
 export from_mtg, to_mtg, from_graph, to_graph, add_geometry!
+export Update, Declaration, EntitySetSpec, VariableSpec, Link, Participant, Turn, next_turn, turns,
+       send_update, fail
 
 """
     from_mtg(mtg; id="plants", scales=Dict(), variables=Dict(), platform="MultiScaleTreeGraph", model=nothing)

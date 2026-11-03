@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased: coupling platforms (specification §11, draft for 0.3)
+
+- Coupling sessions: platforms' models run together, each in its own process, through fspm-TF. Partial frames
+  (`FSPM_scene.update`: the sender, removed entities); the messages (`spec/schema/coupling.schema.json`): a
+  participant's declaration (its entity sets and rights, `owns`, `refines`, `follows`; its outputs and inputs), links
+  (factors, units, a change of scale), turns and updates; stages; one shared structure with id ranges and removals
+  down the scales; two transports, ZeroMQ and a folder of messages; a recorded sequence as a participant (replay,
+  held or interpolated linearly).
+- The reference coordinator and participant (`openalea.fspm_tf.coupling`, `fspm-tf couple`), unit conversion factors
+  (`ucum.conversion_factor`); FspmTF.jl's participant (`Participant`, `turns`, `send_update`; ZeroMQ through the
+  `FspmTFZMQExt` extension), tested against the coordinator over both transports.
+- The Python codec refuses enum columns (labels) with missing values instead of writing an unnamed enum value.
+
 ## Unreleased: specification 0.2 (draft)
 
 - Specification 0.2, additive (0.1 files stay valid), from the bindings' points (`spec/specification.md`, "Changes

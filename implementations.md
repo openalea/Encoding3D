@@ -12,6 +12,10 @@
 | MultiScaleTreeGraph.jl (VirtualPlantLab, PlantSimEngine) | Julia | FspmTF.jl's package extension: `from_mtg`, `to_mtg` | yes: any graph as an MTG; its own MTGs rebuilt as they were | yes | 0.2 |
 | VirtualPlantLab (PlantGraphs, PlantGeomTurtle) | Julia | FspmTF.jl's package extensions: `from_graph`, `to_graph`, `add_geometry!` | yes: nodes rebuilt from their fields | yes: nodes, fields, turtle geometry | 0.2 |
 
+Coupling sessions (specification §11, draft for 0.3): the Python package holds the coordinator and a participant;
+FspmTF.jl a participant (both transports); metafspm's `RemoteComponent` (`openalea.metafspm.io.coupling`) stands for
+another platform's model in a metafspm model, tested with a VirtualPlantLab model (PlantGraphs).
+
 Codecs (a language's reading and writing of the format) live in this repository, in `bindings/<language>/`; adapters
 (a platform's model to and from the codec's tables) in the platforms' repositories, or as a codec's optional
 extension when the platform's library is a plain dependency (Julia's package extensions). An implementation is listed with

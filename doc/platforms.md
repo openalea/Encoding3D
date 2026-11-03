@@ -99,3 +99,21 @@ after the codec's own steps:
 The Python codec does exactly this (`bindings/python/conformance_run.py`, the `python-codec-conformance` job).
 
 A codec that passes is listed in [Implementations](implementations.md) with the version it passes.
+
+## Taking part in a coupling session
+
+To couple its models with other platforms' (specification §11, draft for 0.3), a codec adds a participant's side;
+the coordinator is fspm-TF's own (`fspm-tf couple`), so no platform implements it. A participant:
+
+1. reads and writes **partial frames**: `FSPM_scene.update` (its sender, and a property table of the removed ids per
+   entity set), tables holding some rows and columns only;
+2. sends its **declaration** and receives the welcome (its id offset, its inputs' providers), as JSON headers
+   (`spec/schema/coupling.schema.json`);
+3. answers each **turn** (a partial frame of its inputs and the entities added or removed since its last turn) with
+   an **update** (its outputs and its own topology changes), until `stop`;
+4. speaks both transports: a folder of numbered JSON headers and GLB payloads (files only), and ZeroMQ (a DEALER
+   socket named after the participant; one or two message frames).
+
+The Python package (`openalea.fspm_tf.coupling.participant`) and FspmTF.jl (`Participant`, `turns`, `send_update`)
+are the two participants so far; the Python tests run FspmTF.jl's against the coordinator over both transports. An
+adapter then maps the turns to the platform's model, as metafspm's `RemoteComponent` does.

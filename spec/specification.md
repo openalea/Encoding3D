@@ -16,6 +16,7 @@ The language-neutral files of this version are part of the specification:
 | `spec/vocabulary/labels.csv` | entity labels, their scales and Plant Ontology terms (§6) |
 | `spec/vocabulary/enums.json` | the values of `edge_type`, `kind`, `role`, data structure and grid kinds; the base scales |
 | `conformance/` | reference files and their expected values (§9): the specification as test cases |
+| `spec/schema/coupling.schema.json` | JSON Schema of a coupling session's messages (§11, draft for 0.3) |
 
 When these sources disagree, `specification.md` prevails, then the schemas, then the conformance files; the
 disagreement is a defect of the lower one, to be fixed.
@@ -340,6 +341,134 @@ An implementation conforms to 0.2 when two things hold:
 
 A reader that writes a file back SHOULD keep the content it does not interpret, as RSML requires. In 0.2 this covers
 the glTF root's other extensions and `extras`, when they hold no buffer views.
+
+## 11. Coupling (draft for 0.3)
+
+Platforms couple their models through fspm-TF in a **session**: each **participant** is a platform's model running
+in its own process, or a recorded sequence (§11.6), and a **coordinator** runs the session. The coordinator holds the
+session's shared structure (the entities of every data structure and the values each participant provides), applies
+the links between them and sends each participant its inputs. A participant only declares itself, then answers each
+of its turns with its outputs. Nothing about a given coupling is fixed in advance: declarations and links are passed
+when the session starts.
+
+### 11.1 Partial frames
+
+Turns and updates are **partial frames**: frames whose `FSPM_scene` has an `update` object.
+
+- `update.participant` is the sender's name, or `"coordinator"`.
+- `update.removed` lists, per data structure and entity set, a property table of one `id` column: the entities
+  removed (by the sender, or since the receiver's last turn).
+- Its entity sets hold some rows and some columns only. A row is identified by its `id`.
+- `complex` and `parent` MAY refer to entities the frame does not hold, and MAY be absent. Relations and mappings MAY
+  likewise refer to absent entities.
+- Every other rule of a frame holds. The validator checks partial frames with the reference checks lifted.
+
+### 11.2 Messages
+
+A message is a JSON header and, for a turn or an update, a payload: a partial frame's GLB bytes.
+
+| Message | From | Header | Payload |
+|---|---|---|---|
+| hello | participant | `type`, `protocol` (`"0.3"`), `declaration`, `links` (the links it proposes, may be empty) | – |
+| welcome | coordinator | `type`, `idOffset`, `idCount`, `session` (`start`, `interval`, `timeUnit`, `steps`, `stages`, `participants`), `couplings` (its inputs' providers) | – |
+| turn | coordinator | `type`, `step`, `phase` (`"init"` at step 0, else `"step"`), `time`, `until` | its inputs |
+| update | participant | `type`, `step` | its outputs |
+| error | participant | `type`, `message` | – |
+| stop | coordinator | `type`, `reason` | – |
+
+**Declaration.**
+- `participant`: its name, an identifier.
+- `platform`: optional.
+- `entitySets`: each entity set it works on, as `dataStructure`, `name`, `rank`, and `rights` on its topology:
+  - `owns`: it adds and removes the entities. An entity set has one owner at most.
+  - `refines`: it adds entities, and removes the ones it created.
+  - `follows`: it reads.
+- `variables`: each one with `dataStructure`, `entitySet`, `name`, `direction` (`provides`: an output; `requires`: an
+  input), `unit` (UCUM), and optionally `standardName`, `kind`, `optional`.
+
+**Link.** A link names the input it feeds and the output that feeds it:
+- the input: `receiver`, `variable`, `entitySet` (when the name is ambiguous);
+- the output: `provider`, `source`, `sourceEntitySet`;
+- its conversion: `factor` (applied after the unit conversion), `aggregation` and `interpolation` (`hold` or
+  `linear`, §11.6).
+
+**Aggregation.** A link may change the scale:
+- `sum`, `mean`, `max` or `min` from a finer entity set, through the `complex` chain. The default is `sum` for an
+  extensive source, `mean` otherwise.
+- `copy` from a coarser one. An extensive source needs `copy` stated explicitly, because copying it to finer entities
+  counts it several times.
+
+Formulas are not part of a link: a receiver computes them from its linked inputs.
+
+### 11.3 Resolution
+
+Before the first step, the coordinator gives each required input exactly one provider, in this order:
+1. a link given to the coordinator;
+2. a link proposed by a participant;
+3. the output with the same standard name, preferring one on the same entity set;
+4. the output with the same name.
+
+It refuses the session, and stops every participant with the reason, when any of these holds:
+- an input that is not optional has no provider, or has several at the same priority;
+- the units are not convertible;
+- an entity set has two owners;
+- a stage holds two participants that change one entity set's topology;
+- a link joins two data structures, which needs a mapping (not in this draft).
+
+### 11.4 Steps and stages
+
+- The session runs `steps` exchange steps of `interval` (in `timeUnit`), from `start`.
+- Participants are grouped in **stages**: given to the coordinator, or by default the owners, then the refiners, then
+  the others.
+- **Initial state (step 0).** Stage by stage, each participant is sent a turn with the entities so far, and answers
+  with its initial entities and outputs.
+- **Each step k ≥ 1.** Stage by stage:
+  1. each participant of the stage is sent a turn from `time` to `until`, holding its inputs and the entities added or
+     removed since its last turn;
+  2. once all of them answered, their updates are merged, in the stage's order.
+
+  Participants in one stage therefore see the same state, and the next stage sees theirs. The coupling is explicit:
+  one pass per step.
+- After the last step, every participant is sent `stop`. An error message, or an update the coordinator refuses, also
+  stops the session, and every participant gets the reason.
+
+### 11.5 One structure, several participants
+
+- **Ids.** A participant's new entities take ids in `[idOffset, idOffset + idCount)`, so ids never collide.
+  Participants keep their own ids, and map them, if they need to.
+- **Rights.** A participant may write:
+  - only the outputs it declared;
+  - the topology columns only of entities it created, or of an entity set it owns.
+- **Removal.** Removing an entity removes, down the finer entity sets, the entities whose complex it is. Its successors
+  in its own entity set become roots.
+- **New entities.** A participant receives new entities with their `parent` and `complex`, and initializes its own
+  variables on them. When an entity splits, the participant shares its own extensive quantities and dilutes its own
+  concentrations by its rules; the entity's lineage is its `parent`.
+- **Labels.** An entity created without a label takes its entity set's name.
+
+### 11.6 Transports
+
+Both transports carry the same messages.
+
+- **ZeroMQ** (endpoint `tcp://…` or `ipc://…`).
+  - The coordinator binds a ROUTER socket.
+  - Each participant connects a DEALER socket whose identity is its name.
+  - A message is one or two frames: the header, then the payload.
+- **A folder** (endpoint `files:<path>`).
+  - Participant `p` has two queues, `<path>/p/to_coordinator/` and `<path>/p/to_participant/`.
+  - Message n of a queue is `n.json`, n as 8 digits from `00000000`.
+  - Its payload is `n.glb`, named in the header's `payload` key.
+  - The payload is written first, and the header is renamed into place last, so a header present means a complete
+    message.
+  - The folder is the session's log; a session needs a new folder.
+- **Launching.** A participant launched by the coordinator finds the endpoint in the environment variable
+  `FSPM_TF_ENDPOINT` and its name in `FSPM_TF_PARTICIPANT`.
+- **Replay.** A recorded sequence (§8) may be a participant, so a platform's log feeds another platform's inputs without
+  the first one running.
+  - It owns its entity sets, and provides their variables.
+  - Its ids are renumbered within its range.
+  - Between two recorded times, its values are those of the last frame at or before the session's time (`hold`), or
+    interpolated linearly for links stating `"interpolation": "linear"`.
 
 ## Changes from 0.1
 

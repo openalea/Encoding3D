@@ -9,6 +9,7 @@ The fspm-TF data model in Python: plain dataclasses holding numpy columns::
         Grid             a regular or adaptive grid's layout
         Mesh             triangles, each vertex carrying the row of its entity in one or several entity sets
       Mapping            source entity ↔ target entity weights between two data structures
+      Update             a partial frame's sender and removed entities (a coupling session's message)
 
 Every table holds columns of equal length (its rows), and declarations (Variable) for its variables. The columns
 reserved by the specification (RESERVED) are the structure: ids, the MTG relations, a relation's or a mapping's ends.
@@ -204,9 +205,23 @@ class Mapping(Table):
 
 
 @dataclass
+class Update:
+    """What makes a frame partial: a coupling session's message (specification §11). *participant*: its sender
+    ("coordinator" for a turn's inputs). Its tables hold some rows and columns only: the sender's outputs and its
+    topology changes, entities referring to others the frame does not hold. *removed*: {(data structure id, entity
+    set name): int64 ids} of the entities removed."""
+    participant: str
+    removed: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.removed = {key: np.asarray(ids, dtype=np.int64).reshape(-1) for key, ids in self.removed.items()}
+
+
+@dataclass
 class Frame:
     """A scene at one time step (*time* in *time_unit*, *step*), or a parameter set (data structures holding only
-    parameters). *unknown*: content of a read file this package does not interpret, written back as it was."""
+    parameters). *update*: set for a partial frame (Update), a coupling session's message. *unknown*: content of a
+    read file this package does not interpret, written back as it was."""
     data_structures: list = field(default_factory=list)
     mappings: list = field(default_factory=list)
     time: float = 0.
@@ -214,6 +229,7 @@ class Frame:
     step: int = 0
     writer: dict = field(default_factory=dict)
     vocabulary_version: Optional[str] = None
+    update: Optional[Update] = None
     unknown: dict = field(default_factory=dict)
 
     def data_structure(self, id: str) -> DataStructure:

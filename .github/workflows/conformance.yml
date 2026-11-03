@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install openalea.fspm_tf (its dependencies, conda-only in pyproject.toml, given here), and VTK for the ParaView reader's tests
-        run: python -m pip install numpy jsonschema pytest vtk . 
+        run: python -m pip install numpy jsonschema pytest pyzmq vtk . 
       - name: Tests, the ParaView reader's conversion included
         run: pytest bindings/python/test -v
       - name: The committed files are the generated ones

@@ -20,7 +20,7 @@ import numpy as np
 from openalea.fspm_tf import SPECIFICATION_VERSION
 from openalea.fspm_tf.glb import BufferBuilder, pack, unpack, view_bytes
 from openalea.fspm_tf.model import (DataStructure, EDGE_TYPES, ENUM_COLUMNS, EntitySet, Frame, Grid, Mapping, Mesh, NO_ID,
-                           Relation, Table, Variable)
+                           Relation, Table, Update, Variable)
 
 EXTENSION = "FSPM_scene"
 METADATA = "EXT_structural_metadata"
@@ -130,12 +130,25 @@ def to_bytes(frame: Frame) -> bytes:
                          **({"method": mapping.method} if mapping.method else {}),
                          "propertyTable": add_table(mapping, f"mapping__{mapping.name}")})
 
+    update = None
+    if frame.update is not None:
+        _check_identifier(frame.update.participant, "participant")
+        update = {"participant": frame.update.participant}
+        if frame.update.removed:
+            update["removed"] = [
+                {"dataStructure": data_structure_id, "entitySet": set_name,
+                 "propertyTable": add_table(Table(f"{set_name}__removed", columns={"id": ids}),
+                                            f"{data_structure_id}__{set_name}__removed")}
+                for (data_structure_id, set_name), ids in frame.update.removed.items()]
+
     scene = {"version": SPECIFICATION_VERSION,
              "frame": {"time": float(frame.time), "timeUnit": frame.time_unit, "step": int(frame.step)}}
     if frame.vocabulary_version:
         scene["vocabulary"] = frame.vocabulary_version
     if frame.writer:
         scene["writer"] = dict(frame.writer)
+    if update is not None:
+        scene["update"] = update
     scene["dataStructures"] = data_structures
     if mappings:
         scene["mappings"] = mappings
@@ -293,6 +306,8 @@ def _enum_codes(name: str, column: np.ndarray, class_id: str, schema: dict) -> t
         if unknown:
             raise ValueError(f"edge_type of '{class_id}': unknown values {sorted(unknown)} (allowed: {EDGE_TYPES})")
         return EDGE_TYPE_ENUM, np.array([EDGE_TYPES.index(value) for value in column], dtype=np.uint8)
+    if any(value is None for value in column):
+        raise ValueError(f"{name} of '{class_id}': an enum column has no missing values (give each row a {name})")
     names = sorted(set(column))
     enum_id = f"{class_id}__{name}"
     value_type = "UINT8" if len(names) <= 256 else "UINT16"
@@ -408,6 +423,11 @@ def from_bytes(data: bytes) -> Frame:
                                     source=(entry["source"]["dataStructure"], entry["source"]["entitySet"]),
                                     target=(entry["target"]["dataStructure"], entry["target"]["entitySet"]),
                                     method=entry.get("method")))
+    if "update" in scene:
+        update = scene["update"]
+        frame.update = Update(participant=update["participant"], removed={
+            (item["dataStructure"], item["entitySet"]): table(item["propertyTable"], Table).columns["id"]
+            for item in update.get("removed", [])})
     unknown_extensions = {name: value for name, value in extensions.items()
                           if name not in (METADATA, EXTENSION, FEATURES)}
     if unknown_extensions:

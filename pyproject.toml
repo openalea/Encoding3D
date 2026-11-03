@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 include-package-data = false # force explicit declaration of data (disable automatic inclusion)
 # the code in bindings/python/src; the specification (spec/: its text, schemas and vocabulary) shipped as
 # openalea.fspm_tf.spec. This file stays at the root, next to spec/ (a project cannot ship files outside its folder)
-packages = ["openalea.fspm_tf", "openalea.fspm_tf.spec"]
+packages = ["openalea.fspm_tf", "openalea.fspm_tf.coupling", "openalea.fspm_tf.spec"]
 package-dir = {"" = "bindings/python/src", "openalea.fspm_tf.spec" = "spec"}
 
 [tool.setuptools.package-data]
@@ -52,8 +52,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+coupling = [
+  "pyzmq",               # the coupling's in-memory transport (openalea.fspm_tf.coupling); its folder transport needs nothing
+]
 test = [
   "pytest",
+  "pyzmq",
 ]
 dev = [
   "pytest >=6",

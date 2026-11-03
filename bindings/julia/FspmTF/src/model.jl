@@ -297,11 +297,28 @@ function entity_set(data_structure::DataStructure, name::AbstractString)
 end
 
 """
-    Frame(; data_structures=DataStructure[], mappings=Mapping[], time=0.0, time_unit="d", step=0,
-          writer=OrderedDict(), vocabulary_version=nothing, unknown=OrderedDict())
+    Update(participant; removed=OrderedDict())
 
-A scene at one time step (`time` in `time_unit`, `step`), or a parameter set. `unknown`: the content of a read file
-this package does not interpret (other root extensions, the root's `extras`), written back as it was.
+What makes a frame partial: a coupling session's message (specification §11). `participant`: its sender
+(`"coordinator"` for a turn's inputs). Its tables hold some rows and columns only. `removed`: (data structure id,
+entity set name) => the ids of the entities removed.
+"""
+mutable struct Update
+    participant::String
+    removed::OrderedDict{Tuple{String,String},Vector{Int64}}
+end
+
+Update(participant::AbstractString; removed = OrderedDict{Tuple{String,String},Vector{Int64}}()) =
+    Update(String(participant), OrderedDict{Tuple{String,String},Vector{Int64}}(
+        (String(key[1]), String(key[2])) => Vector{Int64}(ids) for (key, ids) in removed))
+
+"""
+    Frame(; data_structures=DataStructure[], mappings=Mapping[], time=0.0, time_unit="d", step=0,
+          writer=OrderedDict(), vocabulary_version=nothing, update=nothing, unknown=OrderedDict())
+
+A scene at one time step (`time` in `time_unit`, `step`), or a parameter set. `update`: set for a partial frame
+(`Update`), a coupling session's message. `unknown`: the content of a read file this package does not interpret
+(other root extensions, the root's `extras`), written back as it was.
 """
 Base.@kwdef mutable struct Frame
     data_structures::Vector{DataStructure} = DataStructure[]
@@ -311,6 +328,7 @@ Base.@kwdef mutable struct Frame
     step::Int = 0
     writer::AbstractDict{String,Any} = OrderedDict{String,Any}()
     vocabulary_version::Union{Nothing,String} = nothing
+    update::Union{Nothing,Update} = nothing
     unknown::AbstractDict{String,Any} = OrderedDict{String,Any}()
 end
 
