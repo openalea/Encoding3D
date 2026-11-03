@@ -1,0 +1,178 @@
+{
+ "time": 3.0,
+ "time_unit": "d",
+ "step": 4,
+ "data_structures": [
+  {
+   "id": "plant",
+   "kind": "graph",
+   "origin": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "entity_sets": [
+    {
+     "name": "Organ",
+     "count": 4,
+     "columns": {
+      "id": {
+       "dtype": "int64",
+       "values": [
+        8589934593,
+        8589934594,
+        8589934595,
+        8589934596
+       ]
+      },
+      "label": {
+       "dtype": "string",
+       "values": [
+        "Leaf",
+        "Leaf",
+        "Leaf",
+        "Leaf"
+       ]
+      },
+      "complex": {
+       "dtype": "int64",
+       "values": [
+        -1,
+        -1,
+        -1,
+        -1
+       ]
+      },
+      "parent": {
+       "dtype": "int64",
+       "values": [
+        -1,
+        8589934593,
+        8589934594,
+        8589934595
+       ]
+      },
+      "edge_type": {
+       "dtype": "string",
+       "values": [
+        "none",
+        "successor",
+        "successor",
+        "successor"
+       ]
+      }
+     },
+     "rank": 5,
+     "scale": "Organ"
+    },
+    {
+     "name": "SubOrgan",
+     "count": 6,
+     "columns": {
+      "id": {
+       "dtype": "int64",
+       "values": [
+        4294968298,
+        4294968299,
+        4294969300,
+        4294969301,
+        4294970300,
+        4294970301
+       ]
+      },
+      "label": {
+       "dtype": "string",
+       "values": [
+        "Segment",
+        "Segment",
+        "Segment",
+        "Segment",
+        "Segment",
+        "Segment"
+       ]
+      },
+      "complex": {
+       "dtype": "int64",
+       "values": [
+        8589934593,
+        8589934593,
+        8589934594,
+        8589934594,
+        8589934595,
+        8589934595
+       ]
+      },
+      "parent": {
+       "dtype": "int64",
+       "values": [
+        -1,
+        4294968298,
+        -1,
+        4294969300,
+        -1,
+        4294970300
+       ]
+      },
+      "edge_type": {
+       "dtype": "string",
+       "values": [
+        "none",
+        "successor",
+        "none",
+        "successor",
+        "none",
+        "successor"
+       ]
+      },
+      "segment_length": {
+       "dtype": "float64",
+       "values": [
+        0.01,
+        0.01,
+        0.02,
+        0.02,
+        0.03,
+        0.03
+       ]
+      }
+     },
+     "variables": {
+      "segment_length": {
+       "unit": "m",
+       "role": "input",
+       "standard_name": "length"
+      }
+     },
+     "rank": 6,
+     "scale": "SubOrgan"
+    }
+   ]
+  }
+ ],
+ "mappings": [],
+ "update": {
+  "participant": "coordinator",
+  "removed": []
+ }
+}

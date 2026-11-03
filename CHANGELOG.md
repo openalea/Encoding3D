@@ -1,6 +1,19 @@
 # Changelog
 
-## Unreleased: coupling platforms (specification §11, draft for 0.3)
+## Unreleased: specification 0.3 (draft), coupling platforms
+
+- Specification 0.3: the frames say 0.3 (0.1 and 0.2 files stay valid); "Changes from 0.2"; the conformance files
+  regenerated (their expected values unchanged).
+- Links between two data structures, through a mapping a participant provides (declared, sent in its updates):
+  `sum` shares each source's amount among its targets by weight, `mean` gives each target its sources' weighted mean;
+  replayed sequences provide their mappings; a replay declares every entity set and variable of its frames.
+- Coupling conformance sessions (`conformance/coupling/`, written by its `generate.py`), `fspm-tf couple-conformance`,
+  and a participant's program in each codec; partial frames (`update`) in every codec's dump.
+- The C++ participant (`fspm_tf/coupling.hpp`; ZeroMQ with libzmq) and the Java one (`org.openalea.fspmtf.coupling`;
+  ZeroMQ with JeroMQ, optional); partial frames in both codecs.
+- CPlantBox's and GroIMP's logs (the adapter's tests, the plugin's headless run) replayed in coupling sessions.
+- The coordinator's lookups by id vectorized, and the Python codec's enum and text columns encoded without per-row
+  loops: a step of 100,000 segments takes 99 ms instead of 230 ms.
 
 - Coupling sessions: platforms' models run together, each in its own process, through fspm-TF. Partial frames
   (`FSPM_scene.update`: the sender, removed entities); the messages (`spec/schema/coupling.schema.json`): a

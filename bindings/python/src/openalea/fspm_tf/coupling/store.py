@@ -57,7 +57,7 @@ class EntitySetStore:
     def __init__(self, data_structure: str, name: str, rank):
         self.data_structure, self.name, self.rank = data_structure, name, rank
         self.ids = np.zeros(0, dtype=np.int64)
-        self.row = {}
+        self._sorted = None                                # (ids sorted, their rows): the lookups by id
         self.topology = {"label": np.zeros(0, dtype=object), "complex": np.zeros(0, dtype=np.int64),
                          "parent": np.zeros(0, dtype=np.int64), "edge_type": np.zeros(0, dtype=object),
                          "sibling_order": np.zeros(0, dtype=np.int64)}
@@ -68,12 +68,31 @@ class EntitySetStore:
     def __len__(self):
         return self.ids.size
 
-    def rows(self, ids) -> np.ndarray:
-        return np.array([self.row[int(identifier)] for identifier in ids], dtype=np.int64)
+    def _index(self) -> tuple:
+        if self._sorted is None:
+            order = np.argsort(self.ids, kind="stable")
+            self._sorted = (self.ids[order], order)
+        return self._sorted
+
+    def rows(self, ids, strict: bool = True) -> np.ndarray:
+        """The rows of *ids* (-1 for an id not here; KeyError if *strict*)."""
+        ids = np.asarray(ids, dtype=np.int64).reshape(-1)
+        keys, order = self._index()
+        if keys.size == 0:
+            found, rows = np.zeros(ids.size, dtype=bool), np.full(ids.size, -1, dtype=np.int64)
+        else:
+            position = np.minimum(np.searchsorted(keys, ids), keys.size - 1)
+            found = keys[position] == ids
+            rows = np.where(found, order[position], -1)
+        if strict and not found.all():
+            raise KeyError(f"ids not in {self.data_structure}/{self.name}: {ids[~found][:5].tolist()}")
+        return rows
+
+    def contains(self, ids) -> np.ndarray:
+        return self.rows(ids, strict=False) >= 0
 
     def add(self, ids: np.ndarray, topology: dict, creator: str) -> None:
         count = ids.size
-        start = self.ids.size
         self.ids = np.concatenate([self.ids, ids])
         for name, default in (("label", self.name), ("complex", NO_ID), ("parent", NO_ID), ("edge_type", "none"),
                               ("sibling_order", NO_ID)):        # an entity without a label: its entity set's name
@@ -85,7 +104,7 @@ class EntitySetStore:
         self.creator = np.concatenate([self.creator, np.full(count, creator, dtype=object)])
         for column in self.columns.values():
             column.grow(count)
-        self.row.update({int(identifier): start + offset for offset, identifier in enumerate(ids.tolist())})
+        self._sorted = None
 
     def remove(self, ids) -> None:
         keep = ~np.isin(self.ids, np.asarray(list(ids), dtype=np.int64))
@@ -95,7 +114,7 @@ class EntitySetStore:
         self.creator = self.creator[keep]
         for column in self.columns.values():
             column.keep(keep)
-        self.row = {int(identifier): row for row, identifier in enumerate(self.ids.tolist())}
+        self._sorted = None
 
     def place(self, participant: str, name: str, rows: np.ndarray, values, variable) -> None:
         key = (participant, name)
@@ -117,6 +136,7 @@ class SessionStore:
         self.set_of = {}                                 # (data structure, id): entity set name
         self.removed_log = []                            # (data structure, entity set, ids)
         self.removed_ids = set()                         # (data structure, id) of every entity removed
+        self.mappings = {}                               # name: the last Mapping its provider sent
 
     def entity_set(self, data_structure: str, name: str, rank=None) -> EntitySetStore:
         key = (data_structure, name)
@@ -139,6 +159,15 @@ class SessionStore:
             for entity_set in sorted(data_structure.entity_sets,
                                      key=lambda item: (item.rank if item.rank is not None else 0)):
                 self._merge_set(participant, declaration, data_structure.id, entity_set, provided, id_offset, where)
+        declared = {mapping.name: mapping for mapping in getattr(declaration, "mappings", [])}
+        for mapping in frame.mappings:
+            spec = declared.get(mapping.name)
+            if spec is None:
+                raise CouplingError(f"{where}: mapping {mapping.name} is not one it declared")
+            if (tuple(mapping.source), tuple(mapping.target)) != (spec.source, spec.target):
+                raise CouplingError(f"{where}: mapping {mapping.name} joins {mapping.source} and {mapping.target}, "
+                                    f"declared {spec.source} and {spec.target}")
+            self.mappings[mapping.name] = mapping
         if frame.update is not None:
             for (data_structure, set_name), ids in sorted(frame.update.removed.items(),
                                                           key=lambda item: self.ranks.get(item[0]) or 0):
@@ -151,7 +180,7 @@ class SessionStore:
             raise CouplingError(f"{where}: {data_structure}/{entity_set.name} has no 'id' column")
         ids = np.asarray(entity_set.columns["id"], dtype=np.int64)
         rights = declaration.rights(*key)
-        known = np.array([int(identifier) in store.row for identifier in ids.tolist()], dtype=bool)
+        known = store.contains(ids)
         new = ids[~known]
         if new.size:
             if rights == "follows":
@@ -186,8 +215,12 @@ class SessionStore:
         for name in ("complex", "parent"):
             if name in entity_set.columns:
                 values = np.asarray(entity_set.columns[name], dtype=np.int64)
-                missing = [int(value) for value in values.tolist() if value != NO_ID
-                           and (data_structure, int(value)) not in self.set_of]
+                values = values[values != NO_ID]
+                found = np.zeros(values.size, dtype=bool)
+                for (other_structure, _), other in self.sets.items():
+                    if other_structure == data_structure and values.size:
+                        found |= other.contains(values)
+                missing = values[~found].tolist()
                 if missing:
                     raise CouplingError(f"{where}: {data_structure}/{entity_set.name}.{name} refers to unknown "
                                         f"entities {missing[:5]}")
@@ -205,7 +238,7 @@ class SessionStore:
                if (data_structure, int(identifier)) not in self.removed_ids]     # e.g. with their complex already
         if not ids:
             return
-        if store is None or any(identifier not in store.row for identifier in ids):
+        if store is None or not store.contains(ids).all():
             raise CouplingError(f"{where}: removes entities not in {data_structure}/{set_name}")
         if declaration.rights(data_structure, set_name) != "owns":
             created = store.creator[store.rows(ids)]
@@ -240,18 +273,24 @@ class SessionStore:
     # ── a participant's inputs ─────────────────────────────────────────────────────
     def ancestors(self, data_structure: str, ids: np.ndarray, target: str) -> np.ndarray:
         """Each id's complex (or complex's complex, …) in the entity set *target*, NO_ID if none."""
+        ids = np.asarray(ids, dtype=np.int64)
         found = np.full(ids.size, NO_ID, dtype=np.int64)
-        for position, identifier in enumerate(ids.tolist()):
-            current = identifier
-            while current != NO_ID:
-                name = self.set_of.get((data_structure, current))
-                if name is None:
-                    break
+        current, active = ids.copy(), ids != NO_ID
+        stores = [(name, store) for (structure, name), store in self.sets.items() if structure == data_structure]
+        for _ in range(len(stores) + 1):                  # one scale up per pass
+            if not active.any():
+                break
+            snapshot, moved = current.copy(), np.zeros(ids.size, dtype=bool)
+            for name, store in stores:
+                rows = store.rows(snapshot, strict=False)
+                here = active & (rows >= 0)
                 if name == target:
-                    found[position] = current
-                    break
-                store = self.sets[(data_structure, name)]
-                current = int(store.topology["complex"][store.row[current]])
+                    found[here] = snapshot[here]
+                    active[here] = False
+                else:
+                    current[here] = store.topology["complex"][rows[here]]
+                    moved |= here
+            active &= moved & (current != NO_ID)
         return found
 
     def values(self, coupling) -> tuple:
@@ -264,9 +303,10 @@ class SessionStore:
         if column is None:
             return np.full(count, np.nan), np.ones(count, dtype=bool)
         values, present = column.values, column.present
+        if coupling.mapping is not None:
+            return self._through_mapping(coupling, origin, values, present, target)
         if coupling.aggregation is None:
-            rows = np.array([origin.row.get(int(identifier), -1) for identifier in target.ids.tolist()],
-                            dtype=np.int64)
+            rows = origin.rows(target.ids, strict=False)
             found = rows >= 0
             out = _empty(values, count)
             out[found] = values[rows[found]]
@@ -274,7 +314,7 @@ class SessionStore:
             missing[found] |= ~present[rows[found]]
         elif coupling.aggregation == "copy":
             above = self.ancestors(variable.data_structure, target.ids, source.entity_set)
-            rows = np.array([origin.row.get(int(identifier), -1) for identifier in above.tolist()], dtype=np.int64)
+            rows = origin.rows(above, strict=False)
             found = rows >= 0
             out = _empty(values, count)
             out[found] = values[rows[found]]
@@ -285,21 +325,57 @@ class SessionStore:
                 raise CouplingError(f"{coupling.receiver}.{variable.name}: {coupling.aggregation} of non-numeric "
                                     f"values")
             above = self.ancestors(variable.data_structure, origin.ids, variable.entity_set)
-            out = np.full(count, np.nan)
-            missing = np.ones(count, dtype=bool)
-            groups = {}
-            for row, identifier in enumerate(above.tolist()):
-                if identifier != NO_ID and present[row]:
-                    groups.setdefault(identifier, []).append(values[row])
-            reduce = {"sum": np.sum, "mean": np.mean, "max": np.max, "min": np.min}[coupling.aggregation]
-            for identifier, group in groups.items():
-                row = target.row.get(identifier)
-                if row is not None:
-                    out[row] = reduce(np.asarray(group, dtype=float))
-                    missing[row] = False
+            target_rows = target.rows(above, strict=False)
+            used = (target_rows >= 0) & present
+            target_rows, x = target_rows[used], values[used].astype(float)
+            counts = np.bincount(target_rows, minlength=count)
+            missing = counts == 0
+            if coupling.aggregation in ("sum", "mean"):
+                out = np.bincount(target_rows, weights=x, minlength=count)
+                if coupling.aggregation == "mean":
+                    out = np.divide(out, counts, out=np.zeros(count), where=counts > 0)
+            else:
+                start = -np.inf if coupling.aggregation == "max" else np.inf
+                out = np.full(count, start)
+                (np.maximum if coupling.aggregation == "max" else np.minimum).at(out, target_rows, x)
+            out = np.where(missing, np.nan, out)
         if coupling.factor != 1. and out.dtype.kind in "fi":
             out = out.astype(np.float64) * coupling.factor
         return out, missing
+
+    def _through_mapping(self, coupling, origin, values, present, target) -> tuple:
+        """An input from another data structure through a mapping: "sum" shares each source's value among its
+        targets in proportion to their weights; "mean" gives each target its sources' weighted mean."""
+        count = len(target)
+        out, missing = np.full(count, np.nan), np.ones(count, dtype=bool)
+        mapping = self.mappings.get(coupling.mapping)
+        if mapping is None:
+            return out, missing
+        if values.dtype.kind not in "fi":
+            raise CouplingError(f"{coupling.receiver}.{coupling.variable.name}: non-numeric values through a "
+                                "mapping")
+        sources, targets = np.asarray(mapping.columns["source"]), np.asarray(mapping.columns["target"])
+        if coupling.reverse:
+            sources, targets = targets, sources
+        weights = np.asarray(mapping.columns["weight"], dtype=float)
+        source_rows = origin.rows(sources, strict=False)
+        target_rows = target.rows(targets, strict=False)
+        used = (source_rows >= 0) & (target_rows >= 0)
+        used[used] &= present[source_rows[used]]
+        source_rows, target_rows, weights = source_rows[used], target_rows[used], weights[used]
+        x = values[source_rows].astype(float)
+        if coupling.aggregation == "sum":                  # each source's amount shared among its targets
+            totals = np.bincount(source_rows, weights=weights, minlength=len(origin))
+            shares = np.divide(weights, totals[source_rows], out=np.zeros_like(weights),
+                               where=totals[source_rows] > 0)
+            out_values = np.bincount(target_rows, weights=x * shares, minlength=count)
+        else:                                               # each target's weighted mean
+            weighted = np.bincount(target_rows, weights=x * weights, minlength=count)
+            totals = np.bincount(target_rows, weights=weights, minlength=count)
+            out_values = np.divide(weighted, totals, out=np.full(count, np.nan), where=totals > 0)
+        reached = np.bincount(target_rows, minlength=count) > 0
+        out[reached], missing[reached] = out_values[reached], False
+        return out * coupling.factor, missing
 
     def inputs(self, receiver: str, declaration, couplings, removed_since: int, time: float, time_unit: str,
                step: int) -> Frame:
@@ -361,7 +437,8 @@ class SessionStore:
                 if (participant, variable) in store.declarations:
                     entity_set.variables[column_name] = store.declarations[(participant, variable)]
             structures.setdefault(data_structure, DataStructure(data_structure)).entity_sets.append(entity_set)
-        return Frame(data_structures=list(structures.values()), time=time, time_unit=time_unit, step=step,
+        return Frame(data_structures=list(structures.values()), mappings=list(self.mappings.values()), time=time,
+                     time_unit=time_unit, step=step,
                      writer={"platform": "fspm-tf", "adapter": "openalea.fspm_tf.coupling"})
 
 

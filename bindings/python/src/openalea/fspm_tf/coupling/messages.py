@@ -96,12 +96,31 @@ class VariableSpec:
 
 
 @dataclass
+class MappingSpec:
+    """A mapping a participant provides (its updates carry it, as a frame's Mapping of that name): weights between the
+    entities of *source* and *target*, each (data structure, entity set), for links between two data structures."""
+    name: str
+    source: tuple
+    target: tuple
+
+    def to_json(self) -> dict:
+        return {"name": self.name, "source": {"dataStructure": self.source[0], "entitySet": self.source[1]},
+                "target": {"dataStructure": self.target[0], "entitySet": self.target[1]}}
+
+    @classmethod
+    def from_json(cls, value: dict) -> "MappingSpec":
+        return cls(value["name"], (value["source"]["dataStructure"], value["source"]["entitySet"]),
+                   (value["target"]["dataStructure"], value["target"]["entitySet"]))
+
+
+@dataclass
 class Declaration:
-    """A participant's declaration: its name, platform, entity sets and variables."""
+    """A participant's declaration: its name, platform, entity sets, variables, and the mappings it provides."""
     participant: str
     platform: Optional[str] = None
     entity_sets: list = field(default_factory=list)
     variables: list = field(default_factory=list)
+    mappings: list = field(default_factory=list)
 
     def provides(self) -> list:
         return [variable for variable in self.variables if variable.direction == "provides"]
@@ -132,13 +151,16 @@ class Declaration:
                  "variables": [item.to_json() for item in self.variables]}
         if self.platform:
             value["platform"] = self.platform
+        if self.mappings:
+            value["mappings"] = [item.to_json() for item in self.mappings]
         return value
 
     @classmethod
     def from_json(cls, value: dict) -> "Declaration":
         return cls(value["participant"], value.get("platform"),
                    [EntitySetSpec.from_json(item) for item in value.get("entitySets", [])],
-                   [VariableSpec.from_json(item) for item in value.get("variables", [])]).complete()
+                   [VariableSpec.from_json(item) for item in value.get("variables", [])],
+                   [MappingSpec.from_json(item) for item in value.get("mappings", [])]).complete()
 
 
 @dataclass
@@ -146,7 +168,9 @@ class Link:
     """An input's provider: the receiver's variable (*entity_set* when its name is ambiguous) fed by the provider's
     *source* variable, times *factor* (after the unit conversion), changed of scale by *aggregation* (sum, mean, max,
     min from a finer entity set; copy from a coarser one), and between a replayed sequence's times by
-    *interpolation* (hold, linear)."""
+    *interpolation* (hold, linear). Between two data structures, through the *mapping* a participant provides:
+    "sum" shares each source entity's value among its targets in proportion to their weights (an amount is kept),
+    "mean" gives each target the weighted mean of its sources."""
     receiver: str
     variable: str
     provider: str
@@ -156,6 +180,7 @@ class Link:
     factor: float = 1.
     aggregation: Optional[str] = None
     interpolation: str = "hold"
+    mapping: Optional[str] = None
 
     def __post_init__(self):
         if self.aggregation is not None and self.aggregation not in AGGREGATIONS:
@@ -169,7 +194,7 @@ class Link:
         value = {"receiver": self.receiver, "variable": self.variable, "provider": self.provider,
                  "source": self.source}
         for key, name in (("entity_set", "entitySet"), ("source_entity_set", "sourceEntitySet"),
-                          ("aggregation", "aggregation")):
+                          ("aggregation", "aggregation"), ("mapping", "mapping")):
             if getattr(self, key) is not None:
                 value[name] = getattr(self, key)
         if self.factor != 1.:
@@ -182,4 +207,4 @@ class Link:
     def from_json(cls, value: dict) -> "Link":
         return cls(value["receiver"], value["variable"], value["provider"], value["source"],
                    value.get("entitySet"), value.get("sourceEntitySet"), float(value.get("factor", 1.)),
-                   value.get("aggregation"), value.get("interpolation", "hold"))
+                   value.get("aggregation"), value.get("interpolation", "hold"), value.get("mapping"))

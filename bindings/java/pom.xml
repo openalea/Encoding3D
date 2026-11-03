@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- fspm-tf, the Java codec of fspm-TF: reading and writing frames and sequences (spec 0.1). One dependency: Jackson.
+<!-- fspm-tf, the Java codec of fspm-TF: reading and writing frames and sequences (spec 0.3), a coupling session's participant. One dependency: Jackson
+     (and JeroMQ, optional, for the coupling's ZeroMQ transport).
 
        mvn -f bindings/java/pom.xml verify          the tests, the conformance files included
 -->
@@ -35,6 +36,13 @@
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
       <version>${jackson.version}</version>
+    </dependency>
+    <!-- the coupling's ZeroMQ transport (pure Java); optional: the folder transport needs nothing -->
+    <dependency>
+      <groupId>org.zeromq</groupId>
+      <artifactId>jeromq</artifactId>
+      <version>0.6.0</version>
+      <optional>true</optional>
     </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>

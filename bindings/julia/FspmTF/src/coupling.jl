@@ -55,6 +55,18 @@ function VariableSpec(data_structure::AbstractString, entity_set::AbstractString
 end
 
 """
+    MappingSpec(name, source, target)
+
+A mapping a participant provides (its updates carry it, as a frame's `Mapping` of that name): `source` and `target`,
+each (data structure, entity set), for links between two data structures.
+"""
+struct MappingSpec
+    name::String
+    source::Tuple{String,String}
+    target::Tuple{String,String}
+end
+
+"""
     Declaration(participant; platform=nothing, entity_sets=EntitySetSpec[], variables=VariableSpec[])
 
 A participant's declaration (its name: `FSPM_TF_PARTICIPANT` when empty and launched by the coordinator).
@@ -64,6 +76,7 @@ Base.@kwdef mutable struct Declaration
     platform::Union{Nothing,String} = nothing
     entity_sets::Vector{EntitySetSpec} = EntitySetSpec[]
     variables::Vector{VariableSpec} = VariableSpec[]
+    mappings::Vector{MappingSpec} = MappingSpec[]
 end
 
 Declaration(participant::AbstractString; kwargs...) = Declaration(; participant = String(participant), kwargs...)
@@ -92,7 +105,31 @@ function declaration_json(declaration::Declaration)
     value = json_object("participant" => declaration.participant, "entitySets" => entity_sets,
                         "variables" => variables)
     declaration.platform === nothing || (value["platform"] = declaration.platform)
+    isempty(declaration.mappings) || (value["mappings"] = Any[
+        json_object("name" => item.name,
+                    "source" => json_object("dataStructure" => item.source[1], "entitySet" => item.source[2]),
+                    "target" => json_object("dataStructure" => item.target[1], "entitySet" => item.target[2]))
+        for item in declaration.mappings])
     return value
+end
+
+"""
+    declaration_from_json(value) -> Declaration
+
+A declaration from its JSON (e.g. a file's, `JSON.parsefile`).
+"""
+function declaration_from_json(value)
+    entity_sets = [EntitySetSpec(item["dataStructure"], item["name"]; rank = get(item, "rank", nothing),
+                                 rights = get(item, "rights", "follows")) for item in get(value, "entitySets", Any[])]
+    variables = [VariableSpec(item["dataStructure"], item["entitySet"], item["name"], item["direction"];
+                              unit = get(item, "unit", "1"), standard_name = get(item, "standardName", nothing),
+                              kind = get(item, "kind", nothing), optional = get(item, "optional", false))
+                 for item in get(value, "variables", Any[])]
+    mappings = [MappingSpec(item["name"], (item["source"]["dataStructure"], item["source"]["entitySet"]),
+                            (item["target"]["dataStructure"], item["target"]["entitySet"]))
+                for item in get(value, "mappings", Any[])]
+    return Declaration(; participant = String(value["participant"]), platform = get(value, "platform", nothing),
+                       entity_sets, variables, mappings)
 end
 
 """
@@ -111,6 +148,7 @@ Base.@kwdef struct Link
     factor::Float64 = 1.0
     aggregation::Union{Nothing,String} = nothing
     interpolation::String = "hold"
+    mapping::Union{Nothing,String} = nothing
 end
 
 Link(receiver, variable, provider, source; kwargs...) =
@@ -125,6 +163,7 @@ function link_json(link::Link)
     link.aggregation === nothing || (value["aggregation"] = link.aggregation)
     link.factor == 1.0 || (value["factor"] = link.factor)
     link.interpolation == "hold" || (value["interpolation"] = link.interpolation)
+    link.mapping === nothing || (value["mapping"] = link.mapping)
     return value
 end
 

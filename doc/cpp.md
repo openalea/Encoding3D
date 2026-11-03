@@ -45,6 +45,15 @@ A column holds a vector of numbers (any integer or float type), `bool` or `std::
 more, it holds a fixed-size vector per row. NaN and infinities are written with the specification's stand-ins and
 read back as they were.
 
+## Coupling with other platforms
+
+`fspm_tf/coupling.hpp` is a participant of the coupling sessions fspm-TF's coordinator runs
+([Coupling platforms](coupling.md)): `fspm_tf::coupling::Participant(declaration)` joins one (the declaration as its
+JSON; the address and name from the environment when launched by the coordinator), `next_turn()` gives each turn's
+inputs until the session stops, `send_update(frame)` answers. Its folder transport needs nothing; its ZeroMQ transport
+is built when CMake finds libzmq (`FSPM_TF_WITH_ZMQ`, on by default; `has_zeromq()` tells). The tool
+`fspm_tf_coupling_conformance` is its program for the conformance sessions.
+
 ## CPlantBox
 
 Build the adapter against CPlantBox's sources and its library:
@@ -105,3 +114,7 @@ CPlantBox has two scales below the plant. `to_root_system` reads frames with mor
 segments are the entity set with segment ends, and the organs are the set their `complex` points to. For example,
 metafspm's Plant, Axis and SubOrgan become CPlantBox root organs. CPlantBox has static roots only, so stems and
 leaves are not rebuilt.
+
+The adapter's tests also write CPlantBox's log of a growing root system (`anagallis_log/`: a frame a day for six
+days, and its index), which the CI then replays as a participant of a coupling session: a reader receives every
+logged segment and value at each step.

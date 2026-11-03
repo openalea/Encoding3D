@@ -1,6 +1,6 @@
 # fspm_tf (C++)
 
-The C++ codec of fspm-TF (C++17, CMake): reading and writing frames and sequences (spec 0.2). In `cplantbox/` is
+The C++ codec of fspm-TF (C++17, CMake): reading and writing frames and sequences (spec 0.3). In `cplantbox/` is
 CPlantBox's adapter, which turns an organism into a graph with its geometry, soil grid and segment-to-cell mapping,
 and turns a graph into a static CPlantBox root system.
 
@@ -15,6 +15,8 @@ and turns a graph into a static CPlantBox root system.
 ```bash
 cmake -S bindings/cpp -B build && cmake --build build && ctest --test-dir build
 ```
+
+`fspm_tf/coupling.hpp` is a participant of coupling sessions (its ZeroMQ transport built when libzmq is found).
 
 Its one dependency is nlohmann_json (header-only, MIT), found installed or fetched. It installs as a CMake package:
 `find_package(fspm_tf)`, then `target_link_libraries(... fspm_tf::fspm_tf)`. See [the documentation](../../doc/cpp.md).

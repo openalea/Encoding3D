@@ -85,8 +85,14 @@ function frame_to_dict(frame::Frame)
                                                         "target" => collect(mapping.target),
                                                         "method" => mapping.method))
                 for mapping in frame.mappings]
-    return json_object("time" => frame.time, "time_unit" => frame.time_unit, "step" => frame.step,
-                       "data_structures" => data_structures, "mappings" => mappings)
+    out = json_object("time" => frame.time, "time_unit" => frame.time_unit, "step" => frame.step,
+                      "data_structures" => data_structures, "mappings" => mappings)
+    if frame.update !== nothing                       # a partial frame: its sender and removed entities, sorted
+        out["update"] = json_object("participant" => frame.update.participant,
+            "removed" => Any[json_object("data_structure" => key[1], "entity_set" => key[2], "ids" => ids)
+                             for (key, ids) in sort(collect(frame.update.removed); by = first)])
+    end
+    return out
 end
 
 """

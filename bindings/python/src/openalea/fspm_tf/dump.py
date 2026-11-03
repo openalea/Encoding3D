@@ -94,7 +94,12 @@ def frame_to_dict(frame: Frame) -> dict:
                                 for name, values in mesh.display.items()}} if mesh.display else {})}
                 for mesh in data_structure.meshes]
         data_structures.append(entry)
-    return {"time": frame.time, "time_unit": frame.time_unit, "step": frame.step,
-            "data_structures": data_structures,
-            "mappings": [dict(_table(mapping), source=list(mapping.source), target=list(mapping.target),
-                              method=mapping.method) for mapping in frame.mappings]}
+    out = {"time": frame.time, "time_unit": frame.time_unit, "step": frame.step,
+           "data_structures": data_structures,
+           "mappings": [dict(_table(mapping), source=list(mapping.source), target=list(mapping.target),
+                             method=mapping.method) for mapping in frame.mappings]}
+    if frame.update is not None:                          # a partial frame: its sender and removed entities
+        out["update"] = {"participant": frame.update.participant,
+                         "removed": [{"data_structure": key[0], "entity_set": key[1], "ids": ids.tolist()}
+                                     for key, ids in sorted(frame.update.removed.items())]}
+    return out

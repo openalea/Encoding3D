@@ -1,6 +1,6 @@
 # FspmTF.jl
 
-The Julia codec of fspm-TF: reading and writing frames and sequences (spec 0.2), and, as a package extension, a
+The Julia codec of fspm-TF: reading and writing frames and sequences (spec 0.3), and, as a package extension, a
 MultiScaleTreeGraph.jl MTG to and from a `graph` data structure (`from_mtg`, `to_mtg`).
 
 - `FspmTF/src/`: the GLB container (`glb.jl`), the data model (`model.jl`), reading and writing (`codec.jl`),

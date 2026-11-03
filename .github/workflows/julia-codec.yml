@@ -91,3 +91,8 @@ jobs:
         env:
           FSPM_TF_JULIA: julia --project=coupling-env
         run: pytest -v bindings/python/test/test_coupling.py
+      - name: The coupling conformance sessions, the Julia participant
+        run: |
+          julia --project=coupling-env -e 'using Pkg; Pkg.add("JSON")'
+          fspm-tf couple-conformance conformance/coupling --participant \
+            "julia --project=$PWD/coupling-env $PWD/bindings/julia/coupling_conformance.jl"

@@ -157,6 +157,16 @@ public final class Dump {
             if (mapping.method == null) item.putNull("method"); else item.put("method", mapping.method);
             mappings.add(item);
         }
+        if (frame.update != null) {                 // a partial frame: its sender and removed entities, sorted
+            ObjectNode update = dump.putObject("update").put("participant", frame.update.participant);
+            ArrayNode removed = update.putArray("removed");
+            for (Map.Entry<String, long[]> item : frame.update.removed.entrySet()) {
+                String[] key = item.getKey().split("/", 2);
+                ObjectNode entry = removed.addObject().put("data_structure", key[0]).put("entity_set", key[1]);
+                ArrayNode ids = entry.putArray("ids");
+                for (long id : item.getValue()) ids.add(id);
+            }
+        }
         return dump;
     }
 

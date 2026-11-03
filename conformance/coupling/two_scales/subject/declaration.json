@@ -1,0 +1,36 @@
+{
+ "participant": "subject",
+ "entitySets": [
+  {
+   "dataStructure": "plant",
+   "name": "Organ",
+   "rank": 5,
+   "rights": "follows"
+  },
+  {
+   "dataStructure": "plant",
+   "name": "SubOrgan",
+   "rank": 6,
+   "rights": "refines"
+  }
+ ],
+ "variables": [
+  {
+   "dataStructure": "plant",
+   "entitySet": "SubOrgan",
+   "name": "segment_length",
+   "direction": "requires",
+   "unit": "m",
+   "standardName": "length"
+  },
+  {
+   "dataStructure": "plant",
+   "entitySet": "SubOrgan",
+   "name": "sugar",
+   "direction": "provides",
+   "unit": "mol",
+   "kind": "extensive"
+  }
+ ],
+ "platform": "conformance"
+}

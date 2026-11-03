@@ -25,7 +25,8 @@ public final class ConformanceRun {
         Path conformance = Path.of(arguments[0]), out = Path.of(arguments[1]);
         List<Path> files;
         try (Stream<Path> paths = Files.walk(conformance)) {
-            files = paths.filter(path -> path.toString().endsWith(".glb")).sorted().toList();
+            files = paths.filter(path -> path.toString().endsWith(".glb"))
+                    .filter(path -> !conformance.relativize(path).startsWith("coupling")).sorted().toList();   // sessions
         }
         for (Path file : files) {
             Path relative = conformance.relativize(file);

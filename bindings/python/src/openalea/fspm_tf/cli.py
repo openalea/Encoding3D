@@ -14,6 +14,10 @@ The fspm-tf command line::
                                                 run a coupling session (specification §11): launch the participants'
                                                 commands, wait for the expected ones, replay sequences; exit 1 if it
                                                 stops on an error
+    fspm-tf couple-conformance SESSIONS --participant COMMAND [--out DIR] [--transport zmq|files]
+                                                run the coupling conformance sessions (conformance/coupling) with
+                                                COMMAND SESSION OUT as the participant under test; exit 1 if what it
+                                                read, or the session's record, differs from the expected values
 """
 import argparse
 import sys
@@ -131,6 +135,19 @@ def _couple(arguments) -> int:
     return 0
 
 
+def _couple_conformance(arguments) -> int:
+    import tempfile
+    from openalea.fspm_tf.coupling.conformance import TRANSPORTS, run_all
+    out = arguments.out or tempfile.mkdtemp(prefix="fspm_tf_sessions_")
+    transports = [arguments.transport] if arguments.transport else list(TRANSPORTS)
+    results = run_all(arguments.sessions, arguments.participant, out, transports)
+    for (name, transport), differences in results.items():
+        _print_differences(f"{name} ({transport})", differences)
+    failed = sum(1 for differences in results.values() if differences)
+    print(f"{len(results) - failed} of {len(results)} sessions as expected (outputs in {out})")
+    return 1 if failed or not results else 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="fspm-tf", description="fspm-TF files: validate, inspect, display; couple platforms")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -171,6 +188,14 @@ def main(argv=None) -> int:
     couple.add_argument("--record", help="a folder: the session recorded as a sequence")
     couple.add_argument("--timeout", type=float, default=600., help="seconds to wait for a message")
     couple.set_defaults(run=_couple)
+    sessions = commands.add_parser("couple-conformance", help="a participant's side against the coupling "
+                                                              "conformance sessions")
+    sessions.add_argument("sessions", help="the sessions' folder (conformance/coupling)")
+    sessions.add_argument("--participant", required=True, help="the command of the participant under test; it is "
+                                                               "run as COMMAND SESSION OUT")
+    sessions.add_argument("--out", help="where the outputs go (default: a new temporary folder)")
+    sessions.add_argument("--transport", choices=["zmq", "files"], help="one transport only (default: both)")
+    sessions.set_defaults(run=_couple_conformance)
     arguments = parser.parse_args(argv)
     return arguments.run(arguments)
 

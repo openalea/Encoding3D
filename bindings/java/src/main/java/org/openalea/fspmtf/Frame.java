@@ -18,6 +18,8 @@ public final class Frame {
     public long step = 0;
     public ObjectNode writer = JsonNodeFactory.instance.objectNode();
     public String vocabularyVersion;
+    /** Set for a partial frame, a coupling session's message. */
+    public Update update;
     public ObjectNode unknown = JsonNodeFactory.instance.objectNode();
 
     public DataStructure dataStructure(String id) {

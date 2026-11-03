@@ -7,8 +7,8 @@ before the session's time ("hold"), or interpolated linearly for the variables l
 import numpy as np
 
 from openalea.fspm_tf.codec import read, read_index
-from openalea.fspm_tf.coupling.messages import Declaration, EntitySetSpec, VariableSpec
-from openalea.fspm_tf.model import NO_ID, DataStructure, EntitySet, Frame, Update
+from openalea.fspm_tf.coupling.messages import Declaration, EntitySetSpec, MappingSpec, VariableSpec
+from openalea.fspm_tf.model import NO_ID, DataStructure, EntitySet, Frame, Mapping, Update
 from openalea.fspm_tf.ucum import conversion_factor
 
 _ID_COLUMNS = ("id", "complex", "parent")
@@ -29,23 +29,42 @@ class Replay:
         self.linear = set()                       # (data structure, entity set, variable) interpolated
         self.sent = {}                            # (data structure, entity set): ids sent at the last turn
         self.id_map = {}                          # recorded id: session id
-        self.declaration = self._declare(self._frame(0))
+        self.declaration = self._declare()
 
     def _frame(self, position: int) -> Frame:
         if position not in self._cache:
             self._cache = {position: read(self.paths[position])}     # one frame kept
         return self._cache[position]
 
-    def _declare(self, frame: Frame) -> Declaration:
-        declaration = Declaration(self.name, platform=frame.writer.get("platform", "replay"))
-        for data_structure in frame.data_structures:
-            for entity_set in data_structure.entity_sets:
-                declaration.entity_sets.append(EntitySetSpec(data_structure.id, entity_set.name, entity_set.rank,
-                                                             "owns"))
-                for name in entity_set.variable_names():
-                    variable = entity_set.declaration(name)
-                    declaration.variables.append(VariableSpec(data_structure.id, entity_set.name, name, "provides",
-                                                              variable.unit, variable.standard_name, variable.kind))
+    def _declare(self) -> Declaration:
+        """Its declaration: every entity set, variable and mapping of its frames (some appear later than others)."""
+        declaration = None
+        sets, variables, mappings = set(), set(), set()
+        self.own = set()
+        for position in range(len(self.paths)):
+            frame = self._frame(position)
+            if declaration is None:
+                declaration = Declaration(self.name, platform=frame.writer.get("platform", "replay"))
+            for data_structure in frame.data_structures:
+                self.own.add(data_structure.id)
+                for entity_set in data_structure.entity_sets:
+                    if (data_structure.id, entity_set.name) not in sets:
+                        sets.add((data_structure.id, entity_set.name))
+                        declaration.entity_sets.append(EntitySetSpec(data_structure.id, entity_set.name,
+                                                                     entity_set.rank, "owns"))
+                    for name in entity_set.variable_names():
+                        if (data_structure.id, entity_set.name, name) in variables:
+                            continue
+                        variables.add((data_structure.id, entity_set.name, name))
+                        variable = entity_set.declaration(name)
+                        declaration.variables.append(VariableSpec(data_structure.id, entity_set.name, name, "provides",
+                                                                  variable.unit, variable.standard_name,
+                                                                  variable.kind))
+            for mapping in frame.mappings:
+                if mapping.name not in mappings:
+                    mappings.add(mapping.name)
+                    declaration.mappings.append(MappingSpec(mapping.name, tuple(mapping.source),
+                                                            tuple(mapping.target)))
         return declaration
 
     def update(self, time: float, time_unit: str) -> Frame:
@@ -79,7 +98,16 @@ class Replay:
                     removed[key] = np.array(sorted(gone), dtype=np.int64)
                 self.sent[key] = ids
             structures.append(out)
-        return Frame(data_structures=structures, update=Update(self.name, removed))
+        mappings = []
+        for mapping in frame.mappings:                # ids renumbered at the ends in its own data structures
+            columns = dict(mapping.columns)
+            for end, (data_structure_id, _) in (("source", mapping.source), ("target", mapping.target)):
+                if data_structure_id in self.own:
+                    columns[end] = np.array([self._session_id(int(value)) for value in columns[end].tolist()],
+                                            dtype=np.int64)
+            mappings.append(Mapping(mapping.name, columns=columns, source=mapping.source, target=mapping.target,
+                                    method=mapping.method))
+        return Frame(data_structures=structures, mappings=mappings, update=Update(self.name, removed))
 
     def _session_id(self, recorded: int) -> int:
         """The session id of a recorded id: the replay's ids renumbered from its offset, in order of appearance."""

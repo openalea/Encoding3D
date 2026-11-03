@@ -22,6 +22,8 @@ class Coupling:
     aggregation: Optional[str] = None
     interpolation: str = "hold"
     how: str = "link"
+    mapping: Optional[str] = None
+    reverse: bool = False                 # the mapping read from its target to its source
 
     def to_json(self) -> dict:
         value = {"variable": self.variable.name, "entitySet": self.variable.entity_set,
@@ -32,6 +34,8 @@ class Coupling:
                 value["aggregation"] = self.aggregation
             if self.interpolation != "hold":
                 value["interpolation"] = self.interpolation
+            if self.mapping:
+                value["mapping"] = self.mapping
         return value
 
 
@@ -52,6 +56,13 @@ def resolve(declarations: dict, links=()) -> list:
     """The couplings of every input of *declarations* ({participant: Declaration}), from *links* (Link) first, then
     by standard name, then by name; CouplingError when an input has none (unless optional) or several."""
     known_ranks = ranks(declarations)
+    mappings = {}
+    for declaration in declarations.values():
+        for mapping in declaration.mappings:
+            if mapping.name in mappings:
+                raise CouplingError(f"mapping {mapping.name}: provided by {mappings[mapping.name][0]} and "
+                                    f"{declaration.participant}")
+            mappings[mapping.name] = (declaration.participant, mapping)
     owners = {}
     for declaration in declarations.values():
         for entity_set in declaration.entity_sets:
@@ -84,7 +95,8 @@ def resolve(declarations: dict, links=()) -> list:
                     raise CouplingError(f"link {receiver}.{variable.name} <- {link.provider}.{link.source}: "
                                         f"{len(sources)} such outputs of {link.provider}")
                 couplings.append(_coupling(receiver, variable, link.provider, sources[0], known_ranks, "link",
-                                           link.factor, link.aggregation, link.interpolation))
+                                           link.factor, link.aggregation, link.interpolation,
+                                           mappings.get(link.mapping, (None, link.mapping))[1]))
                 continue
             coupling = None
             for how, same in (("standard name", lambda source: variable.standard_name is not None
@@ -112,14 +124,29 @@ def resolve(declarations: dict, links=()) -> list:
 
 
 def _coupling(receiver, variable, provider, source, known_ranks, how, factor=1., aggregation=None,
-              interpolation="hold") -> Coupling:
-    if source.data_structure != variable.data_structure:
-        raise CouplingError(f"{receiver}.{variable.name} <- {provider}.{source.name}: different data structures "
-                            f"({source.data_structure}, {variable.data_structure}) need a mapping (not supported yet)")
+              interpolation="hold", mapping=None) -> Coupling:
+    where = f"{receiver}.{variable.name} <- {provider}.{source.name}"
     try:
         factor = factor * conversion_factor(source.unit, variable.unit)
     except UnitError as error:
-        raise CouplingError(f"{receiver}.{variable.name} <- {provider}.{source.name}: {error}") from None
+        raise CouplingError(f"{where}: {error}") from None
+    if mapping is not None or source.data_structure != variable.data_structure:
+        if mapping is None or isinstance(mapping, str):
+            raise CouplingError(f"{where}: different data structures ({source.data_structure}, "
+                                f"{variable.data_structure}) need a mapping a participant provides"
+                                + (f" ({mapping} is none)" if mapping else ""))
+        if (mapping.source, mapping.target) == (source.where, variable.where):
+            reverse = False
+        elif (mapping.target, mapping.source) == (source.where, variable.where):
+            reverse = True
+        else:
+            raise CouplingError(f"{where}: mapping {mapping.name} joins {mapping.source} and {mapping.target}, not "
+                                f"{source.where} and {variable.where}")
+        aggregation = aggregation or ("sum" if source.kind == "extensive" else "mean")
+        if aggregation not in ("sum", "mean"):
+            raise CouplingError(f"{where}: through a mapping, 'sum' or 'mean'")
+        return Coupling(receiver, variable, provider, source, factor, aggregation, interpolation, how, mapping.name,
+                        reverse)
     if source.entity_set != variable.entity_set:
         source_rank = known_ranks.get(source.where)
         target_rank = known_ranks.get(variable.where)

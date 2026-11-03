@@ -11,7 +11,7 @@ An exchange format for whole functional-structural plant model (FSPM) scenes, ac
 Each time step is one glTF file, and the variables share one vocabulary. It also aims to serve as an in-memory
 interface for coupling components across platforms.
 
-Status: specification 0.2, draft (0.1 files stay valid).
+Status: specification 0.3, draft (0.1 and 0.2 files stay valid): 0.3 adds coupling platforms (§11).
 
 - [The documentation](doc/index.md): for users (viewing, checking, Python) and for platform developers
   (implementing a codec, conformance, changing the format), built with Sphinx (`.readthedocs.yml`; locally:

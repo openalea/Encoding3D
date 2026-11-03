@@ -247,7 +247,7 @@ def _as_column(name: str, values) -> np.ndarray:
     if array.ndim == 0:
         array = array.reshape(1)
     if array.dtype.kind in "OU":
-        if not all(isinstance(value, str) or value is None for value in array.reshape(-1)):
+        if not set(map(type, array.reshape(-1).tolist())) <= {str, type(None)}:
             raise TypeError(f"column '{name}': object columns must hold strings (None: missing)")
         array = array.astype(object)
     elif np.ma.isMaskedArray(array) and array.dtype.kind == "f":

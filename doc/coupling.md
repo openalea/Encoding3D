@@ -10,7 +10,8 @@ Two platforms can work on the same plant: one grows the organs, another splits t
 function on them, a third reads the plant from a recorded run. Each one only says what it works on, what it
 provides and what it needs; the coordinator does the rest.
 
-The rules are in the specification's §11 (a draft for version 0.3).
+The rules are in the specification's §11 (version 0.3, a draft the other platforms' teams are to review). Python,
+Julia, C++ and Java have a participant; the coordinator is Python's.
 
 ## What a participant says
 
@@ -25,6 +26,16 @@ A participant **declares**:
 A **link** says which output feeds which input, when the names differ: a factor, and a change of scale (a sum or a
 mean of finer entities, a copy of a coarser one's value). Without a link, an input is fed by the output with the
 same standard name, else the same name. Units are converted.
+
+Two **data structures** (a plant and a soil grid, say) are linked through a **mapping**, the weights between their
+entities, which one participant provides with its outputs (declared in its `mappings`, sent as the frame's mapping).
+The link names it: `Link("plant", "water", "soil", "water_content", mapping="roots_in_soil")`. Through it, `sum`
+shares each source's amount among its targets in proportion to the weights (the total is kept), and `mean` gives each
+target the weighted mean of its sources.
+
+A participant declares only what it works on. A model growing the organs needs to know nothing of the segments
+another platform refines them into: it is never sent them, and when it removes an organ, the coordinator removes its
+segments and tells their refiner.
 
 ## A session in Python
 
@@ -49,7 +60,7 @@ Each turn is a frame holding the participant's entity sets and inputs, and the a
 entities and outputs (only those: the coordinator keeps the rest). The entities it creates take ids from
 `participant.id_offset`.
 
-## A session in Julia
+## A session in Julia, C++ or Java
 
 The same participant in Julia (FspmTF.jl; ZeroMQ needs `using ZMQ`):
 
@@ -62,6 +73,26 @@ for turn in turns(participant)
     # the model
     send_update(participant, frame)
 end
+```
+
+In C++ (`fspm_tf/coupling.hpp`; ZeroMQ when built with libzmq) and Java (`org.openalea.fspmtf.coupling`; ZeroMQ with
+JeroMQ on the class path), the declaration is its JSON:
+
+```cpp
+fspm_tf::coupling::Participant participant(declaration);         // a JSON declaration (nlohmann)
+while (auto turn = participant.next_turn()) {
+    // the model, on turn->frame
+    participant.send_update(frame);
+}
+```
+
+```java
+try (Participant participant = new Participant(declaration, null, null, null)) {
+    for (Turn turn; (turn = participant.nextTurn()) != null; ) {
+        // the model, on turn.frame()
+        participant.sendUpdate(frame);
+    }
+}
 ```
 
 ## Running it
@@ -79,9 +110,10 @@ fspm-tf couple --steps 30 --interval 1 --time-unit d \
   `[{"receiver": "growth", "variable": "supply", "provider": "function", "source": "sugar"}]`.
 - `--record`: the whole session written as an ordinary sequence of frames, to read in ParaView or to replay.
 - `--replay name=run/scene.fspm.json`: a recorded run takes part as a participant, without its platform running.
-  A platform's routine log can thus feed another platform's model.
+  A platform's routine log can thus feed another platform's model. CPlantBox's and GroIMP's logs are tested this way.
 - `--endpoint files:folder`: the participants exchange files in a folder instead of ZeroMQ messages. It is slower,
-  but needs nothing but a file system, and the folder keeps every message.
+  but needs nothing but a file system, and the folder keeps every message: plan its disk space (a turn of 100,000
+  segments with five variables is about 5 MB), and use a new folder for each session.
 - `--stages "growth;function"`: who runs first in each step (by default, the participants creating entities, then
   the others). Each step, a stage sees what the previous stages did in that step.
 
@@ -92,6 +124,26 @@ In Python, `openalea.fspm_tf.coupling.Coordinator` does the same from a script.
 metafspm's `RemoteComponent` (`openalea.metafspm.io.coupling`) stands for another platform's model inside a metafspm
 model: a component computing nothing, whose state variables are the other model's outputs and whose inputs are sent
 to it. Its tests couple metafspm's root growth to a carbon model written in VirtualPlantLab.
+
+## How fast it is
+
+The exchange's own cost per step, with the coordinator and two participants in separate processes, each sending five
+variables on every segment:
+
+| Segments | ZeroMQ | A folder |
+|---|---|---|
+| 1,000 | 3 ms | 13 ms |
+| 10,000 | 9 ms | 21 ms |
+| 100,000 | 99 ms | 110 ms |
+
+Encoding and decoding the frames is about a tenth of it (10 ms for 100,000 segments); the rest is the coordinator's
+work on the shared structure, in Python.
+
+## Checking a participant
+
+`conformance/coupling/` holds conformance sessions: a peer the coordinator replays, and what the participant under
+test must read and send. `fspm-tf couple-conformance conformance/coupling --participant COMMAND` runs them over both
+transports; each codec's CI runs its own participant (Python, Julia, C++, Java) this way.
 
 ## How it behaves
 

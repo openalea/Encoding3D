@@ -43,6 +43,7 @@ The CI then runs every codec against the new conformance files, and shows which 
 
 ## Status
 
-Version 0.2 is a draft. 0.1 was written with metafspm as the first platform; 0.2 adds what the C++ (CPlantBox), Julia
-(VirtualPlantLab) and Java (GroIMP) bindings needed (its "Changes from 0.1"). The partners' reviews come next. Until
-0.2 is released, the draft may still change in ways that make earlier files invalid.
+Version 0.3 is a draft. 0.1 was written with metafspm as the first platform; 0.2 adds what the C++ (CPlantBox), Julia
+(VirtualPlantLab) and Java (GroIMP) bindings needed (its "Changes from 0.1"); 0.3 adds coupling sessions (§11, "Changes
+from 0.2"), which the other platforms' teams are to review. Until 0.3 is released, the draft may still change in ways
+that make earlier files invalid.

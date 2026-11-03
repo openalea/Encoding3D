@@ -33,8 +33,20 @@
    "properties": {
     "participant": {"$ref": "#/$defs/identifier"}, "platform": {"type": "string"},
     "entitySets": {"type": "array", "items": {"$ref": "#/$defs/entitySet"}},
-    "variables": {"type": "array", "items": {"$ref": "#/$defs/variable"}}
+    "variables": {"type": "array", "items": {"$ref": "#/$defs/variable"}},
+    "mappings": {"type": "array", "items": {"$ref": "#/$defs/mapping"}}
    },
+   "additionalProperties": false
+  },
+  "end": {
+   "type": "object", "required": ["dataStructure", "entitySet"],
+   "properties": {"dataStructure": {"$ref": "#/$defs/identifier"}, "entitySet": {"$ref": "#/$defs/name"}},
+   "additionalProperties": false
+  },
+  "mapping": {
+   "type": "object", "required": ["name", "source", "target"],
+   "properties": {"name": {"$ref": "#/$defs/identifier"}, "source": {"$ref": "#/$defs/end"},
+                  "target": {"$ref": "#/$defs/end"}},
    "additionalProperties": false
   },
   "link": {
@@ -44,7 +56,7 @@
     "provider": {"$ref": "#/$defs/identifier"}, "source": {"$ref": "#/$defs/name"},
     "entitySet": {"$ref": "#/$defs/name"}, "sourceEntitySet": {"$ref": "#/$defs/name"},
     "factor": {"type": "number"}, "aggregation": {"enum": ["sum", "mean", "max", "min", "copy"]},
-    "interpolation": {"enum": ["hold", "linear"]}
+    "interpolation": {"enum": ["hold", "linear"]}, "mapping": {"$ref": "#/$defs/identifier"}
    },
    "additionalProperties": false
   },

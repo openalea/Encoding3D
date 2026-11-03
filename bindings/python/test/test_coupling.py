@@ -266,3 +266,169 @@ def test_the_command_line(tmp_path):
     assert code == 0
     assert validate_sequence(str(tmp_path / "again" / "scene.fspm.json")).ok
     assert (tmp_path / "session" / "reader" / "to_coordinator" / "00000000.json").exists()   # the session's log
+
+
+WATER = np.array([0.1, 0.2, 0.3])                   # the soil's three cells
+
+
+def run_plant(endpoint, log):
+    """Two organs, then three; each takes up 1 mol per step and logs the water it receives from the soil."""
+    from openalea.fspm_tf.coupling import Declaration as D
+    declaration = D("plant", "test", [EntitySetSpec("plant", "Organ", rights="owns")], [
+        VariableSpec("plant", "Organ", "uptake", "provides", "mol", kind="extensive"),
+        VariableSpec("plant", "Organ", "water", "requires", "m3/m3", kind="intensive")])
+    participant = Participant.connect(declaration, endpoint, timeout=60)
+    for turn in participant.turns():
+        organs = turn.frame.data_structure("plant").entity_set("Organ") if turn.frame.data_structures else None
+        if organs is not None and organs.count:
+            log[turn.step] = dict(zip(organs.columns["id"].tolist(), np.asarray(organs.columns["water"]).tolist()))
+        count = 2 if turn.step < 2 else 3
+        ids = participant.id_offset + np.arange(count)
+        participant.send(fspm_tf.Frame(data_structures=[fspm_tf.DataStructure("plant", entity_sets=[
+            fspm_tf.EntitySet("Organ", rank=5, columns={"id": ids, "uptake": np.ones(count)})])]))
+
+
+def run_soil(endpoint, log):
+    """Three cells; organ i in cells i % 3 (weight 1) and (i + 1) % 3 (weight 3): the mapping it provides."""
+    from openalea.fspm_tf.coupling import MappingSpec
+    declaration = Declaration("soil", "test", [EntitySetSpec("soil", "Cell", rank=1, rights="owns"),
+                                               EntitySetSpec("plant", "Organ")], [
+        VariableSpec("soil", "Cell", "water_content", "provides", "m3/m3", kind="intensive"),
+        VariableSpec("soil", "Cell", "uptake", "requires", "mol", kind="extensive")],
+        mappings=[MappingSpec("organs_in_soil", ("plant", "Organ"), ("soil", "Cell"))])
+    participant = Participant.connect(declaration, endpoint, timeout=60)
+    cells = participant.id_offset + np.arange(3)
+    for turn in participant.turns():
+        if turn.frame.data_structures and any(item.id == "soil" for item in turn.frame.data_structures):
+            soil = turn.frame.data_structure("soil").entity_set("Cell")
+            log[turn.step] = np.asarray(soil.columns["uptake"]).tolist()
+        organs = []
+        if any(item.id == "plant" for item in turn.frame.data_structures):
+            organs = turn.frame.data_structure("plant").entity_set("Organ").columns["id"].tolist()
+        source = np.repeat(np.array(organs, dtype=np.int64), 2)
+        target = np.array([cells[(i + k) % 3] for i in range(len(organs)) for k in (0, 1)], dtype=np.int64)
+        weight = np.tile([1., 3.], len(organs))
+        frame = fspm_tf.Frame(data_structures=[fspm_tf.DataStructure("soil", kind="table", entity_sets=[
+            fspm_tf.EntitySet("Cell", rank=1, columns={"id": cells, "water_content": WATER})])])
+        frame.mappings.append(fspm_tf.Mapping("organs_in_soil", source=("plant", "Organ"), target=("soil", "Cell"),
+                                              columns={"source": source, "target": target, "weight": weight}))
+        participant.send(frame)
+
+
+def test_a_link_between_two_data_structures(endpoint, tmp_path):
+    """The plant's organs and the soil's cells, two data structures of two participants, linked by the mapping the
+    soil provides: the organs' water, the cells' weighted mean; the cells' uptake, the organs' shared by weight."""
+    links = [Link("plant", "water", "soil", "water_content", mapping="organs_in_soil"),
+             Link("soil", "uptake", "plant", "uptake", mapping="organs_in_soil")]
+    coordinator = Coordinator(endpoint, steps=4, interval=1., expect=["plant", "soil"], links=links, timeout=60,
+                              record=str(tmp_path / "record"))
+    logs = {"plant": {}, "soil": {}}
+    threads = [threading.Thread(target=target, args=(coordinator.endpoint, logs[name]), daemon=True)
+               for name, target in (("plant", run_plant), ("soil", run_soil))]
+    for thread in threads:
+        thread.start()
+    coordinator.run()
+    for thread in threads:
+        thread.join(30)
+    first = 2 ** 32
+    # explicit coupling, the stage [plant, soil]: at step 4 the mapping the soil sent at step 3 (from the plant's
+    # three organs of step 2) and the uptake the plant sent at step 3
+    water = logs["plant"][4]
+    for i in range(3):
+        assert water[first + i] == pytest.approx((WATER[i % 3] + 3 * WATER[(i + 1) % 3]) / 4)
+    uptake = logs["soil"][4]
+    assert uptake == pytest.approx([1., 1., 1.])                   # 1/4 of one organ and 3/4 of another, each
+    assert validate_sequence(str(tmp_path / "record" / "scene.fspm.json")).ok
+    with pytest.raises(CouplingError, match="need a mapping"):
+        resolve({"plant": Declaration.from_json(Declaration("plant", entity_sets=[], variables=[
+            VariableSpec("plant", "Organ", "water", "requires", "1")]).to_json()),
+                 "soil": Declaration("soil", variables=[VariableSpec("soil", "Cell", "water_content", "provides",
+                                                                     "1")]).complete()},
+                [Link("plant", "water", "soil", "water_content")])
+
+
+def test_the_conformance_sessions(tmp_path):
+    """Python's participant against conformance/coupling, over both transports (fspm-tf couple-conformance)."""
+    import sys
+    from openalea.fspm_tf.cli import main
+    sessions = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir, "conformance", "coupling")
+    command = f"{sys.executable} -m openalea.fspm_tf.coupling.conformance subject"
+    assert main(["couple-conformance", sessions, "--participant", command, "--out", str(tmp_path)]) == 0
+
+
+def test_the_conformance_sessions_are_what_their_generator_writes(tmp_path):
+    import importlib.util
+    folder = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir, "conformance", "coupling")
+    spec = importlib.util.spec_from_file_location("coupling_generate", os.path.join(folder, "generate.py"))
+    generate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generate)
+    for name, session in generate.SESSIONS.items():
+        generate.generate(name, session, str(tmp_path))
+        for root, _, files in os.walk(tmp_path / name):
+            for file_name in files:
+                written = os.path.join(root, file_name)
+                committed = os.path.join(folder, os.path.relpath(written, tmp_path))
+                with open(written, "rb") as left, open(committed, "rb") as right:
+                    assert left.read() == right.read(), committed
+
+
+# Platforms' logs replayed (their index, scene.fspm.json): CPlantBox's (bindings/cpp/cplantbox's tests write
+# anagallis_log/) and GroIMP's (bindings/java/groimp-plugin/test/run_in_groimp.sh writes log/), in their CI jobs
+PLATFORM_LOGS = {"conformance": os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir,
+                                             "conformance", "growing_sequence", "scene.fspm.json"),
+                 "CPlantBox": os.environ.get("FSPM_TF_CPLANTBOX_LOG"), "GroIMP": os.environ.get("FSPM_TF_GROIMP_LOG")}
+
+
+def _sorted(values):
+    """The values, missing ones (NaN, masked) as None, sorted: to compare a column whatever its rows' order."""
+    def plain(value):
+        if isinstance(value, list):
+            return [plain(item) for item in value]
+        return None if value is None or (isinstance(value, float) and value != value) else value
+    values = np.ma.filled(np.ma.asarray(values, dtype=object), None).tolist() if np.ma.isMaskedArray(values) \
+        else np.asarray(values).tolist()
+    return sorted((plain(value) for value in values), key=repr)
+
+
+@pytest.mark.parametrize("platform", sorted(PLATFORM_LOGS))
+def test_a_platform_log_replayed(platform, tmp_path):
+    """A platform's log as a participant: a reader following every entity set and requiring every variable gets, at
+    each step, the logged entities (renumbered) and values."""
+    from openalea.fspm_tf.coupling import Replay
+    from openalea.fspm_tf.codec import read_index
+    index = PLATFORM_LOGS[platform]
+    if not index:
+        pytest.skip(f"no {platform} log (FSPM_TF_{platform.upper()}_LOG)")
+    entries = read_index(index)["frames"]
+    times = [entry["time"] for entry in entries]
+    replay = Replay("log", index)                               # its declaration: what the reader requires
+    declaration = Declaration("reader", "test", [EntitySetSpec(item.data_structure, item.name, item.rank)
+                                                 for item in replay.declaration.entity_sets],
+                              [VariableSpec(item.data_structure, item.entity_set, item.name, "requires", item.unit,
+                                            kind=item.kind) for item in replay.declaration.variables])
+    log = {}
+
+    def reader(endpoint):
+        participant = Participant.connect(declaration, endpoint, timeout=120)
+        for turn in participant.turns():
+            log[turn.step] = {(data_structure.id, entity_set.name): entity_set
+                              for data_structure in turn.frame.data_structures
+                              for entity_set in data_structure.entity_sets}
+            participant.send(fspm_tf.Frame())
+
+    interval = times[1] - times[0] if len(times) > 1 else 1.
+    coordinator = Coordinator("tcp://127.0.0.1:*", steps=len(entries) - 1, interval=interval, start=times[0],
+                              time_unit=read_index(index).get("timeUnit", "d"), expect=["reader"],
+                              replays={"log": index}, timeout=120)
+    thread = threading.Thread(target=reader, args=(coordinator.endpoint,), daemon=True)
+    thread.start()
+    coordinator.run()
+    thread.join(60)
+    for step, entry in enumerate(entries):
+        frame = fspm_tf.read(entry["path"])
+        for data_structure in frame.data_structures:
+            for entity_set in data_structure.entity_sets:
+                received = log[step][(data_structure.id, entity_set.name)]
+                assert received.count == entity_set.count, (step, entity_set.name)
+                for name in entity_set.variable_names():
+                    assert _sorted(received.columns[name]) == _sorted(entity_set.columns[name]), (step, name)

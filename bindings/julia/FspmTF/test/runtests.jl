@@ -8,7 +8,8 @@ const CONFORMANCE = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "conform
 const MTG_FILES = joinpath(pkgdir(MultiScaleTreeGraph), "test", "files")
 
 conformance_files() = sort([relpath(joinpath(folder, name), CONFORMANCE)
-                            for (folder, _, files) in walkdir(CONFORMANCE) for name in files if endswith(name, ".glb")])
+                            for (folder, _, files) in walkdir(CONFORMANCE) for name in files
+                            if endswith(name, ".glb") && !startswith(relpath(folder, CONFORMANCE), "coupling")])
 
 """The differences between two JSON values, as `fspm-tf compare` finds them: objects by key, arrays in order,
 numbers exactly (1 and 1.0 equal)."""

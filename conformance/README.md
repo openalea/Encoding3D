@@ -15,6 +15,14 @@ numbers, the same bytes on every run; the CI checks that the committed files are
 | `missing_values` | integer, text, boolean and float columns with missing values; a date column (`format`); `unknown` edge types and a `sibling_order` column; a `mixed` entity set; a labels map; a parent in another axis; bearer relations between two pairs of sets |
 | `growing_sequence/` | three frames of a growing root system, ids kept, and their index |
 
+## Coupling sessions
+
+`coupling/` holds the coupling conformance sessions (specification §9, §11), which `coupling/generate.py` writes: each
+session's peer (a sequence the coordinator replays), its subject's declaration and updates, and the expected values of
+what the subject reads (`expected/turn_<step>.json`) and of the session's record (`expected/record/`). A codec's
+participant runs them with `fspm-tf couple-conformance conformance/coupling --participant COMMAND`. The frame tools
+(`compare-all`, each codec's conformance run) leave this folder out.
+
 ## The expected values
 
 `x.expected.json` is the frame `x.glb` holds, as plain JSON (written by `openalea.fspm_tf.dump.frame_to_dict`):
@@ -37,7 +45,9 @@ numbers, the same bytes on every run; the CI checks that the committed files are
     "grid": {"kind", "shape", "origin", "spacing", "axes", "periodic", "z_up", "max_level", "cells"},
     "meshes": [{"name": "...", "positions_float32": [[x, y, z], ...], "feature_rows": {"SubOrgan": [...]},
                 "indices": [...], "display": {"name": [...]}}]}],
- "mappings": [... like entity sets, with "source", "target" ([data structure, entity set]) and "method"]}
+ "mappings": [... like entity sets, with "source", "target" ([data structure, entity set]) and "method"],
+ "update": {"participant": "...",                                       (a partial frame only, §11.1)
+            "removed": [{"data_structure": "...", "entity_set": "...", "ids": [...]}, ...]}}   (sorted)
 ```
 
 - **Floats** are the shortest decimals giving the same double, compared exactly.

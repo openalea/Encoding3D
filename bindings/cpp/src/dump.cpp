@@ -135,8 +135,15 @@ json frame_to_json(const Frame &frame) {
         item["method"] = mapping.method ? json(*mapping.method) : json(nullptr);
         mappings.push_back(item);
     }
-    return {{"time", frame.time}, {"time_unit", frame.time_unit}, {"step", frame.step},
-            {"data_structures", data_structures}, {"mappings", mappings}};
+    json out = {{"time", frame.time}, {"time_unit", frame.time_unit}, {"step", frame.step},
+                {"data_structures", data_structures}, {"mappings", mappings}};
+    if (frame.update) {                       // a partial frame: its sender and removed entities, sorted (std::map)
+        json removed = json::array();
+        for (const auto &[key, ids] : frame.update->removed)
+            removed.push_back({{"data_structure", key.first}, {"entity_set", key.second}, {"ids", ids}});
+        out["update"] = {{"participant", frame.update->participant}, {"removed", removed}};
+    }
+    return out;
 }
 
 std::vector<std::string> compare(const json &actual, const json &expected, const std::string &path) {

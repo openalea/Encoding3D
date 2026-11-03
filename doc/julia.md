@@ -126,7 +126,9 @@ entity). NaN and infinities are written with the specification's stand-ins and r
 FspmTF.jl takes part in coupling sessions run by fspm-TF's coordinator ([Coupling platforms](coupling.md)):
 `Participant(declaration)` joins one (its address and name from the environment when the coordinator launches it),
 `turns(participant)` gives each turn's inputs, `send_update(participant, frame)` answers with its outputs. The folder
-transport needs nothing more; ZeroMQ needs `using ZMQ` (the `FspmTFZMQExt` extension).
+transport needs nothing more; ZeroMQ needs `using ZMQ` (the `FspmTFZMQExt` extension). A declaration can be built
+(`Declaration`, `EntitySetSpec`, `VariableSpec`, `MappingSpec`) or read from its JSON (`declaration_from_json`).
+`bindings/julia/coupling_conformance.jl` is its program for the conformance sessions.
 
 ## Checking it
 

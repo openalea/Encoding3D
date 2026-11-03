@@ -32,7 +32,7 @@ namespace fspm_tf {
 using json = nlohmann::ordered_json;
 
 /// The version of the specification this library reads and writes.
-inline constexpr const char *SPECIFICATION_VERSION = "0.2";
+inline constexpr const char *SPECIFICATION_VERSION = "0.3";
 /// The id of no entity: the complex or parent of an entity that has none, the feature row of a vertex with none.
 inline constexpr std::int64_t NO_ID = -1;
 /// The values of edge_type: the root of its scale, MTG '<', MTG '+'.
@@ -233,8 +233,17 @@ struct DataStructure {
     EntitySet &entity_set(const std::string &name);
 };
 
-/// A scene at one time step (time in time_unit, step), or a parameter set. unknown: the content of a read file this
-/// library does not interpret (other root extensions, the root's extras), written back as it was.
+/// What makes a frame partial: a coupling session's message (specification §11). participant: its sender
+/// ("coordinator" for a turn's inputs); its tables hold some rows and columns only. removed: (data structure id,
+/// entity set name) -> the ids of the entities removed.
+struct Update {
+    std::string participant;
+    std::map<std::pair<std::string, std::string>, std::vector<std::int64_t>> removed;
+};
+
+/// A scene at one time step (time in time_unit, step), or a parameter set. update: set for a partial frame, a coupling
+/// session's message. unknown: the content of a read file this library does not interpret (other root extensions,
+/// the root's extras), written back as it was.
 struct Frame {
     std::vector<DataStructure> data_structures;
     std::vector<Mapping> mappings;
@@ -243,6 +252,7 @@ struct Frame {
     std::int64_t step = 0;
     json writer = json::object();
     std::optional<std::string> vocabulary_version;
+    std::optional<Update> update;
     json unknown = json::object();
 
     const DataStructure &data_structure(const std::string &id) const;

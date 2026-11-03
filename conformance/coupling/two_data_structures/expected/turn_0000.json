@@ -1,0 +1,11 @@
+{
+ "time": 0.0,
+ "time_unit": "d",
+ "step": 0,
+ "data_structures": [],
+ "mappings": [],
+ "update": {
+  "participant": "coordinator",
+  "removed": []
+ }
+}

@@ -19,6 +19,7 @@ int main(int argument_count, char **arguments) {
     const filesystem::path conformance = arguments[1], out = arguments[2];
     for (const auto &entry : filesystem::recursive_directory_iterator(conformance)) {
         if (!entry.is_regular_file() || entry.path().extension() != ".glb") continue;
+        if (filesystem::relative(entry.path(), conformance).begin()->string() == "coupling") continue;   // sessions
         const auto relative = filesystem::relative(entry.path(), conformance);
         const auto frame = fspm_tf::read_frame(entry.path().string());
         auto dump = out / "dumps" / relative;

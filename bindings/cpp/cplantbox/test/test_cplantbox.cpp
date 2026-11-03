@@ -235,6 +235,32 @@ void test_another_platform(const filesystem::path &conformance) {
 
 } // namespace
 
+/// CPlantBox's log of a growing root system: a frame a day for six days (out/anagallis_log/), the sequence a coupling
+/// session replays (bindings/python/test/test_coupling.py, FSPM_TF_CPLANTBOX_LOG).
+void test_growing_log(const filesystem::path &parameters, const filesystem::path &out) {
+    auto plant = std::make_shared<CPlantBox::Plant>(1);
+    plant->readParameters((parameters / "plant" / "Anagallis_femina_Leitner_2010.xml").string(), "plant", true, false);
+    plant->initialize(false);
+    cplantbox::Options options;
+    options.model = "Anagallis_femina_Leitner_2010";
+    options.parameters_in_extras = false;
+    std::vector<Frame> frames;
+    std::size_t previous = 0;
+    bool growing = true;
+    for (int day = 0; day <= 6; ++day) {
+        if (day > 0) plant->simulate(1., false);
+        Frame frame = cplantbox::to_frame(*plant, options);
+        frame.step = day;
+        const auto segments = frame.data_structures[0].entity_set("SubOrgan").row_count();
+        growing = growing && (day == 0 || segments > previous);
+        previous = segments;
+        frames.push_back(std::move(frame));
+    }
+    check(growing, "the log: the root system grows every day");
+    const auto index = read_index(write_sequence((out / "anagallis_log").string(), frames));
+    check(index.frames.size() == 7, "the log: seven frames and their index");
+}
+
 int main(int argument_count, char **arguments) {
     if (argument_count != 4) {
         std::cerr << "usage: fspm_tf_cplantbox_tests CONFORMANCE MODELPARAMETER OUT\n";
@@ -244,7 +270,8 @@ int main(int argument_count, char **arguments) {
     filesystem::create_directories(out);
     for (auto test : {std::function<void()>([&] { test_root_system(parameters, out); }),
                       std::function<void()>([&] { test_plant_with_geometry_and_soil(parameters, out); }),
-                      std::function<void()>([&] { test_another_platform(conformance); })}) {
+                      std::function<void()>([&] { test_another_platform(conformance); }),
+                      std::function<void()>([&] { test_growing_log(parameters, out); })}) {
         try {
             test();
         } catch (const std::exception &error) {

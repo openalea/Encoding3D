@@ -114,6 +114,15 @@ the coordinator is fspm-TF's own (`fspm-tf couple`), so no platform implements i
 4. speaks both transports: a folder of numbered JSON headers and GLB payloads (files only), and ZeroMQ (a DEALER
    socket named after the participant; one or two message frames).
 
-The Python package (`openalea.fspm_tf.coupling.participant`) and FspmTF.jl (`Participant`, `turns`, `send_update`)
-are the two participants so far; the Python tests run FspmTF.jl's against the coordinator over both transports. An
-adapter then maps the turns to the platform's model, as metafspm's `RemoteComponent` does.
+The four codecs have a participant: Python (`openalea.fspm_tf.coupling.participant`), Julia (`Participant`, `turns`,
+`send_update`), C++ (`fspm_tf/coupling.hpp`) and Java (`org.openalea.fspmtf.coupling`). A new one proves itself on the
+conformance sessions: a small program run as `COMMAND SESSION OUT` that joins with the session's declaration, dumps
+each turn it reads and sends the session's updates, as the four codecs' programs do
+(`coupling/conformance.py`, `bindings/julia/coupling_conformance.jl`, `bindings/cpp/tools/coupling_conformance.cpp`,
+`ConformanceParticipant.java`):
+
+```bash
+fspm-tf couple-conformance conformance/coupling --participant "<command>"
+```
+
+An adapter then maps the turns to the platform's model, as metafspm's `RemoteComponent` does.

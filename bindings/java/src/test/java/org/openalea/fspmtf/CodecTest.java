@@ -25,7 +25,8 @@ class CodecTest {
 
     static Stream<Path> conformanceFiles() throws IOException {
         try (Stream<Path> paths = Files.walk(CONFORMANCE)) {
-            return paths.filter(path -> path.toString().endsWith(".glb")).sorted().toList().stream();
+            return paths.filter(path -> path.toString().endsWith(".glb"))
+                    .filter(path -> !CONFORMANCE.relativize(path).startsWith("coupling")).sorted().toList().stream();
         }
     }
 
@@ -140,6 +141,19 @@ class CodecTest {
         assertArrayEquals(mesh.indices, readBack.indices);
         assertArrayEquals(mesh.display.get("radius"), readBack.display.get("radius"));
         assertEquals(mesh.displaySources, readBack.displaySources);
+    }
+
+    @Test
+    void partialFrames() throws IOException {
+        EntitySet segments = new EntitySet("SubOrgan", 6L);
+        segments.set("id", Column.of(10L, 11L)).set("complex", Column.of(3L, 3L)).set("sugar", Column.of(1.0, 2.0));
+        Frame frame = frameWith(segments);
+        frame.update = new Update("vpl");
+        frame.update.removed.put(Update.key("plants", "SubOrgan"), new long[] {5, 6});
+        Frame again = Codec.fromBytes(Codec.toBytes(frame));
+        assertEquals("vpl", again.update.participant);
+        assertArrayEquals(new long[] {5, 6}, again.update.removed.get(Update.key("plants", "SubOrgan")));
+        assertEquals(5, asJson(again).get("update").get("removed").get(0).get("ids").get(0).asLong());
     }
 
     static Frame frameWith(EntitySet set) {

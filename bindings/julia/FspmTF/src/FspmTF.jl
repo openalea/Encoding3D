@@ -24,7 +24,7 @@ using JSON
 using OrderedCollections: OrderedDict
 
 """The version of the specification this package reads and writes."""
-const SPECIFICATION_VERSION = "0.2"
+const SPECIFICATION_VERSION = "0.3"
 
 include("glb.jl")
 include("model.jl")
@@ -38,7 +38,7 @@ export Frame, DataStructure, EntitySet, Relation, Table, Mapping, Grid, Mesh, Va
 export read_frame, write_frame, from_bytes, to_bytes, read_index, read_sequence, write_sequence, write_index
 export frame_to_dict, write_dump, row_count, variable_names, entity_ids, entity_set, data_structure
 export from_mtg, to_mtg, from_graph, to_graph, add_geometry!
-export Update, Declaration, EntitySetSpec, VariableSpec, Link, Participant, Turn, next_turn, turns,
+export Update, Declaration, EntitySetSpec, VariableSpec, MappingSpec, Link, declaration_from_json, Participant, Turn, next_turn, turns,
        send_update, fail
 
 """

@@ -1,8 +1,8 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
- "$id": "https://github.com/openalea/fspm-TF/schema/0.2/fspm_scene.schema.json",
+ "$id": "https://github.com/openalea/fspm-TF/schema/0.3/fspm_scene.schema.json",
  "title": "FSPM_scene",
- "description": "The FSPM_scene root extension of a glTF 2.0 asset (fspm-TF 0.2): one frame of a scene.",
+ "description": "The FSPM_scene root extension of a glTF 2.0 asset (fspm-TF 0.3): one frame of a scene.",
  "type": "object",
  "required": ["version", "frame", "dataStructures"],
  "properties": {

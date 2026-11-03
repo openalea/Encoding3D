@@ -26,7 +26,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  */
 public final class Codec {
     /** The version of the specification this library reads and writes. */
-    public static final String SPECIFICATION_VERSION = "0.2";
+    public static final String SPECIFICATION_VERSION = "0.3";
     public static final List<String> EDGE_TYPES = List.of("none", "successor", "branch", "unknown");
 
     private static final String EXTENSION = "FSPM_scene", METADATA = "EXT_structural_metadata",
@@ -134,10 +134,26 @@ public final class Codec {
             entry.put("propertyTable", addTable(mapping, "mapping__" + mapping.name, buffers, schema, tables, variables));
         }
 
+        ObjectNode update = null;
+        if (frame.update != null) {
+            checkIdentifier(frame.update.participant, "participant");
+            update = Glb.MAPPER.createObjectNode().put("participant", frame.update.participant);
+            if (!frame.update.removed.isEmpty()) {
+                ArrayNode removed = update.putArray("removed");
+                for (Map.Entry<String, long[]> item : frame.update.removed.entrySet()) {
+                    String[] key = item.getKey().split("/", 2);
+                    Table table = new Table(key[1] + "__removed");
+                    table.set("id", Column.of(item.getValue()));
+                    removed.addObject().put("dataStructure", key[0]).put("entitySet", key[1]).put("propertyTable",
+                            addTable(table, key[0] + "__" + key[1] + "__removed", buffers, schema, tables, variables));
+                }
+            }
+        }
         ObjectNode scene = Glb.MAPPER.createObjectNode().put("version", SPECIFICATION_VERSION);
         scene.putObject("frame").put("time", frame.time).put("timeUnit", frame.timeUnit).put("step", frame.step);
         if (frame.vocabularyVersion != null) scene.put("vocabulary", frame.vocabularyVersion);
         if (!frame.writer.isEmpty()) scene.set("writer", frame.writer);
+        if (update != null) scene.set("update", update);
         scene.set("dataStructures", dataStructures);
         if (!mappings.isEmpty()) scene.set("mappings", mappings);
         if (!variables.isEmpty()) scene.set("variables", variables);
@@ -646,6 +662,16 @@ public final class Codec {
                     entry.get("target").get("entitySet").asText(), entry.hasNonNull("method") ? entry.get("method").asText() : null);
             decodeTable(document, binary, metadata, variables, entry.get("propertyTable").asInt(), mapping);
             frame.mappings.add(mapping);
+        }
+        if (scene.has("update")) {
+            JsonNode entry = scene.get("update");
+            frame.update = new Update(entry.get("participant").asText());
+            for (JsonNode item : entry.path("removed")) {
+                Table removed = new Table("");
+                decodeTable(document, binary, metadata, variables, item.get("propertyTable").asInt(), removed);
+                frame.update.removed.put(Update.key(item.get("dataStructure").asText(), item.get("entitySet").asText()),
+                        removed.column("id").longs());
+            }
         }
         ObjectNode others = Glb.MAPPER.createObjectNode();
         for (Iterator<Map.Entry<String, JsonNode>> items = extensions.fields(); items.hasNext(); ) {

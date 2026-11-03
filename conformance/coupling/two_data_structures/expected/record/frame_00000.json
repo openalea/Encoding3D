@@ -1,0 +1,219 @@
+{
+ "time": 0.0,
+ "time_unit": "d",
+ "step": 0,
+ "data_structures": [
+  {
+   "id": "plant",
+   "kind": "graph",
+   "origin": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "entity_sets": [
+    {
+     "name": "Organ",
+     "count": 2,
+     "columns": {
+      "id": {
+       "dtype": "int64",
+       "values": [
+        8589934592,
+        8589934593
+       ]
+      },
+      "label": {
+       "dtype": "string",
+       "values": [
+        "Organ",
+        "Organ"
+       ]
+      },
+      "complex": {
+       "dtype": "int64",
+       "values": [
+        -1,
+        -1
+       ]
+      },
+      "parent": {
+       "dtype": "int64",
+       "values": [
+        -1,
+        -1
+       ]
+      },
+      "edge_type": {
+       "dtype": "string",
+       "values": [
+        "none",
+        "none"
+       ]
+      },
+      "uptake": {
+       "dtype": "float64",
+       "values": [
+        1.0,
+        1.0
+       ]
+      }
+     },
+     "variables": {
+      "uptake": {
+       "unit": "mol",
+       "role": "state",
+       "kind": "extensive"
+      }
+     },
+     "rank": 5,
+     "scale": "Organ"
+    }
+   ]
+  },
+  {
+   "id": "soil",
+   "kind": "graph",
+   "origin": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "entity_sets": [
+    {
+     "name": "Cell",
+     "count": 3,
+     "columns": {
+      "id": {
+       "dtype": "int64",
+       "values": [
+        4294967296,
+        4294967297,
+        4294967298
+       ]
+      },
+      "label": {
+       "dtype": "string",
+       "values": [
+        "Cell",
+        "Cell",
+        "Cell"
+       ]
+      },
+      "complex": {
+       "dtype": "int64",
+       "values": [
+        -1,
+        -1,
+        -1
+       ]
+      },
+      "parent": {
+       "dtype": "int64",
+       "values": [
+        -1,
+        -1,
+        -1
+       ]
+      },
+      "edge_type": {
+       "dtype": "string",
+       "values": [
+        "none",
+        "none",
+        "none"
+       ]
+      },
+      "water_content": {
+       "dtype": "float64",
+       "values": [
+        0.1,
+        0.2,
+        0.3
+       ]
+      }
+     },
+     "variables": {
+      "water_content": {
+       "unit": "m3/m3",
+       "role": "state",
+       "kind": "intensive"
+      }
+     },
+     "rank": 1
+    }
+   ]
+  }
+ ],
+ "mappings": [
+  {
+   "name": "organs_in_soil",
+   "count": 0,
+   "columns": {
+    "source": {
+     "dtype": "int64",
+     "values": []
+    },
+    "target": {
+     "dtype": "int64",
+     "values": []
+    },
+    "weight": {
+     "dtype": "float64",
+     "values": []
+    }
+   },
+   "source": [
+    "plant",
+    "Organ"
+   ],
+   "target": [
+    "soil",
+    "Cell"
+   ],
+   "method": null
+  }
+ ]
+}

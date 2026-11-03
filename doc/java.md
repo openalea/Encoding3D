@@ -32,6 +32,15 @@ the array of their width), with a `width` of 2 or more for a fixed-size vector p
 (`withMissing(...)`, `isMissing(row)`; NaN in a float column). NaN and infinities are written
 with the specification's stand-ins and read back as they were.
 
+## Coupling with other platforms
+
+`org.openalea.fspmtf.coupling.Participant` is a participant of the coupling sessions fspm-TF's coordinator runs
+([Coupling platforms](coupling.md)): `new Participant(declaration, endpoint, links, timeout)` joins one (the declaration
+as its JSON; a null endpoint, the environment's when launched by the coordinator), `nextTurn()` gives each turn's
+inputs until the session stops, `sendUpdate(frame)` answers. Its folder transport needs nothing; its ZeroMQ transport
+needs JeroMQ (pure Java, an optional dependency) on the class path. `ConformanceParticipant` is its program for the
+conformance sessions.
+
 ## GroIMP
 
 `GroImp.toDataStructure(root, options)` writes the graph below a GroIMP root:
@@ -67,6 +76,8 @@ writes the project as an fspm-TF frame, and the CLI's `export3d plant.glb` does 
 GroIMP's glTF plugin, which it requires, meshes the shapes: cylinders, boxes, spheres, cones, frusta, planes,
 parallelograms, NURBS, meshes and polygons. Its folder (`target/plugin/fspmTF`) is copied into GroIMP's `plugins/`.
 `test/run_in_groimp.sh` installs both plugins in GroIMP 3.0.0, grows GroIMP's `simpleRapeseed` example headless and
-exports it (456,900 vertices, each with its node), then checks the frame; CI runs it.
+exports it (456,900 vertices, each with its node), then checks the frame; CI runs it. It then writes GroIMP's log, a
+frame after each of four runs (GroIMP has no simulation clock: each frame's time and step are its run count), which
+the CI replays as a participant of a coupling session.
 
 Not done yet: an import filter (frames into a GroIMP project), and units for GroIMP's fields, which have none.

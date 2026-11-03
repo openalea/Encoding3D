@@ -31,12 +31,28 @@ add_library(fspm_tf
     src/glb.cpp
     src/codec.cpp
     src/sequence.cpp
-    src/dump.cpp)
+    src/dump.cpp
+    src/coupling.cpp)
 add_library(fspm_tf::fspm_tf ALIAS fspm_tf)
 target_include_directories(fspm_tf PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
 target_link_libraries(fspm_tf PUBLIC nlohmann_json::nlohmann_json)
+
+# The coupling's ZeroMQ transport, with libzmq when found (its folder transport needs nothing)
+option(FSPM_TF_WITH_ZMQ "Build the coupling's ZeroMQ transport (libzmq)" ON)
+if(FSPM_TF_WITH_ZMQ)
+    find_path(ZMQ_INCLUDE_DIR zmq.h)
+    find_library(ZMQ_LIBRARY NAMES zmq libzmq)
+    if(ZMQ_INCLUDE_DIR AND ZMQ_LIBRARY)
+        target_include_directories(fspm_tf PRIVATE ${ZMQ_INCLUDE_DIR})
+        target_link_libraries(fspm_tf PRIVATE ${ZMQ_LIBRARY})
+        target_compile_definitions(fspm_tf PRIVATE FSPM_TF_WITH_ZMQ)
+        message(STATUS "fspm_tf: the coupling's ZeroMQ transport, with ${ZMQ_LIBRARY}")
+    else()
+        message(STATUS "fspm_tf: libzmq not found, the coupling's folder transport only")
+    endif()
+endif()
 target_compile_features(fspm_tf PUBLIC cxx_std_17)
 set_target_properties(fspm_tf PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(MSVC)
@@ -67,6 +83,8 @@ if(FSPM_TF_BUILD_TESTS)
     set(FSPM_TF_CONFORMANCE "${CMAKE_CURRENT_SOURCE_DIR}/../../conformance")
     add_executable(fspm_tf_conformance_run tools/conformance_run.cpp)
     target_link_libraries(fspm_tf_conformance_run PRIVATE fspm_tf::fspm_tf)
+    add_executable(fspm_tf_coupling_conformance tools/coupling_conformance.cpp)
+    target_link_libraries(fspm_tf_coupling_conformance PRIVATE fspm_tf::fspm_tf)
     add_executable(fspm_tf_tests test/test_fspm_tf.cpp)
     target_link_libraries(fspm_tf_tests PRIVATE fspm_tf::fspm_tf)
     add_test(NAME fspm_tf_tests COMMAND fspm_tf_tests "${FSPM_TF_CONFORMANCE}")

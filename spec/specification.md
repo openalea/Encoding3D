@@ -1,6 +1,6 @@
-# fspm-TF 0.2 specification
+# fspm-TF 0.3 specification
 
-Status: draft (2026-11-02). 0.2 adds to 0.1 (see "Changes from 0.1" at the end); a 0.1 file is a valid 0.2 file. The key words MUST, SHOULD and MAY are to be read as in RFC 2119 (https://www.rfc-editor.org/rfc/rfc2119).
+Status: draft (2026-11-03). 0.3 adds coupling sessions and partial frames to 0.2 (see "Changes from 0.2" at the end); a 0.1 or 0.2 file is a valid 0.3 file. The key words MUST, SHOULD and MAY are to be read as in RFC 2119 (https://www.rfc-editor.org/rfc/rfc2119).
 
 fspm-TF is an exchange format for whole functional-structural plant model scenes: multiscale plant graphs, their
 variables and parameters, their geometry, and the environment's grids, at successive time steps. A **frame** (one
@@ -16,7 +16,7 @@ The language-neutral files of this version are part of the specification:
 | `spec/vocabulary/labels.csv` | entity labels, their scales and Plant Ontology terms (§6) |
 | `spec/vocabulary/enums.json` | the values of `edge_type`, `kind`, `role`, data structure and grid kinds; the base scales |
 | `conformance/` | reference files and their expected values (§9): the specification as test cases |
-| `spec/schema/coupling.schema.json` | JSON Schema of a coupling session's messages (§11, draft for 0.3) |
+| `spec/schema/coupling.schema.json` | JSON Schema of a coupling session's messages (§11) |
 
 When these sources disagree, `specification.md` prevails, then the schemas, then the conformance files; the
 disagreement is a defect of the lower one, to be fixed.
@@ -71,7 +71,7 @@ A frame holding only data structures with parameters, and no geometry, is a **pa
 
 A frame MUST be a GLB file (glTF 2.0 binary):
 
-1. All buffer views MUST be in the GLB's binary chunk. No external `.bin` files and no data URIs are allowed in 0.2.
+1. All buffer views MUST be in the GLB's binary chunk. No external `.bin` files and no data URIs are allowed in 0.3.
 2. Every buffer view holding table values MUST start at a multiple of 8 bytes. The JSON chunk MUST be padded with
    spaces and the binary chunk with zeros to 8 bytes, as `EXT_structural_metadata` requires. The buffer's
    `byteLength` SHOULD be the binary chunk's padded length (glTF-Validator warns of more than 3 bytes of padding
@@ -92,7 +92,7 @@ The glTF root's `extensions.FSPM_scene` MUST follow `fspm_scene.schema.json`:
 
 ```text
 {
- "version": "0.2",
+ "version": "0.3",
  "vocabulary": "0.2",
  "frame": {"time": 1.0, "timeUnit": "d", "step": 24},
  "writer": {"platform": "...", "model": "..."},
@@ -145,7 +145,7 @@ A column is one property of the table's class:
 | text | `STRING` |
 | labels, edge types and relation labels | `ENUM` (§4.2) |
 
-- Variable-length arrays and the other glTF metadata types are not part of 0.2.
+- Variable-length arrays and the other glTF metadata types are not part of 0.3.
 - **NaN.** NaN and infinities are forbidden in property tables. A float column with missing values (NaN) declares
   `noData`: the most negative finite value of its type, −1.7976931348623157e308 for FLOAT64 or
   −3.4028234663852886e38 for FLOAT32, stored where the value is NaN. Readers MUST read `noData` back as NaN. A
@@ -300,7 +300,7 @@ two platforms.
 A sequence is a folder holding one GLB per frame and an index, `scene.fspm.json`, following `index.schema.json`:
 
 ```text
-{"fspmIndex": "0.2", "timeUnit": "d",
+{"fspmIndex": "0.3", "timeUnit": "d",
  "frames": [{"time": 0.0, "step": 0, "file": "frame_000000.glb"}, ...]}
 ```
 
@@ -312,7 +312,7 @@ A sequence is a folder holding one GLB per frame and an index, `scene.fspm.json`
   given again) keeps, across a sequence, a map from its entities to the ids it writes.
 - **Ids are not positions.** Ids may be sparse (e.g. offsets keeping them stable as a plant grows). Readers SHOULD
   NOT size arrays by the largest id.
-- **Packing.** Packing a sequence into one GLB is not part of 0.2.
+- **Packing.** Packing a sequence into one GLB is not part of 0.3.
 
 ## 9. Conformance
 
@@ -330,19 +330,33 @@ sequence:
 | `missing_values` | integer, text and boolean columns with missing values; a date column; `unknown` edge types and a `sibling_order` column; a `mixed` entity set; a labels map; bearer relations between two pairs of sets |
 | `growing_sequence/` | three frames of a growing root system and their index |
 
-An implementation conforms to 0.2 when two things hold:
+An implementation conforms to 0.3 when two things hold:
 
 - **Reading:** what it reads from every conformance GLB equals the expected JSON. Floats are compared exactly; NaN and
   missing values are null in the JSON, +∞ and −∞ the strings `"Infinity"` and `"-Infinity"`; positions are the
   FLOAT32 values.
 - **Writing:** what it writes passes `fspm-tf validate` with no error, and Khronos' glTF-Validator with no error.
 
+A codec's participant (§11) conforms when it runs every **coupling session** of `conformance/coupling/` as expected,
+over both transports. A session's folder holds the coordinator's settings (`session.json`), a peer (a sequence the
+coordinator replays), the subject's declaration and the updates it sends (`subject/`), and the expected values
+(`expected/turn_<step>.json`: what the subject reads from each turn; `expected/record/frame_<step>.json`: the
+session's record). The participant under test is a program run as `COMMAND SESSION OUT`: it joins with the
+declaration, writes what it reads from each turn to `OUT/turn_<step>.json` (in the expected values' layout), and sends
+`subject/update_<step>.glb` as its codec reads and writes it again. `fspm-tf couple-conformance conformance/coupling
+--participant COMMAND` runs and compares them all.
+
+| Session | Covers |
+|---|---|
+| `two_scales` | a subject refining a replayed peer's organs into segments: new entities, removals cascading to the subject's segments, a unit conversion and a factor, a copy to finer entities |
+| `two_data_structures` | a subject owning another data structure, linked to the peer's by the mapping it provides: a sum through a mapping, mappings in updates |
+
 ## 10. Keeping what one does not read
 
-A reader that writes a file back SHOULD keep the content it does not interpret, as RSML requires. In 0.2 this covers
+A reader that writes a file back SHOULD keep the content it does not interpret, as RSML requires. In 0.3 this covers
 the glTF root's other extensions and `extras`, when they hold no buffer views.
 
-## 11. Coupling (draft for 0.3)
+## 11. Coupling
 
 Platforms couple their models through fspm-TF in a **session**: each **participant** is a platform's model running
 in its own process, or a recorded sequence (§11.6), and a **coordinator** runs the session. The coordinator holds the
@@ -385,18 +399,29 @@ A message is a JSON header and, for a turn or an update, a payload: a partial fr
   - `follows`: it reads.
 - `variables`: each one with `dataStructure`, `entitySet`, `name`, `direction` (`provides`: an output; `requires`: an
   input), `unit` (UCUM), and optionally `standardName`, `kind`, `optional`.
+- `mappings` (optional): the mappings it provides, each with its `name`, `source` and `target` (`dataStructure`,
+  `entitySet`). Its updates carry them as the frame's mappings (§1) of those names; each one sent replaces the
+  previous.
 
 **Link.** A link names the input it feeds and the output that feeds it:
 - the input: `receiver`, `variable`, `entitySet` (when the name is ambiguous);
 - the output: `provider`, `source`, `sourceEntitySet`;
 - its conversion: `factor` (applied after the unit conversion), `aggregation` and `interpolation` (`hold` or
-  `linear`, §11.6).
+  `linear`, §11.6);
+- `mapping`: between two data structures, the name of a mapping a participant provides, read in either direction.
 
 **Aggregation.** A link may change the scale:
 - `sum`, `mean`, `max` or `min` from a finer entity set, through the `complex` chain. The default is `sum` for an
   extensive source, `mean` otherwise.
 - `copy` from a coarser one. An extensive source needs `copy` stated explicitly, because copying it to finer entities
   counts it several times.
+
+**Between two data structures**, a link goes through its mapping (weights `w` between source entities `s` and target
+entities `t`):
+- `sum` (the default for an extensive source) shares each source's value among its targets in proportion to their
+  weights: `x_t = Σ_s x_s · w_st / Σ_t' w_st'`. The total amount is kept.
+- `mean` (the default otherwise) gives each target the weighted mean of its sources: `x_t = Σ_s w_st · x_s / Σ_s w_st`.
+- A target no source reaches has no value.
 
 Formulas are not part of a link: a receiver computes them from its linked inputs.
 
@@ -413,7 +438,7 @@ It refuses the session, and stops every participant with the reason, when any of
 - the units are not convertible;
 - an entity set has two owners;
 - a stage holds two participants that change one entity set's topology;
-- a link joins two data structures, which needs a mapping (not in this draft).
+- a link joins two data structures without a mapping, or with a mapping whose ends are not the link's.
 
 ### 11.4 Steps and stages
 
@@ -445,6 +470,10 @@ It refuses the session, and stops every participant with the reason, when any of
   variables on them. When an entity splits, the participant shares its own extensive quantities and dilutes its own
   concentrations by its rules; the entity's lineage is its `parent`.
 - **Labels.** An entity created without a label takes its entity set's name.
+- **Scales a participant does not know.** A participant declares only the entity sets it works on. One that grows a
+  coarse architecture (say, organs) needs to know nothing of the finer entities another participant refines under
+  them (segments, cells): it is never sent them, and when it removes an organ, the coordinator removes the organ's
+  segments and tells their refiner.
 
 ### 11.6 Transports
 
@@ -469,6 +498,15 @@ Both transports carry the same messages.
   - Its ids are renumbered within its range.
   - Between two recorded times, its values are those of the last frame at or before the session's time (`hold`), or
     interpolated linearly for links stating `"interpolation": "linear"`.
+
+## Changes from 0.2
+
+All additions; a 0.2 file is a valid 0.3 file.
+
+
+- §11: coupling sessions: partial frames (`FSPM_scene.update`), the messages (`spec/schema/coupling.schema.json`),
+  declarations and rights, links (units, factors, changes of scale, mappings between data structures), stages, the
+  shared structure, two transports, replay; conformance sessions (§9).
 
 ## Changes from 0.1
 

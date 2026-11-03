@@ -301,20 +301,23 @@ def _free_string(column: np.ndarray) -> str:
 
 
 def _enum_codes(name: str, column: np.ndarray, class_id: str, schema: dict) -> tuple:
+    values = np.asarray(column, dtype=object).tolist()
+    distinct = set(values)                                          # hashed: a few names, however many rows
+    if None in distinct:
+        raise ValueError(f"{name} of '{class_id}': an enum column has no missing values (give each row a {name})")
+    names = sorted(distinct)
+    code_of = {label: code for code, label in enumerate(names)}
+    codes = np.fromiter(map(code_of.__getitem__, values), dtype=np.int64, count=len(values))
     if name == "edge_type":
-        unknown = set(column) - set(EDGE_TYPES)
+        unknown = set(names) - set(EDGE_TYPES)
         if unknown:
             raise ValueError(f"edge_type of '{class_id}': unknown values {sorted(unknown)} (allowed: {EDGE_TYPES})")
-        return EDGE_TYPE_ENUM, np.array([EDGE_TYPES.index(value) for value in column], dtype=np.uint8)
-    if any(value is None for value in column):
-        raise ValueError(f"{name} of '{class_id}': an enum column has no missing values (give each row a {name})")
-    names = sorted(set(column))
+        return EDGE_TYPE_ENUM, np.array([EDGE_TYPES.index(value) for value in names], dtype=np.uint8)[codes]
     enum_id = f"{class_id}__{name}"
     value_type = "UINT8" if len(names) <= 256 else "UINT16"
     schema["enums"][enum_id] = {"valueType": value_type,
                                 "values": [{"name": label, "value": code} for code, label in enumerate(names)]}
-    code_of = {label: code for code, label in enumerate(names)}
-    return enum_id, np.array([code_of[value] for value in column], dtype=value_type.lower())
+    return enum_id, codes.astype(value_type.lower())
 
 
 def _grid_json(grid: Grid) -> dict:
@@ -454,8 +457,10 @@ def _decode_table(document: dict, binary: bytes, description: dict, schema: dict
         if prop["type"] == "ENUM":
             enum = schema["enums"][prop["enumType"]]
             codes = np.frombuffer(raw, dtype=enum.get("valueType", "UINT16").lower(), count=count)
-            name_of = {item["value"]: item["name"] for item in enum["values"]}
-            column = np.array([name_of[int(code)] for code in codes], dtype=object)
+            values = np.array([item["value"] for item in enum["values"]], dtype=np.int64)
+            names = np.empty(int(values.max()) + 1 if values.size else 0, dtype=object)
+            names[values] = [item["name"] for item in enum["values"]]
+            column = names[codes.astype(np.int64)] if count else np.zeros(0, dtype=object)
         elif prop["type"] == "STRING":
             offset_type = stored.get("stringOffsetType", "UINT32").lower()
             offsets = np.frombuffer(view_bytes(document, binary, stored["stringOffsets"]), dtype=offset_type,

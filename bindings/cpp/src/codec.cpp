@@ -499,10 +499,27 @@ std::vector<std::uint8_t> to_bytes(const Frame &frame) {
         mappings.push_back(entry);
     }
 
+    json update = nullptr;
+    if (frame.update) {
+        check_identifier(frame.update->participant, "participant");
+        update = {{"participant", frame.update->participant}};
+        if (!frame.update->removed.empty()) {
+            json removed = json::array();
+            for (const auto &[key, ids] : frame.update->removed) {
+                Table table(key.second + "__removed");
+                table.set("id", Column(ids));
+                removed.push_back({{"dataStructure", key.first}, {"entitySet", key.second},
+                                   {"propertyTable", add_table(table, key.first + "__" + key.second + "__removed")}});
+            }
+            update["removed"] = removed;
+        }
+    }
+
     json scene = {{"version", SPECIFICATION_VERSION},
                   {"frame", {{"time", frame.time}, {"timeUnit", frame.time_unit}, {"step", frame.step}}}};
     if (frame.vocabulary_version) scene["vocabulary"] = *frame.vocabulary_version;
     if (!frame.writer.empty()) scene["writer"] = frame.writer;
+    if (!update.is_null()) scene["update"] = update;
     scene["dataStructures"] = data_structures;
     if (!mappings.empty()) scene["mappings"] = mappings;
     if (!variables.empty()) scene["variables"] = variables;
@@ -857,6 +874,17 @@ Frame from_bytes(const std::vector<std::uint8_t> &data) {
         if (!get(entry, "method").is_null()) mapping.method = entry["method"].get<std::string>();
         table(entry.at("propertyTable").get<std::int64_t>(), mapping);
         frame.mappings.push_back(std::move(mapping));
+    }
+    if (scene.contains("update")) {
+        Update update;
+        update.participant = scene["update"].at("participant").get<std::string>();
+        for (const auto &item : get(scene["update"], "removed", json::array())) {
+            Table removed;
+            table(item.at("propertyTable").get<std::int64_t>(), removed);
+            update.removed[{item.at("dataStructure").get<std::string>(), item.at("entitySet").get<std::string>()}] =
+                removed.column("id").as<std::int64_t>();
+        }
+        frame.update = std::move(update);
     }
     json other_extensions = json::object();
     for (const auto &item : extensions.items())

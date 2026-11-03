@@ -10,6 +10,7 @@ function main(conformance::AbstractString, out::AbstractString)
     for (folder, _, files) in walkdir(conformance)
         for name in sort(files)
             endswith(name, ".glb") || continue
+            startswith(relpath(folder, conformance), "coupling") && continue       # the coupling sessions
             relative = relpath(joinpath(folder, name), conformance)
             frame = read_frame(joinpath(conformance, relative))
             dump = joinpath(out, "dumps", relative[1:end-length(".glb")] * ".json")

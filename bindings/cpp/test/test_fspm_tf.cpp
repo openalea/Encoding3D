@@ -42,7 +42,9 @@ template <typename Function> void check_throws(Function function, const std::str
 std::vector<filesystem::path> conformance_files(const filesystem::path &conformance) {
     std::vector<filesystem::path> files;
     for (const auto &entry : filesystem::recursive_directory_iterator(conformance))
-        if (entry.is_regular_file() && entry.path().extension() == ".glb") files.push_back(entry.path());
+        if (entry.is_regular_file() && entry.path().extension() == ".glb" &&
+            entry.path().string().find("coupling") == std::string::npos)    // the coupling sessions: their own check
+            files.push_back(entry.path());
     std::sort(files.begin(), files.end());
     return files;
 }
@@ -217,6 +219,24 @@ void test_sequence(const filesystem::path &conformance) {
 
 } // namespace
 
+void test_partial_frame() {
+    // A coupling session's message: the sender and the removed entities kept, the reference checks lifted
+    EntitySet segments("SubOrgan", 6);
+    segments.set("id", Column(std::vector<std::int64_t>{10, 11}))
+        .set("complex", Column(std::vector<std::int64_t>{3, 3}))
+        .set("sugar", Column(std::vector<double>{1.0, 2.0}));
+    DataStructure plant("plant");
+    plant.entity_sets.push_back(segments);
+    Frame frame;
+    frame.data_structures.push_back(plant);
+    frame.update = Update{"vpl", {{{"plant", "SubOrgan"}, {5, 6}}}};
+    const auto again = from_bytes(to_bytes(frame));
+    check(again.update && again.update->participant == "vpl", "partial frame: its sender");
+    check(again.update->removed.at({"plant", "SubOrgan"}) == std::vector<std::int64_t>{5, 6},
+          "partial frame: its removed entities");
+    check(frame_to_json(again)["update"]["removed"][0]["ids"] == json::array({5, 6}), "partial frame: its dump");
+}
+
 int main(int argument_count, char **arguments) {
     if (argument_count != 2) {
         std::cerr << "usage: fspm_tf_tests CONFORMANCE\n";
@@ -225,7 +245,8 @@ int main(int argument_count, char **arguments) {
     const filesystem::path conformance = arguments[1];
     const std::vector<std::pair<std::string, std::function<void()>>> tests = {
         {"conformance", [&] { test_conformance(conformance); }}, {"columns", test_columns}, {"mesh", test_mesh},
-        {"refused", test_refused}, {"sequence", [&] { test_sequence(conformance); }}};
+        {"refused", test_refused}, {"sequence", [&] { test_sequence(conformance); }},
+        {"partial frame", test_partial_frame}};
     for (const auto &[name, test] : tests) {
         try {
             test();

@@ -1,0 +1,49 @@
+{
+ "participant": "subject",
+ "entitySets": [
+  {
+   "dataStructure": "soil",
+   "name": "Cell",
+   "rank": 1,
+   "rights": "owns"
+  },
+  {
+   "dataStructure": "plant",
+   "name": "Organ",
+   "rank": 5,
+   "rights": "follows"
+  }
+ ],
+ "variables": [
+  {
+   "dataStructure": "soil",
+   "entitySet": "Cell",
+   "name": "water_content",
+   "direction": "provides",
+   "unit": "m3/m3",
+   "kind": "intensive"
+  },
+  {
+   "dataStructure": "soil",
+   "entitySet": "Cell",
+   "name": "uptake",
+   "direction": "requires",
+   "unit": "mol",
+   "kind": "extensive"
+  }
+ ],
+ "platform": "conformance",
+ "mappings": [
+  {
+   "name": "organs_in_soil",
+   "source": {
+    "dataStructure": "plant",
+    "entitySet": "Organ"
+   },
+   "target": {
+    "dataStructure": "soil",
+    "entitySet": "Cell"
+   }
+  }
+ ]
+}

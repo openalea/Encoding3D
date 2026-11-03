@@ -1,0 +1,167 @@
+{
+ "time": 1.0,
+ "time_unit": "d",
+ "step": 1,
+ "data_structures": [
+  {
+   "id": "plant",
+   "kind": "graph",
+   "origin": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "entity_sets": [
+    {
+     "name": "Organ",
+     "count": 2,
+     "columns": {
+      "id": {
+       "dtype": "int64",
+       "values": [
+        8589934592,
+        8589934593
+       ]
+      },
+      "label": {
+       "dtype": "string",
+       "values": [
+        "Leaf",
+        "Leaf"
+       ]
+      },
+      "complex": {
+       "dtype": "int64",
+       "values": [
+        -1,
+        -1
+       ]
+      },
+      "parent": {
+       "dtype": "int64",
+       "values": [
+        -1,
+        8589934592
+       ]
+      },
+      "edge_type": {
+       "dtype": "string",
+       "values": [
+        "none",
+        "successor"
+       ]
+      },
+      "length": {
+       "dtype": "float64",
+       "values": [
+        2.0,
+        4.0
+       ]
+      }
+     },
+     "variables": {
+      "length": {
+       "unit": "cm",
+       "role": "state",
+       "standard_name": "length",
+       "kind": "extensive"
+      }
+     },
+     "rank": 5,
+     "scale": "Organ"
+    },
+    {
+     "name": "SubOrgan",
+     "count": 4,
+     "columns": {
+      "id": {
+       "dtype": "int64",
+       "values": [
+        4294967296,
+        4294967297,
+        4294968298,
+        4294968299
+       ]
+      },
+      "label": {
+       "dtype": "string",
+       "values": [
+        "Segment",
+        "Segment",
+        "Segment",
+        "Segment"
+       ]
+      },
+      "complex": {
+       "dtype": "int64",
+       "values": [
+        8589934592,
+        8589934592,
+        8589934593,
+        8589934593
+       ]
+      },
+      "parent": {
+       "dtype": "int64",
+       "values": [
+        -1,
+        4294967296,
+        -1,
+        4294968298
+       ]
+      },
+      "edge_type": {
+       "dtype": "string",
+       "values": [
+        "none",
+        "successor",
+        "none",
+        "successor"
+       ]
+      },
+      "sugar": {
+       "dtype": "float64",
+       "values": [
+        1e-08,
+        1e-08,
+        0.0,
+        0.0
+       ]
+      }
+     },
+     "variables": {
+      "sugar": {
+       "unit": "mol",
+       "role": "state",
+       "kind": "extensive"
+      }
+     },
+     "rank": 6,
+     "scale": "SubOrgan"
+    }
+   ]
+  }
+ ],
+ "mappings": []
+}

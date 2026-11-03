@@ -1,7 +1,9 @@
 #!/bin/bash
 # GroIMP's fspm-TF plugin in GroIMP itself, headless: install it (and GroIMP's glTF plugin, which meshes the shapes)
 # into a GroIMP 3.0 install, grow one of GroIMP's examples, export its 3D view as an fspm-TF frame, and check the file:
-# valid fspm-TF (fspm-tf validate), every triangle with its node.
+# valid fspm-TF (fspm-tf validate), every triangle with its node. Then GroIMP's log: the example grown again, a frame
+# exported after each of four runs, with their index (OUT/log/scene.fspm.json), which a coupling session replays
+# (bindings/python/test/test_coupling.py, FSPM_TF_GROIMP_LOG).
 #
 #   run_in_groimp.sh GROIMP GLTF_PLUGIN FSPMTF_PLUGIN OUT
 #     GROIMP          a GroIMP 3.0 install (the folder holding core.jar and plugins/)
@@ -32,3 +34,27 @@ assert len(mesh.positions) > 0 and (rows >= 0).all(), "every vertex carries its 
 assert mesh.positions[:, 2].max() > 0, "the plant stands, z up"
 print(f"{len(mesh.positions)} vertices, {len(np.unique(rows))} nodes drawn, of {plants.entity_sets[-1].count}")
 PYTHON
+
+# GroIMP's log: a frame after each run
+log="$out/log"
+mkdir -p "$log"
+(printf '$loadExample simpleRapeseed\n'; sleep 10
+ for step in 0 1 2 3; do printf 'run\nexport3d %s/frame_%06d.glb\n' "$log" "$step"; sleep 25; done
+ printf 'listFunctions\n') |
+  java -Xmx1g -Djava.util.prefs.userRoot="$out/home" -jar core.jar -a cli > "$out/groimp_log.log" 2>&1
+python - "$log" <<'PYTHON'
+import os
+import sys
+from openalea.fspm_tf import read, write, write_index
+folder = sys.argv[1]
+files = sorted(name for name in os.listdir(folder) if name.endswith(".glb"))
+assert len(files) == 4, f"four frames expected, {files}"
+for step, name in enumerate(files):        # GroIMP has no simulation clock: the log's time and step, its run count
+    frame = read(os.path.join(folder, name))
+    frame.time, frame.step = float(step), step
+    write(os.path.join(folder, name), frame)
+write_index(os.path.join(folder, "scene.fspm.json"),
+            [{"time": float(step), "step": step, "file": name} for step, name in enumerate(files)], time_unit="d")
+print(f"GroIMP's log: {len(files)} frames in {folder}")
+PYTHON
+fspm-tf validate "$log/scene.fspm.json"

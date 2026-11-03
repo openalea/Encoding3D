@@ -3,7 +3,7 @@ fspm-TF: an exchange format for whole FSPM scenes. This package is its Python re
 (openalea.fspm_tf.codec), the validator (openalea.fspm_tf.validate), the display copies (openalea.fspm_tf.display) and the vocabulary
 (openalea.fspm_tf.vocabulary). See the specification in the repository's spec/ folder.
 """
-SPECIFICATION_VERSION = "0.2"
+SPECIFICATION_VERSION = "0.3"
 
 from openalea.fspm_tf.model import (DataStructure, EntitySet, Frame, Grid, Mapping, Mesh, NO_ID, Relation,  # noqa: E402
                            Table, Update, Variable)
