@@ -19,13 +19,17 @@ drawn::
 
 ParaView's macros (paraview/apply_fspm_tf_views.py, save_fspm_tf_views.py) go through display_settings(layer) (a
 layer to its display options) and layer_from_display(layer, display) (back, to save them), plain dicts both ways.
+
+Selection by scale (paraview/select_at_scale.py, clear_selection.py): the reader gives every cell the ids of its
+entity and of the entities containing it ("<entity set>.id", ancestor_ids), and each block its data structure and
+its graph's scales as field data; picked_entities(picked, scale) grows picked cells to their entities at *scale*,
+selection_mask(...) gives the cells of any block those entities contain, at any finer scale.
 """
 import copy
 import json
 import os
 import re
 
-import jsonschema
 import numpy as np
 
 from openalea.fspm_tf import schema as schemas
@@ -89,6 +93,15 @@ def configuration(views: dict, name: str = None) -> tuple:
     return name, [filled(layer) for layer in views["configurations"][name]["layers"]]
 
 
+def other_layer_names(views: dict, name: str) -> list:
+    """The names of the layers of the other configurations than *name* that it has not: the items "Apply fspm-TF
+    views" made for them, replaced when *name* is applied."""
+    own = {layer["name"] for layer in views["configurations"][name]["layers"]}
+    others = [layer["name"] for other, content in views["configurations"].items() if other != name
+              for layer in content["layers"] if layer["name"] not in own]
+    return list(dict.fromkeys(others))
+
+
 def filled(layer: dict) -> dict:
     """*layer* with the defaults of what it leaves out (a tube's scale: 1)."""
     complete = dict(copy.deepcopy(DEFAULTS), **copy.deepcopy(layer))
@@ -104,8 +117,14 @@ def check_views(views: dict, frame=None):
     *frame* every name a layer gives (data structure, mesh, entity sets, columns) found in it."""
     from openalea.fspm_tf.validate import Report
     report = Report("views")
-    for error in jsonschema.Draft202012Validator(schemas.load("views")).iter_errors(views):
-        report.error(f"views/{'/'.join(str(part) for part in error.absolute_path)}", error.message)
+    try:
+        import jsonschema
+    except ImportError:                               # e.g. in ParaView's Python: the structure the code reads
+        for where, message in _structure_errors(views):
+            report.error(where, message)
+    else:
+        for error in jsonschema.Draft202012Validator(schemas.load("views")).iter_errors(views):
+            report.error(f"views/{'/'.join(str(part) for part in error.absolute_path)}", error.message)
     if not report.ok:
         return report
     if "active" in views and views["active"] not in views["configurations"]:
@@ -120,6 +139,37 @@ def check_views(views: dict, frame=None):
             if frame is not None:
                 _check_layer(layer, frame, where, report)
     return report
+
+
+def _structure_errors(views) -> list:
+    """[(where, message)]: what the schema requires that the reader and the macros rely on, without jsonschema."""
+    if not isinstance(views, dict):
+        return [("views", "not an object")]
+    errors = []
+    if views.get("fspm_tf_views") != FORMAT:
+        errors.append(("views/fspm_tf_views", f"must be {FORMAT}"))
+    configurations = views.get("configurations")
+    if not isinstance(configurations, dict) or not configurations:
+        return errors + [("views/configurations", "an object of at least one configuration")]
+    for name, content in configurations.items():
+        layers = content.get("layers") if isinstance(content, dict) else None
+        if not isinstance(layers, list):
+            errors.append((f"views/configurations/{name}", "'layers' is a required list"))
+            continue
+        for number, layer in enumerate(layers):
+            where = f"views/configurations/{name}/layers/{number}"
+            source = layer.get("source") if isinstance(layer, dict) else None
+            if not isinstance(layer, dict) or not isinstance(layer.get("name"), str) or not layer["name"]:
+                errors.append((where, "'name' is a required text"))
+            if not isinstance(source, dict) or not isinstance(source.get("data_structure"), str):
+                errors.append((where, "'source' with its 'data_structure' is required"))
+            elif source.get("kind") not in ("mesh", "segments", "grid"):
+                errors.append((f"{where}/source", "'kind' is one of mesh, segments, grid"))
+            elif source["kind"] in ("mesh", "segments") and not isinstance(
+                    source.get("mesh" if source["kind"] == "mesh" else "entity_set"), str):
+                errors.append((f"{where}/source", f"a {source['kind']} layer names its "
+                                                  f"{'mesh' if source['kind'] == 'mesh' else 'entity_set'}"))
+    return errors
 
 
 def segment_columns(entity_set) -> list:
@@ -220,14 +270,39 @@ def selected(table, where: dict) -> np.ndarray:
 
 # ── Display options (ParaView's macros) ──────────────────────────────────
 
+def property_text(value) -> str:
+    """A ParaView string property's value as text: ParaView gives a str, a property (its GetData(): a str, or a list
+    of one value), or a list-like of one value (empty: "")."""
+    if hasattr(value, "GetData"):
+        value = value.GetData()
+    if value is None or isinstance(value, str):
+        return value or ""
+    values = list(value)
+    return str(values[0]) if values else ""
+
+
 def block_selector(name: str) -> str:
     """The selector of the reader's block *name* in ParaView's ExtractBlock: /Root/ and the name as ParaView makes it a
-    valid node name (vtkDataAssembly::MakeValidNodeName: characters other than letters, digits, '_', '-' and '.'
-    replaced by '_', and '_' before a first character that is not a letter or '_')."""
-    valid = re.sub(r"[^A-Za-z0-9_.\-]", "_", name)
-    if not re.match(r"[A-Za-z_]", valid):
-        valid = "_" + valid
+    valid node name: VTK's vtkDataAssembly.MakeValidNodeName when VTK is there (its rule changed between versions),
+    else ParaView 6's (the characters other than letters, digits, '_', '-' and '.' removed, and '_' before a first
+    character that is not a letter or '_')."""
+    try:
+        from vtkmodules.vtkCommonDataModel import vtkDataAssembly
+    except ImportError:
+        valid = re.sub(r"[^A-Za-z0-9_.\-]", "", name)
+        if not re.match(r"[A-Za-z_]", valid):
+            valid = "_" + valid
+    else:
+        valid = vtkDataAssembly.MakeValidNodeName(name)
     return f"/Root/{valid}"
+
+
+def preset_names(colormap: str) -> list:
+    """The ParaView preset names to try for *colormap*: itself, then its name in other ParaView versions (ParaView 6
+    dropped the " (matplotlib)" of 5's "Viridis (matplotlib)", "Inferno (matplotlib)" ...)."""
+    suffix = " (matplotlib)"
+    other = colormap[:-len(suffix)] if colormap.endswith(suffix) else colormap + suffix
+    return [colormap, other]
 
 
 def colour_array(layer: dict, arrays=()) -> str:
@@ -290,3 +365,95 @@ def save_configuration(views: dict, name: str, layers: list, active: bool = True
     if active:
         saved["active"] = name
     return saved
+
+
+# ── Selection by scale (ParaView's "Select at scale") ─────────────────────
+
+DATA_STRUCTURE_FIELD = "fspm_tf_data_structure"   # field data of each reader block: its data structure's id
+SCALES_FIELD = "fspm_tf_scales"                   # and its graph's ranked entity sets, coarser first
+
+
+def ranked_sets(data_structure) -> list:
+    """The names of a graph's ranked entity sets (its scales), coarser first; [] for a grid."""
+    ranked = [entity_set for entity_set in data_structure.entity_sets if entity_set.rank is not None]
+    return [entity_set.name for entity_set in sorted(ranked, key=lambda entity_set: entity_set.rank)]
+
+
+def ancestor_ids(data_structure, entity_set: str, rows: np.ndarray) -> dict:
+    """{entity set: ids per row (NO_ID: none)} of the entities containing the entities at *rows* of *entity_set*, at
+    each coarser scale their complex chain reaches."""
+    from openalea.fspm_tf.model import NO_ID
+    rows = np.asarray(rows, dtype=np.int64)
+    sets = [data_structure.entity_set(name) for name in ranked_sets(data_structure)]
+    if not sets or data_structure.entity_set(entity_set).rank is None:
+        return {}
+    ids = np.concatenate([np.asarray(table.columns["id"], dtype=np.int64) for table in sets])
+    complexes = np.concatenate([np.asarray(table.columns["complex"], dtype=np.int64) if "complex" in table.columns
+                                else np.full(table.count, NO_ID, dtype=np.int64) for table in sets])
+    owner = np.concatenate([np.full(table.count, number) for number, table in enumerate(sets)])
+    order = np.argsort(ids, kind="stable")
+    ids, complexes, owner = ids[order], complexes[order], owner[order]
+    start = data_structure.entity_set(entity_set)
+    valid = rows >= 0
+    current = np.where(valid, np.asarray(start.columns.get("complex", np.full(start.count, NO_ID)),
+                                         dtype=np.int64)[np.where(valid, rows, 0)], NO_ID)
+    found = {}
+    for _ in range(len(sets)):
+        if not (current != NO_ID).any() or not ids.size:
+            break
+        position = np.minimum(np.searchsorted(ids, current), ids.size - 1)
+        known = (current != NO_ID) & (ids[position] == current)
+        for number in np.unique(owner[position[known]]).tolist():
+            here = known & (owner[position] == number)
+            name = sets[number].name
+            found.setdefault(name, np.full(rows.size, NO_ID, dtype=np.int64))[here] = current[here]
+        current = np.where(known, complexes[position], NO_ID)
+    return found
+
+
+def id_array(scale: str) -> str:
+    """The reader's cell array of the ids at *scale*: "<scale>.id"."""
+    return f"{scale}.id"
+
+
+def _ids(values) -> np.ndarray:
+    """Ids read back from a cell array (float64, NaN where no entity): int64, -1 where none."""
+    values = np.asarray(values, dtype=np.float64).reshape(-1)
+    return np.where(np.isfinite(values), np.nan_to_num(values), -1).astype(np.int64)
+
+
+def picked_entities(picked: list, scale: str) -> dict:
+    """{data structure id: sorted ids} of the entities at *scale* containing picked cells; *picked*: [(data structure
+    id, {cell array: values of the picked cells})], e.g. one entry per block of ParaView's extracted selection. A
+    ValueError when no picked cell has an entity at *scale* (a scale finer than the picked elements, or none
+    picked)."""
+    found = {}
+    for data_structure, arrays in picked:
+        if id_array(scale) not in arrays:
+            continue
+        ids = _ids(arrays[id_array(scale)])
+        ids = ids[ids >= 0]
+        if ids.size:
+            found[data_structure] = sorted(set(found.get(data_structure, [])) | set(ids.tolist()))
+    if not found:
+        scales = sorted({name[:-3] for _, arrays in picked for name in arrays if name.endswith(".id")})
+        raise ValueError(f"no picked cell has an entity at scale '{scale}'" +
+                         (f" (they have {scales})" if scales else " (pick cells in the view first)"))
+    return found
+
+
+def selection_mask(data_structure: str, arrays: dict, chosen: dict, scale: str) -> np.ndarray:
+    """The cells of a block (of *data_structure*, its cell arrays *arrays*) inside the entities *chosen*
+    ({data structure id: ids at *scale*}, picked_entities'): those whose "<scale>.id" is one of them, whatever
+    finer scale the block's entities are at; none in a block without that array (a grid, a coarser layer)."""
+    name = id_array(scale)
+    count = len(next(iter(arrays.values()))) if arrays else 0
+    if name not in arrays or data_structure not in chosen:
+        return np.zeros(count, dtype=bool)
+    return np.isin(_ids(arrays[name]), np.asarray(chosen[data_structure], dtype=np.int64))
+
+
+def isolated(items: dict, selection: list) -> list:
+    """The items to hide to isolate a selection: of *items* ({name: visible}), the visible ones not in *selection*
+    (restored by clearing it)."""
+    return [name for name, visible in items.items() if visible and name not in selection]

@@ -18,7 +18,7 @@ then `pip install -e path/to/fspm-TF`.
 ## In ParaView
 
 fspm-TF comes with a ParaView reader plugin: `paraview/fspm_tf_reader.py`. It works with ParaView 5.10 and later,
-and has been checked with 6.0.1.
+and has been checked with 6.0.1 and 6.2.0.
 
 1. In ParaView, open **Tools → Manage Plugins → Load New…**, choose `fspm_tf_reader.py`, and tick **Auto Load** to
    keep it loaded.
@@ -36,6 +36,8 @@ What you see:
   at a scale, the value is empty (NaN).
 - **Labels and other text become integer codes**, `<scale>.label_code`; the names behind the codes are in the
   block's field data.
+- **Every cell knows its plant, axis, organ ...**: besides its own entity's `<scale>.id`, a cell has the ids of the
+  entities containing it (`Axis.id`, `Plant.id` on a root segment), which selection by scale uses (below).
 - **Show Settings**, a reader option, adds the columns a platform keeps for its own bookkeeping, and the tables'
   links (`complex`, `parent`, `edge_type`). They are hidden by default.
 
@@ -97,6 +99,33 @@ document = views.read_views("outputs/frames/views.json")
 report = views.check_views(document, fspm_tf.read("outputs/frames/frame_000000.glb"))   # every name in the frame
 print(report)
 ```
+
+### Selecting a plant, an axis, an organ
+
+Two more macros in `paraview/` select by scale: pick an element, and see its whole plant, axis, organ or segment,
+with everything it contains at finer scales, in every layer, hidden ones included (a segment's section drawings, a
+hidden layer by default, show for the selection only).
+
+1. Load them once like the others: **Macros → Import new macro…**, `paraview/select_at_scale.py`, then
+   `paraview/clear_fspm_tf_selection.py`. At the top of `select_at_scale` (**Macros → Edit…**), set `SCALE` (an
+   entity set of the frames: `Plant`, `Axis`, `Organ`, `SubOrgan`, … `Compartment`) and `MODE`.
+2. Pick cells in the view (**Select Cells On**, or `s`), on any layer: a leaf, a root segment.
+3. Run **select_at_scale**. With `MODE = "isolate"`, the view shows only the selection, the other items hidden;
+   with `MODE = "panel"`, a new view opens beside it with the selection alone, its camera fit to it, the first view
+   untouched. Each layer's part is an item named `<layer> selection`, drawn as its layer (the same colour map).
+   Picking again on the selection and running the macro again selects anew (e.g. an axis of the plant shown).
+4. Run **clear_fspm_tf_selection**: the selection's items and panel are removed, the hidden items shown again.
+
+A scale finer than the picked element (a Compartment of a leaf drawn without sections) is reported with the scales
+the picked cells have. The macros need the plugin loaded (it puts their code, `paraview/fspm_tf_selection.py`, on
+ParaView's path); which cells are selected is `openalea.fspm_tf.views.picked_entities` and `selection_mask`, tested
+without ParaView.
+
+`paraview/check_in_paraview.py` checks all this inside ParaView. `pvpython paraview/check_in_paraview.py
+conformance` runs on the conformance files (the binding tests run it when `FSPM_TF_PVPYTHON` names a `pvpython`);
+`pvbatch paraview/check_in_paraview.py --design <scene.fspm.json> <folder>` is a check by hand, on a sequence with
+its `views.json`: it applies and saves the views, selects at several scales, isolated and in a panel, clears, and
+saves a screenshot of each step in the folder, to look at.
 
 ## In other viewers
 

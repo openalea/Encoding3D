@@ -2,7 +2,8 @@
 ParaView macro "Apply fspm-TF views": each layer of the selected fspm-TF reader's configuration (its "Views" file and
 "Configuration", see fspm_tf_reader.py) becomes its own pipeline item, named by the layer: an ExtractBlock of the
 layer's block, a Tube on "tube_radius" for a segments layer, shown with its colour variable, colour map, range, log
-scale, solid colour, opacity, representation and visibility. Applied again, it replaces the items it made.
+scale, solid colour, opacity, representation and visibility. Applied again, it replaces the items it made, those of
+the views' other configurations included (the reader's Configuration changed).
 
     Macros > Import new macro..., choose this file; select the fspm-TF reader in the Pipeline Browser, then
     Macros > apply_fspm_tf_views.
@@ -28,18 +29,27 @@ def reader_views(source):
     views = _views()
     if source is None or not hasattr(source, "Configuration"):
         raise RuntimeError("select an fspm-TF reader in the Pipeline Browser first")
-    file_name = source.FileName if isinstance(source.FileName, str) else source.FileName[0]
-    path = views.views_path(file_name, source.Views)
+    file_name = views.property_text(source.FileName)
+    path = views.views_path(file_name, views.property_text(source.Views) or None)
     if path is None:
         raise RuntimeError(f"no views file for {file_name} (a views.json next to it, or the reader's Views)")
     document = views.read_views(path)
-    name, layers = views.configuration(document, source.Configuration or None)
+    name, layers = views.configuration(document, views.property_text(source.Configuration) or None)
     return views, path, document, name, layers
 
 
 def _cell_arrays(item) -> set:
-    information = item.GetDataInformation().GetCellDataInformation()
-    return {information.GetArrayInformation(number).GetName() for number in range(information.GetNumberOfArrays())}
+    return set(item.CellData.keys())
+
+
+def _apply_preset(colours, colormap: str, views) -> None:
+    for name in views.preset_names(colormap):
+        try:
+            colours.ApplyPreset(name, True)
+            return
+        except RuntimeError:                               # not a preset of this ParaView
+            continue
+    print(f"fspm-TF views: no colour map preset '{colormap}' in this ParaView, its default kept")
 
 
 def _remove(name: str) -> None:
@@ -67,7 +77,7 @@ def show_layer(source, layer: dict, view, views) -> None:
     if settings["color_array"]:
         simple.ColorBy(display, ("CELLS", settings["color_array"]))
         colours = simple.GetColorTransferFunction(settings["color_array"])
-        colours.ApplyPreset(settings["colormap"], True)
+        _apply_preset(colours, settings["colormap"], views)
         if settings["range"] is None:
             colours.AutomaticRescaleRangeMode = "Grow and update on 'Apply'"
             display.RescaleTransferFunctionToDataRange(True, False)
@@ -77,7 +87,7 @@ def show_layer(source, layer: dict, view, views) -> None:
         colours.UseLogScale = int(settings["log"])
         display.SetScalarBarVisibility(view, settings["visible"])
     else:
-        simple.ColorBy(display, None)
+        display.ColorArrayName = ["POINTS", ""]             # a solid colour (ColorBy(display, None) fails in 6.2)
         display.AmbientColor = display.DiffuseColor = settings["solid_color"]
     display.Opacity = settings["opacity"]
     if not settings["visible"]:
@@ -86,12 +96,16 @@ def show_layer(source, layer: dict, view, views) -> None:
 
 def apply_views(source=None, view=None) -> None:
     source = source or simple.GetActiveSource()
-    views, _, _, _, layers = reader_views(source)
+    views, _, document, name, layers = reader_views(source)
     view = view or simple.GetActiveViewOrCreate("RenderView")
     source.UpdatePipeline()
     simple.Hide(source, view)
+    for other in views.other_layer_names(document, name):     # another configuration's items, applied before
+        _remove(other)
     for layer in layers:
         show_layer(source, layer, view, views)
+    if hasattr(simple, "HideUnusedScalarBars"):
+        simple.HideUnusedScalarBars(view)
     simple.SetActiveSource(source)
     simple.Render(view)
 

@@ -13,7 +13,6 @@ import datetime
 import json
 import os
 
-import jsonschema
 import numpy as np
 
 from openalea.fspm_tf import schema as schemas, ucum, vocabulary
@@ -68,6 +67,12 @@ class Report:
 
 # ── One frame ────────────────────────────────────────────────────────────
 
+def _jsonschema():
+    """jsonschema, imported when a file is validated (the reading code, e.g. ParaView's reader, works without it)."""
+    import jsonschema
+    return jsonschema
+
+
 def validate_bytes(data: bytes, name: str = "") -> Report:
     report = Report(name)
     try:
@@ -107,7 +112,7 @@ def _check_document(document: dict, binary: bytes, report: Report) -> bool:
         report.error("extensions", f"no {EXTENSION} extension: not an fspm-TF file")
         return False
     scene = extensions[EXTENSION]
-    for error in jsonschema.Draft202012Validator(schemas.load("fspm_scene")).iter_errors(scene):
+    for error in _jsonschema().Draft202012Validator(schemas.load("fspm_scene")).iter_errors(scene):
         report.error(f"{EXTENSION}/{'/'.join(str(part) for part in error.absolute_path)}", error.message)
     metadata = extensions.get(METADATA)
     if metadata is None:
@@ -506,7 +511,7 @@ def validate_sequence(index_path: str) -> Report:
     except (OSError, ValueError) as error:
         report.error("index", f"cannot be read: {error}")
         return report
-    for error in jsonschema.Draft202012Validator(schemas.load("index")).iter_errors(index):
+    for error in _jsonschema().Draft202012Validator(schemas.load("index")).iter_errors(index):
         report.error(f"index/{'/'.join(str(part) for part in error.absolute_path)}", error.message)
     if not report.ok:
         return report

@@ -108,11 +108,11 @@ def test_configurations_and_their_defaults(tmp_path):
 def test_display_settings_and_back():
     _, layers = views.configuration(roots_views())
     mesh, segments = (views.display_settings(layer) for layer in layers)
-    assert mesh["selector"] == "/Root/first_order" and mesh["tube"] is None and mesh["range"] is None
+    assert mesh["selector"] == "/Root/firstorder" and mesh["tube"] is None and mesh["range"] is None
     assert mesh["color_array"] == "SubOrgan.water_potential" and mesh["visible"]
     assert segments["tube"] == {"radius_array": views.TUBE_RADIUS} and not segments["visible"]
     assert views.display_settings(layers[1], {"SubOrgan.label_code"})["color_array"] == "SubOrgan.label_code"
-    assert views.block_selector("2 roots/p0") == "/Root/_2_roots_p0"
+    assert views.block_selector("2 roots/p0") == "/Root/_2rootsp0"                   # as ParaView names blocks
     unchanged = views.layer_from_display(layers[0], {})
     assert unchanged == layers[0]
     saved = views.layer_from_display(layers[1], {"visible": True, "opacity": 0.5, "representation": "Wireframe",
@@ -144,17 +144,9 @@ class _Item:
     def UpdatePropertyInformation(self):
         pass
 
-    def GetDataInformation(self):
-        names = ["SubOrgan.water_potential", "SubOrgan.label_code"]
-
-        class Arrays:
-            def GetNumberOfArrays(self):
-                return len(names)
-
-            def GetArrayInformation(self, number):
-                return types.SimpleNamespace(GetName=lambda: names[number])
-
-        return types.SimpleNamespace(GetCellDataInformation=lambda: Arrays())
+    @property
+    def CellData(self):
+        return types.SimpleNamespace(keys=lambda: ["SubOrgan.water_potential", "SubOrgan.label_code"])
 
 
 class _Display:
@@ -249,3 +241,54 @@ def test_the_macros_apply_and_save_views(tmp_path, monkeypatch):
     assert first["opacity"] == 0.25 and roots["visible"] and roots["range"] == [0., 3.]
     assert roots["color_by"] == {"entity_set": "SubOrgan", "variable": "label"} and roots["tube"]["scale"] == 2
     assert saved["configurations"]["plain"] == roots_views()["configurations"]["plain"]
+
+
+# ── Selection by scale ───────────────────────────────────────────────────
+
+def test_the_entities_containing_others_at_every_coarser_scale():
+    frame = generate.root_system()
+    source = frame.data_structures[0]
+    assert views.ranked_sets(source) == ["Plant", "Axis", "SubOrgan"]
+    segments = source.entity_set("SubOrgan")
+    rows = np.array([0, segments.count - 1, -1])                    # a tap root segment, the lateral's apex, none
+    found = views.ancestor_ids(source, "SubOrgan", rows)
+    np.testing.assert_array_equal(found["Axis"], [100, 101, -1])
+    np.testing.assert_array_equal(found["Plant"], [1000, 1000, -1])
+    assert views.ancestor_ids(source, "Plant", np.array([0])) == {}
+    assert views.ancestor_ids(generate.soil_and_roots().data_structures[1], "Voxel", np.array([0])) == {}
+
+
+def test_picked_cells_grow_to_their_entity_and_what_it_contains():
+    picked = [("plants", {"Axis.id": np.array([101., 101.]), "SubOrgan.id": np.array([60., 61.])}),
+              ("soil", {"Voxel.id": np.array([3.])})]
+    assert views.picked_entities(picked, "Axis") == {"plants": [101]}
+    assert views.picked_entities(picked, "SubOrgan") == {"plants": [60, 61]}
+    with pytest.raises(ValueError, match="'Compartment'.*Axis"):
+        views.picked_entities(picked, "Compartment")
+    with pytest.raises(ValueError, match="pick cells"):
+        views.picked_entities([], "Axis")
+    chosen = {"plants": [101]}
+    sections = {"Axis.id": np.array([100., 101., np.nan]), "Compartment.id": np.array([1., 2., 3.])}
+    np.testing.assert_array_equal(views.selection_mask("plants", sections, chosen, "Axis"), [False, True, False])
+    np.testing.assert_array_equal(views.selection_mask("other", sections, chosen, "Axis"), [False] * 3)
+    np.testing.assert_array_equal(views.selection_mask("plants", {"Plant.id": np.ones(2)}, chosen, "Axis"),
+                                  [False] * 2)                       # a block without the scale: none of it
+    assert views.isolated({"roots": True, "shoot": True, "sections": False, "roots selection": True},
+                          ["roots selection"]) == ["roots", "shoot"]
+
+
+def test_views_are_checked_without_jsonschema(monkeypatch):
+    import builtins
+    original = builtins.__import__
+
+    def without_jsonschema(name, *arguments, **keywords):
+        if name == "jsonschema":
+            raise ImportError(name)
+        return original(name, *arguments, **keywords)
+
+    monkeypatch.setattr(builtins, "__import__", without_jsonschema)
+    assert views.check_views(roots_views()).ok
+    broken = copy.deepcopy(roots_views())
+    del broken["configurations"]["plain"]["layers"][0]["source"]["mesh"]
+    assert "names its mesh" in str(views.check_views(broken))
+    assert not views.check_views({"fspm_tf_views": 2, "configurations": {}}).ok

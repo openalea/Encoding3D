@@ -32,6 +32,11 @@ data "tube_radius"; hidden layers are there too, and a layer whose names a frame
 apply_fspm_tf_views.py and save_fspm_tf_views.py (next to this file; Macros > Import new macro...) make each layer its
 own pipeline item, and write the items' display options back into the views file.
 
+Every cell also has the ids of the entities containing its own ("<entity set>.id" at each coarser scale, through the
+complex links: a root segment's Organ, Axis and Plant), and every block its data structure (field data
+fspm_tf_data_structure) and its graph's scales (fspm_tf_scales, coarser first): the macros select_at_scale.py and
+clear_selection.py grow picked cells to their plant, axis, organ ... with everything it holds, in every layer.
+
 frame_to_vtk(frame) builds the output without ParaView (VTK only), e.g. for scripts and tests.
 """
 import os
@@ -152,9 +157,37 @@ def _mesh(mesh, data_structure, settings: bool = False, kept: np.ndarray = None,
     for set_name, rows in mesh.feature_rows.items():
         _add_columns(polydata.GetCellData(), data_structure.entity_set(set_name), rows[triangles[:, 0]],
                      polydata.GetFieldData(), settings, (forced or {}).get(set_name, ()))
+    ranks = {name: data_structure.entity_set(name).rank for name in mesh.feature_rows}
+    ranked = [name for name in ranks if ranks[name] is not None]
+    if ranked:                                 # the finest scale's containing entities, where the mesh lacks them
+        finest = max(ranked, key=ranks.get)
+        _add_ancestors(polydata, data_structure, finest, mesh.feature_rows[finest][triangles[:, 0]])
+    _identify(polydata, data_structure)
     for name, values in mesh.display.items():
         polydata.GetPointData().AddArray(_array(f"display.{name}", np.asarray(values, dtype=np.float32)))
     return polydata
+
+
+def _add_ancestors(data_set, data_structure, set_name: str, rows: np.ndarray) -> None:
+    """Cell data "<entity set>.id" of the entities containing each cell's entity (at *rows* of *set_name*), for the
+    coarser scales the cells have no array of yet: what selection by scale grows a picked cell to."""
+    cell_data = data_set.GetCellData()
+    for name, ids in _views().ancestor_ids(data_structure, set_name, rows).items():
+        label = _views().id_array(name)
+        if not cell_data.HasArray(label):
+            cell_data.AddArray(_array(label, np.where(ids >= 0, ids, np.nan).astype(np.float64)))
+
+
+def _identify(data_set, data_structure) -> None:
+    """Field data: the block's data structure, and its graph's scales (coarser first)."""
+    views = _views()
+    for name, values in ((views.DATA_STRUCTURE_FIELD, [data_structure.id]),
+                         (views.SCALES_FIELD, views.ranked_sets(data_structure))):
+        listed = vtkStringArray()
+        listed.SetName(name)
+        for value in values:
+            listed.InsertNextValue(str(value))
+        data_set.GetFieldData().AddArray(listed)
 
 
 def _segment_columns(entity_set) -> list:
@@ -186,6 +219,8 @@ def _segments(entity_set, columns: list, data_structure, settings: bool = False,
                   numpy_to_vtkIdTypeArray(connectivity, deep=True))
     polydata.SetLines(cells)
     _add_columns(polydata.GetCellData(), entity_set, rows, polydata.GetFieldData(), settings, forced)
+    _add_ancestors(polydata, data_structure, entity_set.name, rows)
+    _identify(polydata, data_structure)
     if tube_radius is not None:
         radius = np.asarray(tube_radius, dtype=np.float64)[rows]
         polydata.GetPointData().AddArray(_array(_views().TUBE_RADIUS, np.concatenate([radius, radius])))
@@ -211,6 +246,7 @@ def _regular_grid(data_structure, settings: bool = False, kept: np.ndarray = Non
     if kept is not None:
         ghosts = np.where(kept[order], 0, vtkDataSetAttributes.HIDDENCELL).astype(np.uint8)
         image.GetCellData().AddArray(_array(vtkDataSetAttributes.GhostArrayName(), ghosts))
+    _identify(image, data_structure)
     return image
 
 
@@ -242,6 +278,7 @@ def _adaptive_grid(data_structure, settings: bool = False, kept: np.ndarray = No
                        numpy_to_vtkIdTypeArray(np.arange(8 * count, dtype=np.int64), deep=True))
     unstructured.SetCells(VTK_HEXAHEDRON, cell_array)
     _add_columns(unstructured.GetCellData(), cells, rows, unstructured.GetFieldData(), settings, forced)
+    _identify(unstructured, data_structure)
     return unstructured
 
 
@@ -367,6 +404,8 @@ if VTKPythonAlgorithmBase is not None:
         _fspm_tf()                                   # on ParaView's path now: the views macros import it too
     except ImportError:
         pass
+    if os.path.dirname(os.path.abspath(__file__)) not in sys.path:   # and fspm_tf_selection, the selection macros'
+        sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
     @smproxy.reader(name="fspmTFReader", label="fspm-TF reader", extensions="glb json",
                     file_description="fspm-TF frames (.glb) and sequences (scene.fspm.json)")

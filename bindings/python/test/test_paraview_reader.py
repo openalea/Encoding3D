@@ -189,3 +189,27 @@ def test_views_from_a_file_and_wrong_names(tmp_path):
     with pytest.raises(ValueError, match="fspm_tf_views"):
         reader.frame_to_vtk(generate.root_system(), views={"fspm_tf_views": 2, "configurations": {}})
     assert reader.frame_to_vtk(generate.root_system()).GetNumberOfBlocks() == 1          # no views: as before
+
+
+def test_cells_carry_the_ids_of_the_entities_containing_theirs():
+    """What selection by scale reads: each cell the ids of its entity's containing ones, each block its data
+    structure and scales."""
+    from openalea.fspm_tf import views
+    frame = generate.root_system()
+    blocks = blocks_of(frame)
+    lines = blocks[("root_system", "SubOrgan segments")]
+    segments = frame.data_structures[0].entity_set("SubOrgan")
+    np.testing.assert_array_equal(cell_array(lines, "Axis.id"), segments.columns["complex"])
+    assert set(cell_array(lines, "Plant.id")) == {1000.}
+    fields = lines.GetFieldData()
+    assert fields.GetAbstractArray(views.DATA_STRUCTURE_FIELD).GetValue(0) == "root_system"
+    scales = fields.GetAbstractArray(views.SCALES_FIELD)
+    assert [scales.GetValue(number) for number in range(scales.GetNumberOfValues())] == ["Plant", "Axis", "SubOrgan"]
+    mesh = blocks[("root_system", "mesh roots")]
+    arrays = {name: cell_array(mesh, name) for name in ("Plant.id", "Axis.id", "SubOrgan.id")}
+    chosen = views.picked_entities([("root_system", {"Axis.id": np.array([101.])})], "Axis")
+    lateral = views.selection_mask("root_system", arrays, chosen, "Axis")
+    assert 0 < lateral.sum() < mesh.GetNumberOfCells()
+    assert set(arrays["SubOrgan.id"][lateral]) == {60., 61.}                 # the lateral's segments, not its apex
+    soil = blocks_of(generate.soil_and_roots())[("soil", "grid")]
+    assert soil.GetFieldData().GetAbstractArray(views.DATA_STRUCTURE_FIELD).GetValue(0) == "soil"

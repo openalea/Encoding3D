@@ -29,7 +29,7 @@ def display_of(item, view) -> dict:
     display = simple.GetDisplayProperties(item, view)
     array = display.ColorArrayName[1] if display.ColorArrayName and display.ColorArrayName[1] else None
     found = {"visible": bool(display.Visibility), "opacity": float(display.Opacity),
-             "representation": str(display.Representation), "color_array": array,
+             "representation": _views().property_text(display.Representation), "color_array": array,
              "solid_color": [float(value) for value in display.DiffuseColor]}
     if array:
         colours = simple.GetColorTransferFunction(array)
@@ -45,12 +45,12 @@ def save_views(source=None, view=None, configuration: str = None) -> str:
     source = source or simple.GetActiveSource()
     if source is None or not hasattr(source, "Configuration"):
         raise RuntimeError("select an fspm-TF reader in the Pipeline Browser first")
-    file_name = source.FileName if isinstance(source.FileName, str) else source.FileName[0]
-    path = views.views_path(file_name, source.Views)
+    file_name = views.property_text(source.FileName)
+    path = views.views_path(file_name, views.property_text(source.Views) or None)
     if path is None:
         raise RuntimeError(f"no views file for {file_name} (a views.json next to it, or the reader's Views)")
     document = views.read_views(path)
-    name, _ = views.configuration(document, source.Configuration or None)
+    name, _ = views.configuration(document, views.property_text(source.Configuration) or None)
     view = view or simple.GetActiveViewOrCreate("RenderView")
     layers = []
     for layer in document["configurations"][name]["layers"]:
