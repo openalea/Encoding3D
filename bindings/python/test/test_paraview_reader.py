@@ -213,3 +213,54 @@ def test_cells_carry_the_ids_of_the_entities_containing_theirs():
     assert set(arrays["SubOrgan.id"][lateral]) == {60., 61.}                 # the lateral's segments, not its apex
     soil = blocks_of(generate.soil_and_roots())[("soil", "grid")]
     assert soil.GetFieldData().GetAbstractArray(views.DATA_STRUCTURE_FIELD).GetValue(0) == "soil"
+
+
+def test_select_at_scale_grows_picked_cells_in_every_layer():
+    """The "Select at scale" filter's work: the cells picked on a layer (a vtkSelection, as ParaView's) grown to their
+    axis or plant in every layer, the hidden one too, the same blocks, polygonal data kept polygonal; the frame found
+    upstream of items drawn from the reader."""
+    from vtkmodules.vtkCommonCore import vtkIdTypeArray
+    from vtkmodules.vtkCommonDataModel import vtkPolyData, vtkSelection, vtkSelectionNode
+    from vtkmodules.vtkCommonExecutionModel import vtkTrivialProducer
+    from vtkmodules.vtkFiltersCore import vtkPassThrough
+    from test_views import roots_views
+    frame = generate.root_system()
+    data = reader.frame_to_vtk(frame, views=roots_views())                # layers "first order", "roots" (hidden)
+    lines = data.GetBlock(1)
+    cell = int(np.flatnonzero(cell_array(lines, "Axis.id") == 101.)[0])
+    node = vtkSelectionNode()
+    node.SetFieldType(vtkSelectionNode.CELL)
+    node.SetContentType(vtkSelectionNode.INDICES)
+    ids = vtkIdTypeArray()
+    ids.InsertNextValue(cell)
+    node.SetSelectionList(ids)
+    node.GetProperties().Set(vtkSelectionNode.COMPOSITE_INDEX(), 2)    # the roots block (flat index 2)
+    selection = vtkSelection()
+    selection.AddNode(node)
+    picked = reader.picked_cells(data, selection)
+    assert [data_structure for data_structure, _ in picked] == ["root_system"]
+    assert set(picked[0][1]["Axis.id"]) == {101.}
+    assert reader.scales_of(data) == ["Plant", "Axis", "SubOrgan"]
+    grown = reader.grow_selection(data, picked, "Axis")
+    assert [grown.GetMetaData(number).Get(grown.NAME()) for number in range(2)] == ["first order", "roots"]
+    axis_lines = grown.GetBlock(1)
+    assert isinstance(axis_lines, vtkPolyData) and set(cell_array(axis_lines, "Axis.id")) == {101.}
+    assert axis_lines.GetNumberOfCells() == (cell_array(lines, "Axis.id") == 101.).sum()
+    assert axis_lines.GetCellData().GetScalars().GetName() == "SubOrgan.label_code"     # the layer's colouring
+    assert axis_lines.GetPointData().GetArray("tube_radius") is not None                 # a Tube can follow
+    first_order = grown.GetBlock(0)
+    assert first_order.GetNumberOfCells() == 0                    # the lateral is not of the first order
+    plant = reader.grow_selection(data, picked, "Plant")
+    assert plant.GetBlock(0).GetNumberOfCells() == data.GetBlock(0).GetNumberOfCells()
+    assert plant.GetBlock(1).GetNumberOfCells() == lines.GetNumberOfCells()
+    with pytest.raises(ValueError, match="Compartment"):
+        reader.grow_selection(data, picked, "Compartment")
+    assert reader.picked_cells(data, vtkSelection()) == []
+    producer = vtkTrivialProducer()                                 # the reader, an item drawn from it, the filter
+    producer.SetOutput(data)
+    item, filter_algorithm = vtkPassThrough(), vtkPassThrough()
+    item.SetInputConnection(producer.GetOutputPort())
+    filter_algorithm.SetInputConnection(item.GetOutputPort())
+    filter_algorithm.Update()
+    assert reader.frame_upstream(filter_algorithm) is data
+    assert reader.frame_upstream(producer) is None

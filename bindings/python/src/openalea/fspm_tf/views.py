@@ -20,10 +20,11 @@ drawn::
 ParaView's macros (paraview/apply_fspm_tf_views.py, save_fspm_tf_views.py) go through display_settings(layer) (a
 layer to its display options) and layer_from_display(layer, display) (back, to save them), plain dicts both ways.
 
-Selection by scale (paraview/select_at_scale.py, clear_selection.py): the reader gives every cell the ids of its
-entity and of the entities containing it ("<entity set>.id", ancestor_ids), and each block its data structure and
-its graph's scales as field data; picked_entities(picked, scale) grows picked cells to their entities at *scale*,
-selection_mask(...) gives the cells of any block those entities contain, at any finer scale.
+Selection by scale (the plugin's filter "fspm-TF Select at scale", the macro paraview/show_fspm_tf_selection.py): the
+reader gives every cell the ids of its entity and of the entities containing it ("<entity set>.id", ancestor_ids),
+and each block its data structure and its graph's scales as field data (scale_names: the filter's drop-down);
+picked_entities(picked, scale) grows picked cells to their entities at *scale*, selection_mask(...) gives the cells of
+any block those entities contain, at any finer scale.
 """
 import copy
 import json
@@ -377,6 +378,13 @@ def ranked_sets(data_structure) -> list:
     """The names of a graph's ranked entity sets (its scales), coarser first; [] for a grid."""
     ranked = [entity_set for entity_set in data_structure.entity_sets if entity_set.rank is not None]
     return [entity_set.name for entity_set in sorted(ranked, key=lambda entity_set: entity_set.rank)]
+
+
+def scale_names(scales: list) -> list:
+    """The scales of several blocks (*scales*: each block's, coarser first) in one list, coarser first: the "Select at
+    scale" filter's drop-down."""
+    longest_first = sorted(scales, key=len, reverse=True)
+    return list(dict.fromkeys(name for names in longest_first for name in names))
 
 
 def ancestor_ids(data_structure, entity_set: str, rows: np.ndarray) -> dict:

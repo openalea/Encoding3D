@@ -10,6 +10,12 @@
 - The ParaView reader: "Views" and "Configuration" (a drop-down), one block per layer holding only its entities;
   `frame_to_vtk(frame, views=, configuration=)`, unchanged without views. The macros `apply_fspm_tf_views.py` (each
   layer its own pipeline item) and `save_fspm_tf_views.py` (the items' display options back into `views.json`).
+- Selection by scale in ParaView: the plugin's filter "fspm-TF Select at scale" (Filters → fspm-TF) takes ParaView's
+  selection and grows the picked cells to their entity at its **Scale** (a drop-down of the frames' scales) with
+  everything it contains, in every layer of the reader, hidden ones included, following the picked entities through
+  the time steps; the macro `show_fspm_tf_selection.py` shows it as its layers, isolated in the view or in a panel of
+  its own, one selection over another, run again to go back. Each cell carries the ids of the entities containing it
+  (`<scale>.id`), each block its data structure and scales.
 
 ## Unreleased: specification 0.3 (draft), coupling platforms
 

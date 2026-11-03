@@ -34,20 +34,29 @@ own pipeline item, and write the items' display options back into the views file
 
 Every cell also has the ids of the entities containing its own ("<entity set>.id" at each coarser scale, through the
 complex links: a root segment's Organ, Axis and Plant), and every block its data structure (field data
-fspm_tf_data_structure) and its graph's scales (fspm_tf_scales, coarser first): the macros select_at_scale.py and
-clear_selection.py grow picked cells to their plant, axis, organ ... with everything it holds, in every layer.
+fspm_tf_data_structure) and its graph's scales (fspm_tf_scales, coarser first). The plugin's filter "fspm-TF Select
+at scale" (Filters > fspm-TF), applied with cells picked on the reader or any item drawn from it, grows them to their
+plant, axis, organ ... ("Scale", a drop-down of the scales) with everything it holds at finer scales, in every block
+of the reader (every layer, the hidden ones included), the same blocks with their arrays; the picked entities are
+followed through the time steps. The macro show_fspm_tf_selection.py draws it as its layers, isolated in the view or
+in a panel of its own.
 
-frame_to_vtk(frame) builds the output without ParaView (VTK only), e.g. for scripts and tests.
+frame_to_vtk(frame) builds the output without ParaView (VTK only), e.g. for scripts and tests; picked_cells and
+grow_selection, the filter's.
 """
 import os
 import sys
 
 import numpy as np
-from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
-from vtkmodules.vtkCommonCore import vtkPoints, vtkStringArray
-from vtkmodules.vtkCommonDataModel import (VTK_HEXAHEDRON, vtkCellArray, vtkDataSetAttributes, vtkImageData,
-                                           vtkMultiBlockDataSet, vtkPolyData, vtkUnstructuredGrid)
-from vtkmodules.vtkCommonExecutionModel import vtkStreamingDemandDrivenPipeline
+from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray, vtk_to_numpy
+from vtkmodules.vtkCommonCore import vtkOutputWindow, vtkPoints, vtkStringArray
+from vtkmodules.vtkCommonDataModel import (VTK_HEXAHEDRON, vtkCellArray, vtkDataObject, vtkDataObjectTree,
+                                           vtkDataSetAttributes, vtkImageData, vtkMultiBlockDataSet, vtkPolyData,
+                                           vtkSelection, vtkUnstructuredGrid)
+from vtkmodules.vtkCommonExecutionModel import vtkAlgorithm, vtkStreamingDemandDrivenPipeline
+from vtkmodules.vtkFiltersCore import vtkThreshold
+from vtkmodules.vtkFiltersExtraction import vtkExtractSelection
+from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
 
 
 def _fspm_tf():
@@ -392,6 +401,153 @@ class Source:
         return self._cache[number]
 
 
+# ── Selection by scale ───────────────────────────────────────────────────────
+
+SELECT_AT_SCALE = "fspmTFSelectAtScale"   # the filter's proxy name
+SELECTED = "fspm_tf_selected"             # the cell array _kept thresholds
+
+
+def leaves(data) -> list:
+    """The data sets of *data*, a data set or a composite one, in its tree's order."""
+    if data is None:
+        return []
+    if not isinstance(data, vtkDataObjectTree):
+        return [data]
+    iterator = data.NewTreeIterator()
+    iterator.VisitOnlyLeavesOn()
+    iterator.InitTraversal()
+    found = []
+    while not iterator.IsDoneWithTraversal():
+        found.append(iterator.GetCurrentDataObject())
+        iterator.GoToNextItem()
+    return found
+
+
+def _texts(data_set, name: str) -> list:
+    array = data_set.GetFieldData().GetAbstractArray(name)
+    return [array.GetValue(number) for number in range(array.GetNumberOfValues())] if array is not None else []
+
+
+def _id_arrays(data_set) -> dict:
+    """{"<scale>.id": values} of a data set's cells."""
+    cell_data = data_set.GetCellData()
+    names = [cell_data.GetArrayName(number) for number in range(cell_data.GetNumberOfArrays())]
+    return {name: vtk_to_numpy(cell_data.GetArray(name)) for name in names if name and name.endswith(".id")}
+
+
+def fspm_tf_data(data) -> bool:
+    """Whether *data* holds blocks of the fspm-TF reader (their data structure in field data)."""
+    return any(_texts(leaf, _views().DATA_STRUCTURE_FIELD) for leaf in leaves(data))
+
+
+def scales_of(data) -> list:
+    """The scales of *data*'s blocks (their field data fspm_tf_scales), coarser first."""
+    return _views().scale_names([_texts(leaf, _views().SCALES_FIELD) for leaf in leaves(data)])
+
+
+def picked_cells(data, selection) -> list:
+    """[(data structure, {"<scale>.id": values})] of the cells of *data* (the reader's output or an item drawn from
+    it: an ExtractBlock, a Tube ...) in *selection* (a vtkSelection: ids, a frustum, a query ...), one entry per block
+    holding some."""
+    if data is None or selection is None or not selection.GetNumberOfNodes():
+        return []
+    copied, chosen = data.NewInstance(), vtkSelection()
+    copied.ShallowCopy(data)
+    chosen.ShallowCopy(selection)
+    extraction = vtkExtractSelection()
+    extraction.PreserveTopologyOn()                         # the same blocks, each cell marked inside or not
+    extraction.SetInputData(0, copied)
+    extraction.SetInputData(1, chosen)
+    extraction.Update()
+    marked_data, found = extraction.GetOutputDataObject(0), []
+    if isinstance(data, vtkDataObjectTree):                 # each block and its marks (a block without any: none)
+        iterator = data.NewTreeIterator()
+        iterator.InitTraversal()
+        pairs = []
+        while not iterator.IsDoneWithTraversal():
+            pairs.append((iterator.GetCurrentDataObject(), marked_data.GetDataSet(iterator)))
+            iterator.GoToNextItem()
+    else:
+        pairs = [(data, marked_data)]
+    for leaf, marked in pairs:
+        inside = marked.GetCellData().GetArray("vtkInsidedness") if marked is not None else None
+        data_structure = _texts(leaf, _views().DATA_STRUCTURE_FIELD)
+        if inside is None or not data_structure:
+            continue
+        cells = vtk_to_numpy(inside).astype(bool)
+        if cells.any():
+            found.append((data_structure[0], {name: values[cells] for name, values in _id_arrays(leaf).items()}))
+    return found
+
+
+def _kept(data_set, chosen: dict, scale: str):
+    """The cells of *data_set* inside the entities *chosen* at *scale* (a grid layer's hidden cells included), its
+    field data and active scalars kept; polygonal data stays polygonal (a Tube can follow)."""
+    views = _views()
+    data_structure = (_texts(data_set, views.DATA_STRUCTURE_FIELD) or [""])[0]
+    mask = views.selection_mask(data_structure, _id_arrays(data_set), chosen, scale)
+    if mask.size != data_set.GetNumberOfCells() or not mask.any():      # a block without id arrays, or none in it
+        empty = data_set.NewInstance()
+        empty.GetFieldData().ShallowCopy(data_set.GetFieldData())
+        return empty
+    marked = data_set.NewInstance()
+    marked.ShallowCopy(data_set)
+    marked.GetCellData().RemoveArray(vtkDataSetAttributes.GhostArrayName())
+    marked.GetCellData().AddArray(_array(SELECTED, mask.astype(np.uint8)))
+    threshold = vtkThreshold()
+    threshold.SetInputData(marked)
+    threshold.SetInputArrayToProcess(0, 0, 0, vtkDataObject.FIELD_ASSOCIATION_CELLS, SELECTED)
+    threshold.SetThresholdFunction(vtkThreshold.THRESHOLD_UPPER)
+    threshold.SetUpperThreshold(0.5)
+    threshold.SetLowerThreshold(0.5)
+    last = threshold
+    if isinstance(data_set, vtkPolyData):
+        last = vtkGeometryFilter()
+        last.SetInputConnection(threshold.GetOutputPort())
+    last.Update()
+    output = last.GetOutput()
+    output.GetCellData().RemoveArray(SELECTED)
+    scalars = data_set.GetCellData().GetScalars()
+    if scalars is not None and scalars.GetName():
+        output.GetCellData().SetActiveScalars(scalars.GetName())
+    output.GetFieldData().ShallowCopy(data_set.GetFieldData())
+    return output
+
+
+def grow_selection(frame_data, picked: list, scale: str) -> vtkMultiBlockDataSet:
+    """The cells of *frame_data* (the reader's output: its blocks, a layer's hidden ones included) inside the entities
+    at *scale* containing the *picked* cells (picked_cells'), with everything they contain at finer scales: the same
+    blocks, named alike, each holding its part (empty when none). A ValueError when no picked cell has an entity at
+    *scale*."""
+    chosen = _views().picked_entities(picked, scale)
+    output = vtkMultiBlockDataSet()
+    if isinstance(frame_data, vtkDataObjectTree):
+        output.CopyStructure(frame_data)
+        iterator = frame_data.NewTreeIterator()
+        iterator.InitTraversal()
+        while not iterator.IsDoneWithTraversal():
+            output.SetDataSet(iterator, _kept(iterator.GetCurrentDataObject(), chosen, scale))
+            iterator.GoToNextItem()
+    elif frame_data is not None:
+        output.SetBlock(0, _kept(frame_data, chosen, scale))
+    return output
+
+
+def frame_upstream(algorithm, port: int = 0):
+    """The output of the fspm-TF reader upstream of *algorithm*'s input *port*, through the items drawn from it (the
+    farthest output holding fspm-TF blocks): where selection by scale grows, in every layer, the hidden ones included;
+    None when there is none."""
+    found = None
+    while algorithm.GetNumberOfInputPorts() > port and algorithm.GetNumberOfInputConnections(port):
+        connection = algorithm.GetInputConnection(port, 0)
+        producer = connection.GetProducer()
+        data = producer.GetOutputDataObject(connection.GetIndex())
+        if fspm_tf_data(data):
+            found = data
+        algorithm, port = producer, 0
+    return found
+
+
 # ── The ParaView reader ──────────────────────────────────────────────────────
 
 try:
@@ -404,7 +560,7 @@ if VTKPythonAlgorithmBase is not None:
         _fspm_tf()                                   # on ParaView's path now: the views macros import it too
     except ImportError:
         pass
-    if os.path.dirname(os.path.abspath(__file__)) not in sys.path:   # and fspm_tf_selection, the selection macros'
+    if os.path.dirname(os.path.abspath(__file__)) not in sys.path:   # and fspm_tf_selection, the selection macro's
         sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
     @smproxy.reader(name="fspmTFReader", label="fspm-TF reader", extensions="glb json",
@@ -498,4 +654,92 @@ if VTKPythonAlgorithmBase is not None:
                                             configuration=self._configuration or None))
             if time is not None:
                 output.GetInformation().Set(output.DATA_TIME_STEP(), frame.time)
+            return 1
+
+    @smproxy.filter(name=SELECT_AT_SCALE, label="fspm-TF Select at scale")
+    @smhint.xml("""<ShowInMenu category="fspm-TF"/>""")
+    @smhint.xml("""<InitializationHelper class="vtkSMExtractSelectionProxyInitializationHelper"/>""")
+    @smhint.xml("""<ReplaceInput value="0"/>""")
+    @smproperty.xml("""<InputProperty name="Selection" command="SetInputConnection" port_index="1">
+                         <ProxyGroupDomain name="groups">
+                           <Group name="sources"/><Group name="filters"/>
+                         </ProxyGroupDomain>
+                         <DataTypeDomain name="input_type"><DataType value="vtkSelection"/></DataTypeDomain>
+                         <Documentation>The cells picked in the view: ParaView's selection when the filter is made
+                         ("Copy Active Selection" to take another).</Documentation>
+                         <Hints><SelectionInput/></Hints>
+                       </InputProperty>""")
+    @smproperty.xml("""<InputProperty name="Input" command="SetInputConnection" port_index="0">
+                         <ProxyGroupDomain name="groups">
+                           <Group name="sources"/><Group name="filters"/>
+                         </ProxyGroupDomain>
+                         <DataTypeDomain name="input_type"><DataType value="vtkDataObject"/></DataTypeDomain>
+                         <Documentation>The item the cells were picked on: the fspm-TF reader, a layer, a selection
+                         ...</Documentation>
+                       </InputProperty>""")
+    class FspmTFSelectAtScale(VTKPythonAlgorithmBase):
+        """The cells picked on its input grown to their entity at Scale (a plant, an axis, an organ, a segment ...)
+        with everything it contains at finer scales, in every block of the fspm-TF reader upstream (every layer, the
+        hidden ones included: a segment's section). The picked entities are kept across time steps (the plant
+        followed as it grows) until the selection changes; Scale re-grows them."""
+
+        def __init__(self):
+            VTKPythonAlgorithmBase.__init__(self, nInputPorts=2, nOutputPorts=1, outputType="vtkMultiBlockDataSet")
+            self._scale, self._scales = "", []
+            self._picked, self._picked_from = [], None
+
+        def FillInputPortInformation(self, port, info):
+            if port == 1:
+                info.Set(vtkAlgorithm.INPUT_REQUIRED_DATA_TYPE(), "vtkSelection")
+                info.Set(vtkAlgorithm.INPUT_IS_OPTIONAL(), 1)
+            else:
+                info.Set(vtkAlgorithm.INPUT_REQUIRED_DATA_TYPE(), "vtkDataObject")
+            return 1
+
+        @smproperty.stringvector(name="ScaleNames", information_only="1")
+        def GetScaleNames(self):
+            return self._scales
+
+        @smproperty.stringvector(name="Scale", number_of_elements="1", default_values="")
+        @smdomain.xml("""<StringListDomain name="list">
+                           <RequiredProperties>
+                             <Property name="ScaleNames" function="StringInfo"/>
+                           </RequiredProperties>
+                         </StringListDomain>""")
+        def SetScale(self, name):
+            """The scale the picked cells grow to (empty: the coarsest, e.g. Plant)."""
+            if (name or "") != self._scale:
+                self._scale = name or ""
+                self.Modified()
+
+        def RequestInformation(self, request, in_info, out_info):
+            frame_data = frame_upstream(self)
+            if frame_data is None:
+                frame_data = in_info[0].GetInformationObject(0).Get(vtkDataObject.DATA_OBJECT())
+            self._scales = scales_of(frame_data)
+            return 1
+
+        def RequestData(self, request, in_info, out_info):
+            output = vtkMultiBlockDataSet.GetData(out_info, 0)
+            source = in_info[0].GetInformationObject(0).Get(vtkDataObject.DATA_OBJECT())
+            selection = vtkSelection.GetData(in_info[1], 0) if in_info[1].GetNumberOfInformationObjects() else None
+            frame_data = frame_upstream(self) or source
+            self._scales = scales_of(frame_data)
+            picked_from = (selection.GetMTime() if selection is not None else None,
+                           self.GetInputConnection(0, 0).GetProducer().GetAddressAsString("vtkObject"))
+            if picked_from != self._picked_from:              # a new selection: its entities picked at this time,
+                self._picked = picked_cells(source, selection)  # then followed through the time steps
+                self._picked_from = picked_from
+            scale = self._scale or (self._scales[0] if self._scales else "")
+            try:
+                output.ShallowCopy(grow_selection(frame_data, self._picked, scale))
+            except ValueError as error:
+                vtkOutputWindow.GetInstance().DisplayWarningText(f"fspm-TF Select at scale: {error}\n")
+                empty = vtkMultiBlockDataSet()
+                if isinstance(frame_data, vtkDataObjectTree):
+                    empty.CopyStructure(frame_data)
+                output.ShallowCopy(empty)
+            if source is not None and source.GetInformation().Has(vtkDataObject.DATA_TIME_STEP()):
+                output.GetInformation().Set(vtkDataObject.DATA_TIME_STEP(),
+                                            source.GetInformation().Get(vtkDataObject.DATA_TIME_STEP()))
             return 1

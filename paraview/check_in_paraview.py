@@ -1,15 +1,18 @@
 """
 The reader inside ParaView: loads the plugin, opens conformance files and a sequence, checks their blocks, arrays and
 time steps, and renders a picture of each; then a frame with views (one block per layer, the configurations'
-drop-down), the macros applying and saving them, and selection by scale (isolated, then cleared).
+drop-down), the macros applying and saving them, and selection by scale (the filter "fspm-TF Select at scale", its
+Scale drop-down, the macro showing it isolated, then going back).
 
     pvpython paraview/check_in_paraview.py conformance [output folder]
 
 A design check, by hand (no test runs it): a sequence with its views.json (e.g. metafspm's
 SceneRecorder(frame_views="default", display_period=...) frames of plants with shoots, roots and sections, and a soil
-grid) opened, each configuration applied, saved back unchanged and changed (the round trip), then selections at each
-scale, isolated and in a panel, and cleared; a screenshot of each step in the output folder, to look at (colours,
-opacities, tubes, hidden layers, isolation). The views file is put back as it was.
+grid) opened, each configuration applied, saved back unchanged and changed (the round trip), then selections by the
+filter "fspm-TF Select at scale" (cells picked as a click would, the filter made with ParaView's selection as the GUI
+makes it, its Scale switched, the time stepped), shown by the macro isolated, in a panel, one over another, and put
+back; a screenshot of each step in the output folder, to look at (colours, opacities, tubes, hidden layers,
+isolation). The views file is put back as it was.
 
     pvbatch paraview/check_in_paraview.py --design outputs/frames/scene.fspm.json screenshots
 """
@@ -134,16 +137,34 @@ def check_conformance() -> None:
 
         import fspm_tf_selection
         lateral = pick(tube, "Axis.id", 101.)
-        made = fspm_tf_selection.select_at_scale("Axis", "isolate")
-        assert sorted(made) == ["mesh selection", "roots selection"], made
-        assert set(servermanager.Fetch(simple.FindSource("roots selection")).GetBlock(0).GetCellData()
-                   .GetArray("Axis.id").GetRange()) == {101.}, lateral
+        selection = fspmTFSelectatscale(Input=tube)  # noqa: F821       (ParaView's selection, as the GUI takes it)
+        assert selection.Selection is not None
+        assert scale_names(selection) == ["Plant", "Axis", "SubOrgan"], scale_names(selection)
+        assert selection.Scale == "Plant"                              # the drop-down's first, the coarsest
+        selection.Scale = "Axis"
+        selection.UpdatePipeline()
+        grown = servermanager.Fetch(selection)
+        assert grown.GetNumberOfBlocks() == 2                         # the layers, the hidden one too
+        assert set(grown.GetBlock(0).GetCellData().GetArray("Axis.id").GetRange()) == {101.}, lateral
+        assert 0 < grown.GetBlock(1).GetNumberOfCells() < servermanager.Fetch(viewed).GetBlock(1).GetNumberOfCells()
+        made = fspm_tf_selection.show_selection(selection, "isolate")
+        assert sorted(made) == ["mesh selection", "roots selection", "roots selection block"], made
         assert not simple.GetDisplayProperties(tube).Visibility
-        fspm_tf_selection.clear_selection()
+        assert fspm_tf_selection.back()
         assert simple.GetDisplayProperties(tube).Visibility and simple.FindSource("roots selection") is None
+        simple.Delete(selection)                                      # the selection dropped
         viewed.Configuration = "mesh only"
         viewed.UpdatePipeline()
         assert blocks(viewed) == 1
+
+
+def cells(name: str) -> int:
+    return simple.FindSource(name).GetDataInformation().GetNumberOfCells()
+
+
+def scale_names(selection) -> list:
+    selection.UpdatePropertyInformation()
+    return list(selection.GetProperty("ScaleNames"))
 
 
 def pick(item, array: str, value: float) -> int:
@@ -163,6 +184,13 @@ def screenshot(view, name: str) -> None:
     os.makedirs(pictures, exist_ok=True)
     path = os.path.join(pictures, f"{name}.png")
     simple.SaveScreenshot(path, view, ImageResolution=[900, 700])
+    print("screenshot", path)
+
+
+def layout_screenshot(layout, name: str) -> None:
+    os.makedirs(pictures, exist_ok=True)
+    path = os.path.join(pictures, f"{name}.png")
+    simple.SaveScreenshot(path, layout, ImageResolution=[1600, 700])
     print("screenshot", path)
 
 
@@ -236,6 +264,7 @@ def check_design(index_path: str) -> None:
         screenshot(view, "2_views_shoot_opacity_0.3")
 
         roots = next(layer["name"] for layer in layers if layer["name"].endswith("roots"))
+        sections = next(layer["name"] for layer in layers if "Section" in layer["name"])
         roots_item = simple.FindSource(roots)
         data = servermanager.Fetch(roots_item)
         leaf = data.GetBlock(0) if hasattr(data, "GetNumberOfBlocks") else data
@@ -244,25 +273,49 @@ def check_design(index_path: str) -> None:
         axes = vtk_to_numpy(leaf.GetCellData().GetArray("Axis.id"))
         lateral = float(axes.max())                           # the last axis: a lateral root
         pick(roots_item, "Axis.id", lateral)
-        fspm_tf_selection.select_at_scale("Axis", "isolate")
+        selection = fspmTFSelectatscale(Input=roots_item)  # noqa: F821   (the GUI's Filters > fspm-TF, Apply)
+        scales = scale_names(selection)
+        print("scales", scales)
+        assert scales[0] == "Plant" and "Axis" in scales and "Compartment" in scales, scales
+        selection.Scale = "Axis"
+        run_macro("show_fspm_tf_selection.py", selection)    # the macro, MODE "isolate"
         screenshot(view, "3_isolate_axis")
-        hidden = [layer["name"] for layer in layers if displayed(view, layer["name"])["visible"]]
-        assert hidden == [], hidden
-        fspm_tf_selection.clear_selection()
+        assert [layer["name"] for layer in layers if displayed(view, layer["name"])["visible"]] == []
+        part = simple.FindSource(f"{roots} selection")
+        assert set(servermanager.Fetch(part).GetBlock(0).GetCellData().GetArray("Axis.id").GetRange()) == {lateral}
+        axis_cells = cells(f"{roots} selection block")
+        selection.Scale = "Plant"                             # the drop-down changed, Apply: re-grown
+        simple.Render(view)
+        assert cells(f"{roots} selection block") > axis_cells, (cells(f"{roots} selection block"), axis_cells)
+        screenshot(view, "4_isolate_scale_switched_to_plant")
+        if reader.TimestepValues:                             # stepping in time: the same plant followed
+            first = list(reader.TimestepValues)[0]
+            view.ViewTime = first
+            simple.Render(view)
+            plant_ids = servermanager.Fetch(simple.FindSource(f"{roots} selection block")).GetBlock(0)
+            print("first time step", first, "plant", plant_ids.GetCellData().GetArray("Plant.id").GetRange())
+            screenshot(view, "5_isolate_plant_first_time_step")
+            view.ViewTime = last
+            simple.Render(view)
+        run_macro("show_fspm_tf_selection.py", selection)    # run again: put back
         after = {layer["name"]: displayed(view, layer["name"]) for layer in layers}
         before[shoot]["opacity"] = 0.3
         assert after == before, (after, before)                # as they were
-        screenshot(view, "4_cleared")
+        assert simple.FindSource(f"{roots} selection") is None
+        simple.Delete(selection)                              # the selection dropped
+        screenshot(view, "6_put_back")
 
         segment = float(vtk_to_numpy(leaf.GetCellData().GetArray("SubOrgan.id"))[
             np.flatnonzero(axes == lateral)[0]])
         pick(roots_item, "SubOrgan.id", segment)
-        made = fspm_tf_selection.select_at_scale("SubOrgan", "isolate")
-        sections = [item for item in made if "Section" in item]
-        assert sections and simple.FindSource(sections[0]).GetDataInformation().GetNumberOfCells() > 0, made
+        selection = fspmTFSelectatscale(Input=roots_item, Scale="SubOrgan")  # noqa: F821
+        fspm_tf_selection.show_selection(selection, "isolate")
+        assert cells(f"{sections} selection") > 0             # the hidden layer's part: the segment's section
+        assert displayed(view, f"{sections} selection")["visible"]
         view.ResetCamera()
-        screenshot(view, "5_isolate_segment_with_its_section")
-        fspm_tf_selection.clear_selection()
+        screenshot(view, "7_isolate_segment_with_its_section")
+        fspm_tf_selection.back()
+        simple.Delete(selection)
         side_view(view)
 
         shoot_item = simple.FindSource(shoot)
@@ -270,16 +323,31 @@ def check_design(index_path: str) -> None:
         shoot_leaf = shoot_data.GetBlock(0) if hasattr(shoot_data, "GetNumberOfBlocks") else shoot_data
         plant = float(vtk_to_numpy(shoot_leaf.GetCellData().GetArray("Plant.id"))[0])
         pick(shoot_item, "Plant.id", plant)
-        fspm_tf_selection.select_at_scale("Plant", "panel")
+        plant_selection = fspmTFSelectatscale(Input=shoot_item)  # noqa: F821   (Scale: Plant, the first)
+        fspm_tf_selection.show_selection(plant_selection, "panel")
         layout = simple.GetLayout(view)
         layout.SetSize(1600, 700)
-        os.makedirs(pictures, exist_ok=True)
-        simple.SaveScreenshot(os.path.join(pictures, "6_panel_plant.png"), layout, ImageResolution=[1600, 700])
-        print("screenshot", os.path.join(pictures, "6_panel_plant.png"))
+        layout_screenshot(layout, "8_panel_plant")
         assert {layer["name"]: displayed(view, layer["name"]) for layer in layers} == before   # the view untouched
-        fspm_tf_selection.clear_selection()
+
+        panel = [proxy for proxy in fspm_tf_selection._named_views().values() if proxy.SMProxy is not view.SMProxy][0]
+        simple.SetActiveView(panel)                           # an axis of the plant, picked in the panel
+        plant_roots = simple.FindSource(f"{roots} selection")
+        plant_axes = vtk_to_numpy(servermanager.Fetch(plant_roots).GetBlock(0).GetCellData().GetArray("Axis.id"))
+        pick(plant_roots, "Axis.id", float(plant_axes.max()))
+        axis_selection = fspmTFSelectatscale(Input=plant_roots, Scale="Axis")  # noqa: F821
+        made = fspm_tf_selection.show_selection(axis_selection, "isolate", panel)
+        assert f"{roots} selection 2" in made, made
+        assert not displayed(panel, f"{roots} selection")["visible"]
+        layout_screenshot(layout, "9_panel_an_axis_of_the_plant")
+        assert fspm_tf_selection.back()                       # back to the plant in the panel
+        assert displayed(panel, f"{roots} selection")["visible"]
+        simple.Delete(axis_selection)
+        assert fspm_tf_selection.back()                       # the panel closed
+        simple.Delete(plant_selection)
+        simple.SetActiveView(view)
         view.ViewSize = [900, 700]
-        screenshot(view, "7_panel_cleared")
+        screenshot(view, "10_panel_closed")
 
         reader.Configuration = "roots and sections"           # the drop-down
         reader.UpdatePipeline(last)
@@ -290,7 +358,7 @@ def check_design(index_path: str) -> None:
         points = list(colours.RGBPoints)
         assert colours.UseLogScale and abs(points[0] - 0.002) < 1e-12 and abs(points[-4] - 0.005) < 1e-12, points
         side_view(view)
-        screenshot(view, "8_configuration_roots_and_sections")
+        screenshot(view, "11_configuration_roots_and_sections")
         run_macro("save_fspm_tf_views.py", reader)           # its range and log scale read back
         saved = views.configuration(views.read_views(views_file), "roots and sections")[1]
         assert saved == [views.filled(layer) for layer in roots_only], (saved, roots_only)

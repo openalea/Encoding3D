@@ -275,6 +275,8 @@ def test_picked_cells_grow_to_their_entity_and_what_it_contains():
                                   [False] * 2)                       # a block without the scale: none of it
     assert views.isolated({"roots": True, "shoot": True, "sections": False, "roots selection": True},
                           ["roots selection"]) == ["roots", "shoot"]
+    blocks = [["Plant", "Axis", "SubOrgan"], [], ["Plant", "Axis", "Organ", "SubOrgan", "Compartment"]]
+    assert views.scale_names(blocks) == ["Plant", "Axis", "Organ", "SubOrgan", "Compartment"]   # every block's
 
 
 def test_views_are_checked_without_jsonschema(monkeypatch):

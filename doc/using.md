@@ -102,30 +102,48 @@ print(report)
 
 ### Selecting a plant, an axis, an organ
 
-Two more macros in `paraview/` select by scale: pick an element, and see its whole plant, axis, organ or segment,
+The plugin has a filter that selects by scale: pick an element, and get its whole plant, axis, organ or segment,
 with everything it contains at finer scales, in every layer, hidden ones included (a segment's section drawings, a
-hidden layer by default, show for the selection only).
+hidden layer by default, come with the selection).
 
-1. Load them once like the others: **Macros → Import new macro…**, `paraview/select_at_scale.py`, then
-   `paraview/clear_fspm_tf_selection.py`. At the top of `select_at_scale` (**Macros → Edit…**), set `SCALE` (an
-   entity set of the frames: `Plant`, `Axis`, `Organ`, `SubOrgan`, … `Compartment`) and `MODE`.
-2. Pick cells in the view (**Select Cells On**, or `s`), on any layer: a leaf, a root segment.
-3. Run **select_at_scale**. With `MODE = "isolate"`, the view shows only the selection, the other items hidden;
-   with `MODE = "panel"`, a new view opens beside it with the selection alone, its camera fit to it, the first view
-   untouched. Each layer's part is an item named `<layer> selection`, drawn as its layer (the same colour map).
-   Picking again on the selection and running the macro again selects anew (e.g. an axis of the plant shown).
-4. Run **clear_fspm_tf_selection**: the selection's items and panel are removed, the hidden items shown again.
+1. Pick cells in the view (**Select Cells On**, or `s`), on any fspm-TF item: a layer, the reader, or a selection
+   shown before. The item picked on becomes the active one in the Pipeline Browser.
+2. **Filters → fspm-TF → fspm-TF Select at scale**, then **Apply**. The filter takes ParaView's current selection
+   when it is made, as *Extract Selection* does (its **Selection** property: **Copy Active Selection** takes the
+   selection made since, on the same item).
+3. Choose the **Scale** in its Properties: a drop-down of the frames' scales, coarser first (`Plant`, `Axis`,
+   `Organ`, `SubOrgan`, … `Compartment`), `Plant` at first. **Apply** grows the picked cells again.
+4. Play the time steps: the picked entities are kept, so the plant or organ is followed as it grows.
 
-A scale finer than the picked element (a Compartment of a leaf drawn without sections) is reported with the scales
-the picked cells have. The macros need the plugin loaded (it puts their code, `paraview/fspm_tf_selection.py`, on
-ParaView's path); which cells are selected is `openalea.fspm_tf.views.picked_entities` and `selection_mask`, tested
-without ParaView.
+The filter's output is one block per layer, named and filled like the reader's (their variables kept, so the
+layers' colourings apply), each holding the selection's part of the layer (empty when it has none). A scale finer
+than the picked element (a Compartment of a leaf drawn without sections) is reported in the Output Messages, with
+the scales the picked cells have. To drop the selection, delete the filter.
+
+To look at the selection alone, a macro shows it as its layers, each part drawn as its layer (the same colour map,
+a tube for roots):
+
+1. Load it once like the others: **Macros → Import new macro…**, `paraview/show_fspm_tf_selection.py`. At its top
+   (**Macros → Edit…**), set `MODE`.
+2. With the filter selected in the Pipeline Browser, run **show_fspm_tf_selection**. With `MODE = "isolate"`, the
+   view shows only the selection, the other items hidden; with `MODE = "panel"`, a new view opens beside it with
+   the selection alone, its camera fit to it, the first view untouched. Each layer's part is an item named
+   `<layer> selection`; changing the filter's Scale or the time step updates them.
+3. To narrow it (an axis of the plant shown), pick on these items, apply another fspm-TF Select at scale, and run
+   the macro again: it is shown over the first.
+4. Run the macro again (with anything else selected, or the same filter) to go back one step: the items it made are
+   removed, the panel closed, the hidden items shown again. Then delete the filter.
+
+The macro is only for what a filter cannot do: hiding the other items, opening a panel. Both need the plugin
+loaded (it puts the macro's code, `paraview/fspm_tf_selection.py`, on ParaView's path); which cells are selected is
+`openalea.fspm_tf.views.picked_entities` and `selection_mask`, tested without ParaView.
 
 `paraview/check_in_paraview.py` checks all this inside ParaView. `pvpython paraview/check_in_paraview.py
 conformance` runs on the conformance files (the binding tests run it when `FSPM_TF_PVPYTHON` names a `pvpython`);
 `pvbatch paraview/check_in_paraview.py --design <scene.fspm.json> <folder>` is a check by hand, on a sequence with
-its `views.json`: it applies and saves the views, selects at several scales, isolated and in a panel, clears, and
-saves a screenshot of each step in the folder, to look at.
+its `views.json`: it applies and saves the views, selects at several scales with the filter (switching its Scale,
+stepping in time), shows the selections isolated, in a panel and one over another, goes back, and saves a screenshot
+of each step in the folder, to look at.
 
 ## In other viewers
 
