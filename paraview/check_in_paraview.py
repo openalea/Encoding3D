@@ -207,6 +207,13 @@ def displayed(view, name: str) -> dict:
             "representation": display.GetProperty("Representation").GetData()}
 
 
+def display_mesh(layer: dict) -> bool:
+    """Whether *layer* shows a component's display mesh (e.g. sections: a mesh other than the shoot's triangles),
+    whatever its name ("<population> <component>")."""
+    source = layer["source"]
+    return source["kind"] == "mesh" and source.get("mesh") != "triangles"
+
+
 def check_design(index_path: str) -> None:
     """Views and selection by scale on a sequence with its views.json, screenshots in *pictures*."""
     import json
@@ -221,7 +228,7 @@ def check_design(index_path: str) -> None:
         document = views.read_views(views_file)
         name, layers = views.configuration(document)
         roots_only = [dict(layer, visible=True) for layer in layers if "roots" in layer["name"]
-                      or "Section" in layer["name"]]          # a second configuration: the sections shown, the
+                      or display_mesh(layer)]                 # a second configuration: the sections shown, the
         for layer in roots_only:                              # roots by radius, a range, a log scale, a colour map
             if layer.get("tube"):
                 layer.update(color_by={"entity_set": "SubOrgan", "variable": "radius"}, range=[0.002, 0.005],
@@ -264,7 +271,7 @@ def check_design(index_path: str) -> None:
         screenshot(view, "2_views_shoot_opacity_0.3")
 
         roots = next(layer["name"] for layer in layers if layer["name"].endswith("roots"))
-        sections = next(layer["name"] for layer in layers if "Section" in layer["name"])
+        sections = next(layer["name"] for layer in layers if display_mesh(layer))
         roots_item = simple.FindSource(roots)
         data = servermanager.Fetch(roots_item)
         leaf = data.GetBlock(0) if hasattr(data, "GetNumberOfBlocks") else data
