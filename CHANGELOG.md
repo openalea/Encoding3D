@@ -5,15 +5,15 @@
 - Views, an optional companion of a sequence (`views.json`, `spec/schema/views.schema.json`): named configurations
   of layers, each a mesh's, segments' or grid's entities selected by `where` conditions, coloured by a variable (or a
   solid colour), with a colour map, range, log scale, opacity, visibility, representation, and tubes for segments.
-- `openalea.fspm_tf.views`: reading, writing and checking views (the schema, and every name against a frame), the
+- `openalea.encoding3d.views`: reading, writing and checking views (the schema, and every name against a frame), the
   selection, and the display options the ParaView macros apply and save back.
 - The ParaView reader: "Views" and "Configuration" (a drop-down), one block per layer holding only its entities;
-  `frame_to_vtk(frame, views=, configuration=)`, unchanged without views. The macros `apply_fspm_tf_views.py` (each
-  layer its own pipeline item) and `save_fspm_tf_views.py` (the items' display options back into `views.json`).
-- Selection by scale in ParaView: the plugin's filter "fspm-TF Select at scale" (Filters → fspm-TF) takes ParaView's
+  `frame_to_vtk(frame, views=, configuration=)`, unchanged without views. The macros `apply_encoding3d_views.py` (each
+  layer its own pipeline item) and `save_encoding3d_views.py` (the items' display options back into `views.json`).
+- Selection by scale in ParaView: the plugin's filter "encoding3d Select at scale" (Filters → encoding3d) takes ParaView's
   selection and grows the picked cells to their entity at its **Scale** (a drop-down of the frames' scales) with
   everything it contains, in every layer of the reader, hidden ones included, following the picked entities through
-  the time steps; the macro `show_fspm_tf_selection.py` shows it as its layers, isolated in the view or in a panel of
+  the time steps; the macro `show_encoding3d_selection.py` shows it as its layers, isolated in the view or in a panel of
   its own, one selection over another, run again to go back. Each cell carries the ids of the entities containing it
   (`<scale>.id`), each block its data structure and scales.
 
@@ -31,23 +31,23 @@
 - Links between two data structures, through a mapping a participant provides (declared, sent in its updates):
   `sum` shares each source's amount among its targets by weight, `mean` gives each target its sources' weighted mean;
   replayed sequences provide their mappings; a replay declares every entity set and variable of its frames.
-- Coupling conformance sessions (`conformance/coupling/`, written by its `generate.py`), `fspm-tf couple-conformance`,
+- Coupling conformance sessions (`conformance/coupling/`, written by its `generate.py`), `encoding3d couple-conformance`,
   and a participant's program in each codec; partial frames (`update`) in every codec's dump.
-- The C++ participant (`fspm_tf/coupling.hpp`; ZeroMQ with libzmq) and the Java one (`org.openalea.fspmtf.coupling`;
+- The C++ participant (`encoding3d/coupling.hpp`; ZeroMQ with libzmq) and the Java one (`org.openalea.encoding3d.coupling`;
   ZeroMQ with JeroMQ, optional); partial frames in both codecs.
 - CPlantBox's and GroIMP's logs (the adapter's tests, the plugin's headless run) replayed in coupling sessions.
 - The coordinator's lookups by id vectorized, and the Python codec's enum and text columns encoded without per-row
   loops: a step of 100,000 segments takes 99 ms instead of 230 ms.
 
-- Coupling sessions: platforms' models run together, each in its own process, through fspm-TF. Partial frames
+- Coupling sessions: platforms' models run together, each in its own process, through encoding3d. Partial frames
   (`FSPM_scene.update`: the sender, removed entities); the messages (`spec/schema/coupling.schema.json`): a
   participant's declaration (its entity sets and rights, `owns`, `refines`, `follows`; its outputs and inputs), links
   (factors, units, a change of scale), turns and updates; stages; one shared structure with id ranges and removals
   down the scales; two transports, ZeroMQ and a folder of messages; a recorded sequence as a participant (replay,
   held or interpolated linearly).
-- The reference coordinator and participant (`openalea.fspm_tf.coupling`, `fspm-tf couple`), unit conversion factors
-  (`ucum.conversion_factor`); FspmTF.jl's participant (`Participant`, `turns`, `send_update`; ZeroMQ through the
-  `FspmTFZMQExt` extension), tested against the coordinator over both transports.
+- The reference coordinator and participant (`openalea.encoding3d.coupling`, `encoding3d couple`), unit conversion factors
+  (`ucum.conversion_factor`); encoding3d.jl's participant (`Participant`, `turns`, `send_update`; ZeroMQ through the
+  `encoding3dZMQExt` extension), tested against the coordinator over both transports.
 - The Python codec refuses enum columns (labels) with missing values instead of writing an unnamed enum value.
 
 ## Unreleased: specification 0.2 (draft)
@@ -68,11 +68,11 @@
 
 - The specification (`spec/specification.md`), its JSON Schemas and the first vocabulary (41 standard names, the
   labels with their Plant Ontology terms, the enumerations, a column of names per platform).
-- `openalea.fspm_tf`, the Python reference codec (`bindings/python/`): reading and writing frames and sequences, the
-  validator, display copies, the comparison with expected values, the `fspm-tf` command line.
+- `openalea.encoding3d`, the Python reference codec (`bindings/python/`): reading and writing frames and sequences, the
+  validator, display copies, the comparison with expected values, the `encoding3d` command line.
 - The conformance files (`conformance/`), their expected values, and the GitHub action checking a codec against them.
 - The ParaView reader plugin (`paraview/`).
-- FspmTF.jl, the Julia codec (`bindings/julia/FspmTF/`): conformant reading and writing, sequences, and a
+- encoding3d.jl, the Julia codec (`bindings/julia/encoding3d/`): conformant reading and writing, sequences, and a
   MultiScaleTreeGraph.jl package extension (`from_mtg`, `to_mtg`); its CI, `.github/workflows/julia-codec.yml`.
 - The C++ codec (`bindings/cpp/`): conformant reading and writing, sequences, a CMake package; CPlantBox's adapter
   (`bindings/cpp/cplantbox/`: organisms with their geometry, soil grid and mapping; static root systems from any graph
@@ -80,11 +80,11 @@
 - The Java codec (`bindings/java/`): conformant reading and writing, sequences; GroIMP's adapter (`bindings/java/groimp/`:
   scales from refinement edges, topology, edge bits as relations, managed fields; graphs back into the model's node
   classes); its CI, `.github/workflows/java-codec.yml`.
-- GroIMP's plugin (`bindings/java/groimp-plugin/`): the 3D view exported as an fspm-TF frame from GroIMP 3.0 (File >
+- GroIMP's plugin (`bindings/java/groimp-plugin/`): the 3D view exported as an encoding3d frame from GroIMP 3.0 (File >
   Export, CLI `export3d`), its geometry meshed by GroIMP's glTF plugin, each triangle with its node; tested headless in
   GroIMP 3.0.0 in CI.
-- FspmTF.jl: VirtualPlantLab's graphs (PlantGraphs: `from_graph`, `to_graph`) and their turtle geometry
+- encoding3d.jl: VirtualPlantLab's graphs (PlantGraphs: `from_graph`, `to_graph`) and their turtle geometry
   (PlantGeomTurtle: `add_geometry!`), as package extensions.
-- FspmTF.jl: MTGs from graphs with ids from 0 or sparse (numbered 1, 2, ..., ids kept in `fspm_tf_id`), and parents
-  in another complex kept (`fspm_tf_parent`).
+- encoding3d.jl: MTGs from graphs with ids from 0 or sparse (numbered 1, 2, ..., ids kept in `encoding3d_id`), and parents
+  in another complex kept (`encoding3d_parent`).
 - The documentation (`doc/`), with a notebook; the design note (`doc/design_note.md`).

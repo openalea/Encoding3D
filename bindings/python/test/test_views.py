@@ -1,4 +1,4 @@
-"""Frame views (openalea.fspm_tf.views, specification §8.1): the schema, the names checked against a frame, the
+"""Frame views (openalea.encoding3d.views, specification §8.1): the schema, the names checked against a frame, the
 selection, the display options ParaView's macros apply and save back, and the macros themselves on a stand-in for
 paraview.simple."""
 import copy
@@ -12,11 +12,11 @@ import pytest
 import generate
 from conftest import ROOT
 
-from openalea.fspm_tf import views
+from openalea.encoding3d import views
 
 
 def roots_views() -> dict:
-    return {"fspm_tf_views": 1, "active": "default", "configurations": {
+    return {"encoding3d_views": 1, "active": "default", "configurations": {
         "default": {"layers": [
             {"name": "first order", "source": {"data_structure": "root_system", "kind": "mesh", "mesh": "roots"},
              "select": {"entity_set": "Axis", "where": {"branching_order": [1]}},
@@ -69,7 +69,7 @@ def test_a_grid_and_segment_ends_are_needed():
     frame = generate.soil_and_roots()
     layer = {"name": "axes", "source": {"data_structure": "root_system", "kind": "segments", "entity_set": "Axis"}}
     grid = {"name": "soil", "source": {"data_structure": "root_system", "kind": "grid"}}
-    report = views.check_views({"fspm_tf_views": 1, "configurations": {"c": {"layers": [layer, grid]}}}, frame)
+    report = views.check_views({"encoding3d_views": 1, "configurations": {"c": {"layers": [layer, grid]}}}, frame)
     assert len(report.errors) == 2 and "no segment ends" in report.errors[0].message
     assert "has no grid" in report.errors[1].message
 
@@ -102,7 +102,7 @@ def test_configurations_and_their_defaults(tmp_path):
     frame_path = str(tmp_path / "frame_000000.glb")
     assert views.views_path(frame_path) == path and views.views_path(frame_path, "other.json") is None
     with pytest.raises(ValueError, match="views"):
-        views.write_views(path, {"fspm_tf_views": 2, "configurations": {}})
+        views.write_views(path, {"encoding3d_views": 2, "configurations": {}})
 
 
 def test_display_settings_and_back():
@@ -221,21 +221,21 @@ def test_the_macros_apply_and_save_views(tmp_path, monkeypatch):
     views.write_views(path, roots_views())
     package, simple = _stand_in(lambda simple: _Item(simple, "reader", "scene.fspm.json", Configuration="",
                                                      FileName=str(tmp_path / "scene.fspm.json"), Views=""))
-    _run_macro("apply_fspm_tf_views.py", package, monkeypatch)
+    _run_macro("apply_encoding3d_views.py", package, monkeypatch)
     assert simple.items["first order"].kind == "block" and simple.items["roots"].kind == "tube"
     assert simple.items["roots block"].Selectors == ["/Root/roots"]
     assert simple.items["roots"].Scalars == ["POINTS", views.TUBE_RADIUS]
     assert simple.displays["first order"].ColorArrayName == ["CELLS", "SubOrgan.water_potential"]
     assert simple.displays["roots"].ColorArrayName == ["CELLS", "SubOrgan.label_code"]
     assert simple.displays["roots"].Visibility == 0 and simple.displays["first order"].Visibility == 1
-    _run_macro("apply_fspm_tf_views.py", package, monkeypatch)                  # applied again: replaced
+    _run_macro("apply_encoding3d_views.py", package, monkeypatch)                  # applied again: replaced
     assert sorted(simple.items) == ["first order", "roots", "roots block", "scene.fspm.json"]
 
     simple.displays["first order"].Opacity = 0.25                               # changed in ParaView, then saved
     simple.displays["roots"].Visibility = 1
     simple.colours["SubOrgan.label_code"].RescaleTransferFunction(0., 3.)
     simple.colours["SubOrgan.label_code"].AutomaticRescaleRangeMode = "Never"
-    _run_macro("save_fspm_tf_views.py", package, monkeypatch)
+    _run_macro("save_encoding3d_views.py", package, monkeypatch)
     saved = views.read_views(path)
     first, roots = saved["configurations"]["default"]["layers"]
     assert first["opacity"] == 0.25 and roots["visible"] and roots["range"] == [0., 3.]
@@ -293,4 +293,4 @@ def test_views_are_checked_without_jsonschema(monkeypatch):
     broken = copy.deepcopy(roots_views())
     del broken["configurations"]["plain"]["layers"][0]["source"]["mesh"]
     assert "names its mesh" in str(views.check_views(broken))
-    assert not views.check_views({"fspm_tf_views": 2, "configurations": {}}).ok
+    assert not views.check_views({"encoding3d_views": 2, "configurations": {}}).ok

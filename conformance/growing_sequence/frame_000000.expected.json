@@ -392,7 +392,7 @@
      "rank": 6
     }
    ],
-   "platform": "fspm-tf",
+   "platform": "encoding3d",
    "model": "toy root system",
    "scalars": {
     "name": "scalars",

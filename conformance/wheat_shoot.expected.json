@@ -256,7 +256,7 @@
      "rank": 6
     }
    ],
-   "platform": "fspm-tf",
+   "platform": "encoding3d",
    "model": "toy shoot",
    "meshes": [
     {

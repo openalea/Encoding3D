@@ -1,12 +1,12 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
- "$id": "https://github.com/openalea/fspm-TF/schema/0.3/views.schema.json",
- "title": "fspm-TF frame views",
- "description": "views.json, an optional companion of a sequence (next to its scene.fspm.json) or of a frame: named configurations of layers, each layer a part of a data structure (a mesh, segments or a grid), the entities it selects and how it is drawn (fspm-TF 0.3, §8.1).",
+ "$id": "https://github.com/openalea/encoding3d/schema/0.3/views.schema.json",
+ "title": "encoding3d frame views",
+ "description": "views.json, an optional companion of a sequence (next to its scene.fspm.json) or of a frame: named configurations of layers, each layer a part of a data structure (a mesh, segments or a grid), the entities it selects and how it is drawn (encoding3d 0.3, §8.1).",
  "type": "object",
- "required": ["fspm_tf_views", "configurations"],
+ "required": ["encoding3d_views", "configurations"],
  "properties": {
-  "fspm_tf_views": {"const": 1},
+  "encoding3d_views": {"const": 1},
   "active": {"type": "string", "minLength": 1},
   "configurations": {"type": "object", "minProperties": 1,
                      "additionalProperties": {"$ref": "#/$defs/configuration"}},

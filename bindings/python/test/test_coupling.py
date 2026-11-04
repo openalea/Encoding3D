@@ -1,5 +1,5 @@
 """
-Coupling sessions (openalea.fspm_tf.coupling): two participants on one plant at two scales, a grower owning the
+Coupling sessions (openalea.encoding3d.coupling): two participants on one plant at two scales, a grower owning the
 organs and a function refining them into segments and feeding a supply back, over ZeroMQ and over a folder; the
 resolution's checks and the rights; a recorded session replayed as a participant.
 """
@@ -9,17 +9,17 @@ import threading
 import numpy as np
 import pytest
 
-from openalea import fspm_tf
-from openalea.fspm_tf.coupling import (Coordinator, CouplingError, Declaration, EntitySetSpec, Link, Participant,
+from openalea import encoding3d
+from openalea.encoding3d.coupling import (Coordinator, CouplingError, Declaration, EntitySetSpec, Link, Participant,
                                        VariableSpec, resolve, stages)
-from openalea.fspm_tf.model import NO_ID
-from openalea.fspm_tf.validate import validate_sequence
+from openalea.encoding3d.model import NO_ID
+from openalea.encoding3d.validate import validate_sequence
 
 pytest.importorskip("zmq")
 
-# The command running Julia with FspmTF and ZMQ (e.g. "julia --project=env"): the tests with a Julia participant
-JULIA = os.environ.get("FSPM_TF_JULIA")
-JULIA_FUNCTION = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, "julia", "FspmTF", "test", "coupling",
+# The command running Julia with encoding3d and ZMQ (e.g. "julia --project=env"): the tests with a Julia participant
+JULIA = os.environ.get("ENCODING3D_JULIA")
+JULIA_FUNCTION = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, "julia", "encoding3d", "test", "coupling",
                               "function.jl")
 
 # The session's links: the segments' length is half their organ's (copied from the coarser organs); the organs'
@@ -48,8 +48,8 @@ def organ_frame(name, organs, removed=None):
                "parent": np.array([NO_ID] + organs[:-1], dtype=np.int64),
                "edge_type": np.array(["none"] + ["successor"] * (count - 1), dtype=object),
                "label": np.array(["Leaf"] * count, dtype=object)}
-    return fspm_tf.Frame(data_structures=[fspm_tf.DataStructure("plant", entity_sets=[
-        fspm_tf.EntitySet("Organ", rank=5, columns=columns)])], update=fspm_tf.Update(name, removed or {}))
+    return encoding3d.Frame(data_structures=[encoding3d.DataStructure("plant", entity_sets=[
+        encoding3d.EntitySet("Organ", rank=5, columns=columns)])], update=encoding3d.Update(name, removed or {}))
 
 
 def run_grower(endpoint, log):
@@ -96,8 +96,8 @@ def run_function(endpoint, log, rights="refines"):
                    "edge_type": np.array(["none" if segments[segment][1] == NO_ID else "successor"
                                           for segment in ids], dtype=object),
                    "sugar": np.array([1e-6 * np.nan_to_num(lengths.get(segment, 0.)) for segment in ids])}
-        participant.send(fspm_tf.Frame(data_structures=[fspm_tf.DataStructure("plant", entity_sets=[
-            fspm_tf.EntitySet("SubOrgan", rank=6, columns=columns)])]))
+        participant.send(encoding3d.Frame(data_structures=[encoding3d.DataStructure("plant", entity_sets=[
+            encoding3d.EntitySet("SubOrgan", rank=6, columns=columns)])]))
 
 
 def run_session(endpoint, record=None, function=run_function, **options):
@@ -138,7 +138,7 @@ def check_session(store, supply, removed, record):
     assert len(store.sets[("plant", "SubOrgan")]) == 8
     report = validate_sequence(os.path.join(record, "scene.fspm.json"))
     assert report.ok, report
-    last = fspm_tf.read(os.path.join(record, "frame_00004.glb"))
+    last = encoding3d.read(os.path.join(record, "frame_00004.glb"))
     assert set(last.data_structure("plant").entity_set("SubOrgan").columns) >= {"id", "complex", "sugar"}
 
 
@@ -147,9 +147,9 @@ def test_two_platforms_on_one_plant_at_two_scales(endpoint, tmp_path):
     check_session(store, logs["grower"], logs["function"], str(tmp_path / "record"))
 
 
-@pytest.mark.skipif(not JULIA, reason="FSPM_TF_JULIA (the command running Julia with FspmTF and ZMQ) is not set")
+@pytest.mark.skipif(not JULIA, reason="ENCODING3D_JULIA (the command running Julia with encoding3d and ZMQ) is not set")
 def test_a_julia_participant(endpoint, tmp_path):
-    """The function participant in Julia (FspmTF.jl), launched by the coordinator."""
+    """The function participant in Julia (encoding3d.jl), launched by the coordinator."""
     record = str(tmp_path / "record")
     coordinator = Coordinator(endpoint, steps=4, interval=1., expect=["grower"], links=LINKS, record=record,
                               timeout=300)
@@ -168,7 +168,7 @@ def test_the_messages_follow_their_schema(tmp_path):
     import glob
     import json
     import jsonschema
-    from openalea.fspm_tf.schema import load
+    from openalea.encoding3d.schema import load
     run_session(f"files:{tmp_path / 'session'}", keep_messages=True)
     validator = jsonschema.Draft202012Validator(load("coupling"))
     headers = sorted(glob.glob(str(tmp_path / "session" / "*" / "*" / "*.json")))
@@ -216,7 +216,7 @@ def run_reader(endpoint, log):
     for turn in participant.turns():
         organs = turn.frame.data_structure("plant").entity_set("Organ") if turn.frame.data_structures else None
         log[turn.until] = [] if organs is None else np.asarray(organs.columns["length"]).tolist()
-        participant.send(fspm_tf.Frame())
+        participant.send(encoding3d.Frame())
 
 
 def test_a_recorded_session_replayed(tmp_path):
@@ -241,21 +241,21 @@ def test_a_recorded_session_replayed(tmp_path):
 
 READER_SCRIPT = """
 import numpy as np
-from openalea import fspm_tf
-from openalea.fspm_tf.coupling import Declaration, EntitySetSpec, Participant, VariableSpec
+from openalea import encoding3d
+from openalea.encoding3d.coupling import Declaration, EntitySetSpec, Participant, VariableSpec
 declaration = Declaration("", "test", [EntitySetSpec("plant", "Organ")],
                           [VariableSpec("plant", "Organ", "length", "requires", "m", "length")])
 participant = Participant.connect(declaration, timeout=60)
 for turn in participant.turns():
-    participant.send(fspm_tf.Frame())
+    participant.send(encoding3d.Frame())
 """
 
 
 def test_the_command_line(tmp_path):
-    """fspm-tf couple: a launched participant (its name and endpoint from the environment) and a replay, over a
+    """encoding3d couple: a launched participant (its name and endpoint from the environment) and a replay, over a
     folder, recorded."""
     import sys
-    from openalea.fspm_tf.cli import main
+    from openalea.encoding3d.cli import main
     run_session("tcp://127.0.0.1:*", record=str(tmp_path / "record"))
     script = tmp_path / "reader.py"
     script.write_text(READER_SCRIPT)
@@ -273,7 +273,7 @@ WATER = np.array([0.1, 0.2, 0.3])                   # the soil's three cells
 
 def run_plant(endpoint, log):
     """Two organs, then three; each takes up 1 mol per step and logs the water it receives from the soil."""
-    from openalea.fspm_tf.coupling import Declaration as D
+    from openalea.encoding3d.coupling import Declaration as D
     declaration = D("plant", "test", [EntitySetSpec("plant", "Organ", rights="owns")], [
         VariableSpec("plant", "Organ", "uptake", "provides", "mol", kind="extensive"),
         VariableSpec("plant", "Organ", "water", "requires", "m3/m3", kind="intensive")])
@@ -284,13 +284,13 @@ def run_plant(endpoint, log):
             log[turn.step] = dict(zip(organs.columns["id"].tolist(), np.asarray(organs.columns["water"]).tolist()))
         count = 2 if turn.step < 2 else 3
         ids = participant.id_offset + np.arange(count)
-        participant.send(fspm_tf.Frame(data_structures=[fspm_tf.DataStructure("plant", entity_sets=[
-            fspm_tf.EntitySet("Organ", rank=5, columns={"id": ids, "uptake": np.ones(count)})])]))
+        participant.send(encoding3d.Frame(data_structures=[encoding3d.DataStructure("plant", entity_sets=[
+            encoding3d.EntitySet("Organ", rank=5, columns={"id": ids, "uptake": np.ones(count)})])]))
 
 
 def run_soil(endpoint, log):
     """Three cells; organ i in cells i % 3 (weight 1) and (i + 1) % 3 (weight 3): the mapping it provides."""
-    from openalea.fspm_tf.coupling import MappingSpec
+    from openalea.encoding3d.coupling import MappingSpec
     declaration = Declaration("soil", "test", [EntitySetSpec("soil", "Cell", rank=1, rights="owns"),
                                                EntitySetSpec("plant", "Organ")], [
         VariableSpec("soil", "Cell", "water_content", "provides", "m3/m3", kind="intensive"),
@@ -308,9 +308,9 @@ def run_soil(endpoint, log):
         source = np.repeat(np.array(organs, dtype=np.int64), 2)
         target = np.array([cells[(i + k) % 3] for i in range(len(organs)) for k in (0, 1)], dtype=np.int64)
         weight = np.tile([1., 3.], len(organs))
-        frame = fspm_tf.Frame(data_structures=[fspm_tf.DataStructure("soil", kind="table", entity_sets=[
-            fspm_tf.EntitySet("Cell", rank=1, columns={"id": cells, "water_content": WATER})])])
-        frame.mappings.append(fspm_tf.Mapping("organs_in_soil", source=("plant", "Organ"), target=("soil", "Cell"),
+        frame = encoding3d.Frame(data_structures=[encoding3d.DataStructure("soil", kind="table", entity_sets=[
+            encoding3d.EntitySet("Cell", rank=1, columns={"id": cells, "water_content": WATER})])])
+        frame.mappings.append(encoding3d.Mapping("organs_in_soil", source=("plant", "Organ"), target=("soil", "Cell"),
                                               columns={"source": source, "target": target, "weight": weight}))
         participant.send(frame)
 
@@ -348,11 +348,11 @@ def test_a_link_between_two_data_structures(endpoint, tmp_path):
 
 
 def test_the_conformance_sessions(tmp_path):
-    """Python's participant against conformance/coupling, over both transports (fspm-tf couple-conformance)."""
+    """Python's participant against conformance/coupling, over both transports (encoding3d couple-conformance)."""
     import sys
-    from openalea.fspm_tf.cli import main
+    from openalea.encoding3d.cli import main
     sessions = os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir, "conformance", "coupling")
-    command = f"{sys.executable} -m openalea.fspm_tf.coupling.conformance subject"
+    command = f"{sys.executable} -m openalea.encoding3d.coupling.conformance subject"
     assert main(["couple-conformance", sessions, "--participant", command, "--out", str(tmp_path)]) == 0
 
 
@@ -376,7 +376,7 @@ def test_the_conformance_sessions_are_what_their_generator_writes(tmp_path):
 # anagallis_log/) and GroIMP's (bindings/java/groimp-plugin/test/run_in_groimp.sh writes log/), in their CI jobs
 PLATFORM_LOGS = {"conformance": os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir,
                                              "conformance", "growing_sequence", "scene.fspm.json"),
-                 "CPlantBox": os.environ.get("FSPM_TF_CPLANTBOX_LOG"), "GroIMP": os.environ.get("FSPM_TF_GROIMP_LOG")}
+                 "CPlantBox": os.environ.get("ENCODING3D_CPLANTBOX_LOG"), "GroIMP": os.environ.get("ENCODING3D_GROIMP_LOG")}
 
 
 def _sorted(values):
@@ -394,11 +394,11 @@ def _sorted(values):
 def test_a_platform_log_replayed(platform, tmp_path):
     """A platform's log as a participant: a reader following every entity set and requiring every variable gets, at
     each step, the logged entities (renumbered) and values."""
-    from openalea.fspm_tf.coupling import Replay
-    from openalea.fspm_tf.codec import read_index
+    from openalea.encoding3d.coupling import Replay
+    from openalea.encoding3d.codec import read_index
     index = PLATFORM_LOGS[platform]
     if not index:
-        pytest.skip(f"no {platform} log (FSPM_TF_{platform.upper()}_LOG)")
+        pytest.skip(f"no {platform} log (ENCODING3D_{platform.upper()}_LOG)")
     entries = read_index(index)["frames"]
     times = [entry["time"] for entry in entries]
     replay = Replay("log", index)                               # its declaration: what the reader requires
@@ -414,7 +414,7 @@ def test_a_platform_log_replayed(platform, tmp_path):
             log[turn.step] = {(data_structure.id, entity_set.name): entity_set
                               for data_structure in turn.frame.data_structures
                               for entity_set in data_structure.entity_sets}
-            participant.send(fspm_tf.Frame())
+            participant.send(encoding3d.Frame())
 
     interval = times[1] - times[0] if len(times) > 1 else 1.
     coordinator = Coordinator("tcp://127.0.0.1:*", steps=len(entries) - 1, interval=interval, start=times[0],
@@ -425,7 +425,7 @@ def test_a_platform_log_replayed(platform, tmp_path):
     coordinator.run()
     thread.join(60)
     for step, entry in enumerate(entries):
-        frame = fspm_tf.read(entry["path"])
+        frame = encoding3d.read(entry["path"])
         for data_structure in frame.data_structures:
             for entity_set in data_structure.entity_sets:
                 received = log[step][(data_structure.id, entity_set.name)]

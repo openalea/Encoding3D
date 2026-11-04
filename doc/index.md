@@ -1,9 +1,9 @@
-# fspm-TF
+# encoding3d
 
 **One file format for whole plant-model scenes, shared by the FSPM platforms.**
 
 Functional-structural plant models (FSPM) are written on several platforms: openalea.metafspm (Python), CPlantBox
-(C++), GroIMP (Java) and VirtualPlantLab (Julia). fspm-TF lets them exchange what they simulate. A file holds a whole
+(C++), GroIMP (Java) and VirtualPlantLab (Julia). encoding3d lets them exchange what they simulate. A file holds a whole
 scene at one time step:
 
 - **the plants:** their organs and elements at every scale, from the plant down to the cell, and how they connect;
@@ -16,31 +16,31 @@ can display them. Platforms can also run their models together, step by step, ex
 same format ([Coupling platforms](coupling.md)).
 
 ```{image} _static/images/archisimple.png
-:alt: An ArchiSimple root system read from an fspm-TF file in ParaView, coloured by root order
+:alt: An ArchiSimple root system read from an encoding3d file in ParaView, coloured by root order
 :width: 360px
 :align: center
 ```
 
 The files are glTF 2.0 binaries (`.glb`): the 3D format of the web and of most viewers, extended with typed tables.
 
-## Using fspm-TF
+## Using encoding3d
 
 For those who run models and want to look at, keep or share their results.
 
 ```{toctree}
 :maxdepth: 1
 
-fspm-TF in five minutes <overview>
+encoding3d in five minutes <overview>
 Viewing and checking files <using>
 Reading and writing in Python <python>
-A notebook: fspm-TF in Python <notebooks/fspm_tf_in_python>
+A notebook: encoding3d in Python <notebooks/encoding3d_in_python>
 Reading and writing in Julia <julia>
 Reading and writing in C++, and CPlantBox <cpp>
 Reading and writing in Java, and GroIMP <java>
 Coupling platforms <coupling>
 ```
 
-## Implementing fspm-TF
+## Implementing encoding3d
 
 For platform developers: how a platform reads and writes the format, and how the format evolves.
 

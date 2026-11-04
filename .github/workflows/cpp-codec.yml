@@ -37,8 +37,8 @@ jobs:
       - name: Dump and write the conformance scenes with the C++ codec
         run: |
           cmake -S bindings/cpp -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --target fspm_tf_conformance_run
-          ./build/fspm_tf_conformance_run conformance out
+          cmake --build build --target encoding3d_conformance_run
+          ./build/encoding3d_conformance_run conformance out
       - uses: ./.github/actions/conformance
         with:
           dumps: out/dumps
@@ -48,9 +48,9 @@ jobs:
         run: |
           sudo apt-get install -y -q libzmq3-dev
           cmake -S bindings/cpp -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --target fspm_tf_coupling_conformance
+          cmake --build build --target encoding3d_coupling_conformance
           python -m pip install numpy jsonschema pyzmq .
-          fspm-tf couple-conformance conformance/coupling --participant "$PWD/build/fspm_tf_coupling_conformance"
+          encoding3d couple-conformance conformance/coupling --participant "$PWD/build/encoding3d_coupling_conformance"
 
   cplantbox-adapter:
     runs-on: ubuntu-latest
@@ -65,17 +65,17 @@ jobs:
           cmake --build cplantbox-build --target CPlantBox -j 4
       - name: The codec and the adapter
         run: |
-          cmake -S bindings/cpp -B build -DCMAKE_BUILD_TYPE=Release -DFSPM_TF_CPLANTBOX_SOURCE_DIR="$PWD/cplantbox" \
-                -DFSPM_TF_CPLANTBOX_LIBRARY="$PWD/cplantbox-build/src/libCPlantBox.a"
+          cmake -S bindings/cpp -B build -DCMAKE_BUILD_TYPE=Release -DENCODING3D_CPLANTBOX_SOURCE_DIR="$PWD/cplantbox" \
+                -DENCODING3D_CPLANTBOX_LIBRARY="$PWD/cplantbox-build/src/libCPlantBox.a"
           cmake --build build -j 4
           ctest --test-dir build --output-on-failure
-      - name: What the adapter wrote is valid fspm-TF
+      - name: What the adapter wrote is valid encoding3d
         run: |
           python -m pip install numpy jsonschema .
-          fspm-tf validate build/cplantbox/cplantbox_out/*.glb
+          encoding3d validate build/cplantbox/cplantbox_out/*.glb
       - name: CPlantBox's log replayed in a coupling session
         env:
-          FSPM_TF_CPLANTBOX_LOG: build/cplantbox/cplantbox_out/anagallis_log/scene.fspm.json
+          ENCODING3D_CPLANTBOX_LOG: build/cplantbox/cplantbox_out/anagallis_log/scene.fspm.json
         run: |
           python -m pip install pytest pyzmq
           pytest -v bindings/python/test/test_coupling.py -k platform_log

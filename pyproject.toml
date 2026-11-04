@@ -8,22 +8,22 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 include-package-data = false # force explicit declaration of data (disable automatic inclusion)
 # the code in bindings/python/src; the specification (spec/: its text, schemas and vocabulary) shipped as
-# openalea.fspm_tf.spec. This file stays at the root, next to spec/ (a project cannot ship files outside its folder)
-packages = ["openalea.fspm_tf", "openalea.fspm_tf.coupling", "openalea.fspm_tf.spec"]
-package-dir = {"" = "bindings/python/src", "openalea.fspm_tf.spec" = "spec"}
+# openalea.encoding3d.spec. This file stays at the root, next to spec/ (a project cannot ship files outside its folder)
+packages = ["openalea.encoding3d", "openalea.encoding3d.coupling", "openalea.encoding3d.spec"]
+package-dir = {"" = "bindings/python/src", "openalea.encoding3d.spec" = "spec"}
 
 [tool.setuptools.package-data]
-"openalea.fspm_tf.spec" = ["*.md", "schema/*.json", "vocabulary/*.csv", "vocabulary/*.json"]
+"openalea.encoding3d.spec" = ["*.md", "schema/*.json", "vocabulary/*.csv", "vocabulary/*.json"]
 
 # enable dynamic version based on git tags
 [tool.setuptools_scm]
 
 [project]
-name = "openalea.fspm_tf"
+name = "openalea.encoding3d"
 authors = [
   { name = "Tristan Gérault", email = "tristan.gerault@inrae.fr" },
 ]
-description = "fspm-TF, an exchange format for whole FSPM scenes, with its Python reference codec, validator and vocabulary"
+description = "encoding3d, an exchange format for whole FSPM scenes, with its Python reference codec, validator and vocabulary"
 readme = "README.md"
 license = "CECILL-C"
 license-files = ["LICEN[CS]E*"]
@@ -53,7 +53,7 @@ dependencies = [
 
 [project.optional-dependencies]
 coupling = [
-  "pyzmq",               # the coupling's in-memory transport (openalea.fspm_tf.coupling); its folder transport needs nothing
+  "pyzmq",               # the coupling's in-memory transport (openalea.encoding3d.coupling); its folder transport needs nothing
 ]
 test = [
   "pytest",
@@ -76,14 +76,14 @@ doc = [
 ]
 
 [project.scripts]
-fspm-tf = "openalea.fspm_tf.cli:main"
+encoding3d = "openalea.encoding3d.cli:main"
 
 [project.urls]
-Repository = "https://github.com/openalea/fspm-TF"
-Homepage = "https://github.com/openalea/fspm-TF"
+Repository = "https://github.com/openalea/encoding3d"
+Homepage = "https://github.com/openalea/encoding3d"
 
 [tool.coverage.run]
-source = ["openalea.fspm_tf"]
+source = ["openalea.encoding3d"]
 branch = true
 
 [tool.coverage.report]

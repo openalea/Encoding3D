@@ -1,6 +1,6 @@
 # Contributing
 
-fspm-TF is a format shared by several FSPM platforms. Contributions are welcome from each of them: to the
+encoding3d is a format shared by several FSPM platforms. Contributions are welcome from each of them: to the
 specification, to the vocabulary, to a codec, to the tools.
 
 ## What goes where
@@ -19,7 +19,7 @@ specification, to the vocabulary, to a codec, to the tools.
 
 ```bash
 mamba env create -f conda/environment.yml        # the package, editable, with the tests' and the docs' tools
-mamba activate fspm_tf
+mamba activate encoding3d
 pytest                                           # the package's tests (bindings/python/test)
 pytest --nbmake doc/notebooks                    # the documentation's notebooks run
 python -m sphinx -b html doc doc/_build -W       # the documentation, warnings as errors

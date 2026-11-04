@@ -1,40 +1,40 @@
 # Python API
 
-`openalea.fspm_tf` is the reference codec: reading and writing frames and sequences, the validator, display copies,
+`openalea.encoding3d` is the reference codec: reading and writing frames and sequences, the validator, display copies,
 the vocabulary and units.
 
 ## Reading and writing
 
 ```{eval-rst}
-.. automodule:: openalea.fspm_tf.codec
+.. automodule:: openalea.encoding3d.codec
    :members: read, write, from_bytes, to_bytes, write_sequence, read_sequence, write_index, read_index
 ```
 
 ## The data model
 
 ```{eval-rst}
-.. automodule:: openalea.fspm_tf.model
+.. automodule:: openalea.encoding3d.model
    :members: Frame, DataStructure, EntitySet, Relation, Table, Grid, Mesh, Mapping, Variable, Update, LazyColumns, LazyList
 ```
 
 ## Validation
 
 ```{eval-rst}
-.. automodule:: openalea.fspm_tf.validate
+.. automodule:: openalea.encoding3d.validate
    :members: validate_file, validate_bytes, validate_sequence, Report, Issue
 ```
 
 ## Display copies
 
 ```{eval-rst}
-.. automodule:: openalea.fspm_tf.display
+.. automodule:: openalea.encoding3d.display
    :members: add_display, remove_display
 ```
 
 ## Views
 
 ```{eval-rst}
-.. automodule:: openalea.fspm_tf.views
+.. automodule:: openalea.encoding3d.views
    :members: read_views, write_views, views_path, check_views, configuration, configuration_names, selected,
              display_settings, layer_from_display, save_configuration, block_selector
 ```
@@ -42,51 +42,51 @@ the vocabulary and units.
 ## Vocabulary and units
 
 ```{eval-rst}
-.. automodule:: openalea.fspm_tf.vocabulary
+.. automodule:: openalea.encoding3d.vocabulary
    :members: standard_names, platform_names, labels, enums, version
 
-.. automodule:: openalea.fspm_tf.ucum
+.. automodule:: openalea.encoding3d.ucum
    :members: dimension, is_valid, convertible, conversion_factor
 ```
 
 ## Comparing with expected values
 
 ```{eval-rst}
-.. automodule:: openalea.fspm_tf.compare
+.. automodule:: openalea.encoding3d.compare
    :members: compare, compare_files, compare_all
 ```
 
 ## Expected values
 
 ```{eval-rst}
-.. automodule:: openalea.fspm_tf.dump
+.. automodule:: openalea.encoding3d.dump
    :members: frame_to_dict
 ```
 
 ## Coupling
 
 ```{eval-rst}
-.. automodule:: openalea.fspm_tf.coupling.messages
+.. automodule:: openalea.encoding3d.coupling.messages
    :members: Declaration, EntitySetSpec, VariableSpec, Link, CouplingError
 
-.. automodule:: openalea.fspm_tf.coupling.participant
+.. automodule:: openalea.encoding3d.coupling.participant
    :members: Participant, Turn
 
-.. automodule:: openalea.fspm_tf.coupling.coordinator
+.. automodule:: openalea.encoding3d.coupling.coordinator
    :members: Coordinator
 
-.. automodule:: openalea.fspm_tf.coupling.resolution
+.. automodule:: openalea.encoding3d.coupling.resolution
    :members: resolve, stages, Coupling
 
-.. automodule:: openalea.fspm_tf.coupling.replay
+.. automodule:: openalea.encoding3d.coupling.replay
    :members: Replay
 
-.. automodule:: openalea.fspm_tf.coupling.conformance
+.. automodule:: openalea.encoding3d.coupling.conformance
    :members: run_session, run_all, subject
 ```
 
 ## Command line
 
 ```{eval-rst}
-.. automodule:: openalea.fspm_tf.cli
+.. automodule:: openalea.encoding3d.cli
 ```

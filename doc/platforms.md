@@ -1,6 +1,6 @@
 # Implementing a platform
 
-A platform reads and writes fspm-TF through two pieces of code, which live in different places.
+A platform reads and writes encoding3d through two pieces of code, which live in different places.
 
 | | What it does | Depends on | Lives in |
 |---|---|---|---|
@@ -28,16 +28,16 @@ This is a few hundred lines in any language. Existing libraries help:
 
 - **C++:** done, `bindings/cpp/` ([C++ and CPlantBox](cpp.md)): hand-written, with nlohmann_json.
 - **Java:** done, `bindings/java/` ([Java and GroIMP](java.md)): hand-written, with Jackson.
-- **Julia:** done, `bindings/julia/FspmTF/` ([FspmTF.jl](julia.md)): a hand-written GLB container and JSON.jl.
+- **Julia:** done, `bindings/julia/encoding3d/` ([encoding3d.jl](julia.md)): a hand-written GLB container and JSON.jl.
 
 Each codec goes in its own folder, with its usual build files and tests:
 
 ```
 bindings/
-  python/                    the reference (openalea.fspm_tf)
+  python/                    the reference (openalea.encoding3d)
   cpp/                       CMakeLists.txt, include/, src/, test/
   java/                      pom.xml or build.gradle, src/main/, src/test/
-  julia/FspmTF/              Project.toml, src/, test/
+  julia/encoding3d/              Project.toml, src/, test/
 ```
 
 A codec is released by its team on its own channel (conda, Maven, the Julia registry), under its own tag (e.g.
@@ -55,7 +55,7 @@ What the platform needs to rebuild its own model exactly, beyond the shared data
 structure's `extras` (under the platform's name) and in columns of role `setting`. Other readers keep them without
 interpreting them.
 
-**Example:** metafspm's adapter, `openalea.metafspm.io.fspm_tf`, rebuilds its multiscale graphs bit for bit from its
+**Example:** metafspm's adapter, `openalea.metafspm.io.encoding3d`, rebuilds its multiscale graphs bit for bit from its
 own files, and a simulation continues from them exactly as from the original. It reads its standard names from its
 column of the vocabulary.
 
@@ -73,15 +73,15 @@ mapping, an adaptive grid, a parameter set, and a growing sequence. Each GLB com
   - Floats are compared exactly.
   - NaN is `null`; infinities are the strings `"Infinity"` and `"-Infinity"`.
   - Positions are the float32 values.
-- **Writing:** what it writes, for the same scenes, passes `fspm-tf validate` with no error. It also passes Khronos'
+- **Writing:** what it writes, for the same scenes, passes `encoding3d validate` with no error. It also passes Khronos'
   glTF-Validator with no error, so that every viewer opens it.
 
 `conformance/README.md` gives the layout of the expected JSON. A codec dumps what it reads from each conformance
 GLB in that layout (`x.json` for `x.glb`), and writes the same scenes back as GLB files. Then:
 
 ```bash
-fspm-tf compare-all dumps/ conformance/       # reading: every dump equals its expected values, or the differences
-fspm-tf validate written/*.glb                # writing
+encoding3d compare-all dumps/ conformance/       # reading: every dump equals its expected values, or the differences
+encoding3d validate written/*.glb                # writing
 ```
 
 In GitHub Actions, the composite action `.github/actions/conformance` runs both, plus Khronos' glTF-Validator,
@@ -103,7 +103,7 @@ A codec that passes is listed in [Implementations](implementations.md) with the 
 ## Taking part in a coupling session
 
 To couple its models with other platforms' (specification §11), a codec adds a participant's side;
-the coordinator is fspm-TF's own (`fspm-tf couple`), so no platform implements it. A participant:
+the coordinator is encoding3d's own (`encoding3d couple`), so no platform implements it. A participant:
 
 1. reads and writes **partial frames**: `FSPM_scene.update` (its sender, and a property table of the removed ids per
    entity set), tables holding some rows and columns only;
@@ -114,15 +114,15 @@ the coordinator is fspm-TF's own (`fspm-tf couple`), so no platform implements i
 4. speaks both transports: a folder of numbered JSON headers and GLB payloads (files only), and ZeroMQ (a DEALER
    socket named after the participant; one or two message frames).
 
-The four codecs have a participant: Python (`openalea.fspm_tf.coupling.participant`), Julia (`Participant`, `turns`,
-`send_update`), C++ (`fspm_tf/coupling.hpp`) and Java (`org.openalea.fspmtf.coupling`). A new one proves itself on the
+The four codecs have a participant: Python (`openalea.encoding3d.coupling.participant`), Julia (`Participant`, `turns`,
+`send_update`), C++ (`encoding3d/coupling.hpp`) and Java (`org.openalea.encoding3d.coupling`). A new one proves itself on the
 conformance sessions: a small program run as `COMMAND SESSION OUT` that joins with the session's declaration, dumps
 each turn it reads and sends the session's updates, as the four codecs' programs do
 (`coupling/conformance.py`, `bindings/julia/coupling_conformance.jl`, `bindings/cpp/tools/coupling_conformance.cpp`,
 `ConformanceParticipant.java`):
 
 ```bash
-fspm-tf couple-conformance conformance/coupling --participant "<command>"
+encoding3d couple-conformance conformance/coupling --participant "<command>"
 ```
 
 An adapter then maps the turns to the platform's model, as metafspm's `RemoteComponent` does.

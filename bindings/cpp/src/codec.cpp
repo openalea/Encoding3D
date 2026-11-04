@@ -2,7 +2,7 @@
 // meshes carry EXT_mesh_features feature IDs, and the FSPM_scene root extension holds what these two cannot: data
 // structures, entity sets and their ranks, relations, grids, mappings, the frame's time, and the variables' units,
 // standard names, kinds and roles.
-#include "fspm_tf/fspm_tf.hpp"
+#include "encoding3d/encoding3d.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -16,7 +16,7 @@
 
 #include "bytes.hpp"
 
-namespace fspm_tf {
+namespace encoding3d {
 
 namespace {
 
@@ -405,7 +405,7 @@ std::vector<std::uint8_t> to_bytes(const Frame &frame) {
     json schema = {{"id", "fspm_scene"}, {"classes", json::object()},
                    {"enums", {{EDGE_TYPE_ENUM, {{"valueType", "UINT8"}, {"values", edge_values}}}}}};
     json tables = json::array(), variables = json::object();
-    json document = {{"asset", {{"version", "2.0"}, {"generator", std::string("fspm_tf (C++) ") + SPECIFICATION_VERSION}}},
+    json document = {{"asset", {{"version", "2.0"}, {"generator", std::string("encoding3d (C++) ") + SPECIFICATION_VERSION}}},
                      {"scene", 0}, {"scenes", json::array({{{"nodes", json::array({0})}}})},
                      {"nodes", json::array({{{"name", "fspm_scene"}, {"matrix", Z_UP_TO_Y_UP},
                                              {"children", json::array()}}})}};
@@ -567,7 +567,7 @@ struct ViewBytes {
 ViewBytes view_bytes(const json &document, const std::vector<std::uint8_t> &binary, std::int64_t index) {
     const json &view = document.at("bufferViews").at(static_cast<std::size_t>(index));
     if (get(view, "buffer", 0).get<std::int64_t>() != 0)
-        throw Error("fspm-TF files keep every buffer view in the GLB binary chunk");
+        throw Error("encoding3d files keep every buffer view in the GLB binary chunk");
     const auto start = get(view, "byteOffset", 0).get<std::size_t>();
     const auto length = view.at("byteLength").get<std::size_t>();
     if (start + length > binary.size()) throw Error("a buffer view runs past the binary chunk");
@@ -612,7 +612,7 @@ Column decode_scalar_of(const std::string &component, const ViewBytes &raw, cons
     if (component == "UINT64") return decode_scalar<std::uint64_t>(raw, property, count, width);
     if (component == "FLOAT32") return decode_scalar<float>(raw, property, count, width);
     if (component == "FLOAT64") return decode_scalar<double>(raw, property, count, width);
-    throw Error("component type " + component + " is not part of fspm-TF 0.1");
+    throw Error("component type " + component + " is not part of encoding3d 0.1");
 }
 
 std::vector<std::uint64_t> read_unsigned(const std::string &type, const ViewBytes &raw, std::size_t count) {
@@ -621,7 +621,7 @@ std::vector<std::uint64_t> read_unsigned(const std::string &type, const ViewByte
     else if (type == "UINT16") for (auto value : read_view<std::uint16_t>(raw, count)) values.push_back(value);
     else if (type == "UINT32") for (auto value : read_view<std::uint32_t>(raw, count)) values.push_back(value);
     else if (type == "UINT64") values = read_view<std::uint64_t>(raw, count);
-    else throw Error("offsets or enum values of type " + type + " are not part of fspm-TF 0.1");
+    else throw Error("offsets or enum values of type " + type + " are not part of encoding3d 0.1");
     return values;
 }
 
@@ -678,7 +678,7 @@ void decode_table(const json &document, const std::vector<std::uint8_t> &binary,
         } else if (type == "SCALAR") {
             const bool vector = get(property, "array", false).get<bool>();
             if (vector && !property.contains("count"))
-                throw Error("'" + class_id + "." + name + "': variable-length arrays are not part of fspm-TF 0.1");
+                throw Error("'" + class_id + "." + name + "': variable-length arrays are not part of encoding3d 0.1");
             const std::size_t width = vector ? property["count"].get<std::size_t>() : 1;
             const std::string component = property.at("componentType").get<std::string>();
             column = decode_scalar_of(component, raw, property, count, width);
@@ -709,7 +709,7 @@ void decode_table(const json &document, const std::vector<std::uint8_t> &binary,
                 if (any) column.missing = missing;
             }
         } else {
-            throw Error("'" + class_id + "." + name + "': property type " + type + " is not part of fspm-TF 0.1");
+            throw Error("'" + class_id + "." + name + "': property type " + type + " is not part of encoding3d 0.1");
         }
         table.columns.emplace_back(name, std::move(column));
         const json declared = get(get(variables, class_id, json::object()), name);
@@ -737,7 +737,7 @@ std::vector<T> accessor_values(const json &document, const std::vector<std::uint
     const json &accessor = document.at("accessors").at(static_cast<std::size_t>(index));
     const std::string type = accessor.at("type").get<std::string>();
     width = type == "SCALAR" ? 1 : type == "VEC2" ? 2 : type == "VEC3" ? 3 : type == "VEC4" ? 4 : 0;
-    if (width == 0) throw Error("accessor type " + type + " is not used by fspm-TF");
+    if (width == 0) throw Error("accessor type " + type + " is not used by encoding3d");
     const auto view_index = accessor.at("bufferView").get<std::int64_t>();
     const auto raw = view_bytes(document, binary, view_index);
     const json &view = document["bufferViews"][static_cast<std::size_t>(view_index)];
@@ -758,7 +758,7 @@ std::vector<T> accessor_values(const json &document, const std::vector<std::uint
     if (component == UNSIGNED_INT) return read(std::uint32_t{});
     if (component == UNSIGNED_SHORT) return read(std::uint16_t{});
     if (component == UNSIGNED_BYTE) return read(std::uint8_t{});
-    throw Error("accessor component type " + std::to_string(component) + " is not used by fspm-TF");
+    throw Error("accessor component type " + std::to_string(component) + " is not used by encoding3d");
 }
 
 Mesh decode_mesh(const json &document, const std::vector<std::uint8_t> &binary, const json &mesh_entry,
@@ -798,7 +798,7 @@ Mesh decode_mesh(const json &document, const std::vector<std::uint8_t> &binary, 
 Frame from_bytes(const std::vector<std::uint8_t> &data) {
     auto [document, binary] = unpack(data);
     const json extensions = get(document, "extensions", json::object());
-    if (!extensions.contains(EXTENSION)) throw Error("not an fspm-TF file: no " + EXTENSION + " extension");
+    if (!extensions.contains(EXTENSION)) throw Error("not an encoding3d file: no " + EXTENSION + " extension");
     const json &scene = extensions[EXTENSION];
     const json metadata = get(extensions, METADATA, {{"schema", json::object()}, {"propertyTables", json::array()}});
     const json variables = get(scene, "variables", json::object());
@@ -902,4 +902,4 @@ Frame read_frame(const std::string &path) {
     return from_bytes(data);
 }
 
-} // namespace fspm_tf
+} // namespace encoding3d

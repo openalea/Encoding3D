@@ -1,6 +1,6 @@
 // A participant's side of a coupling session: the folder transport, the participant, and the ZeroMQ transport when
-// built with libzmq (FSPM_TF_WITH_ZMQ).
-#include "fspm_tf/coupling.hpp"
+// built with libzmq (ENCODING3D_WITH_ZMQ).
+#include "encoding3d/coupling.hpp"
 
 #include <chrono>
 #include <cstdio>
@@ -11,13 +11,13 @@
 #include <sstream>
 #include <thread>
 
-#include "fspm_tf/fspm_tf.hpp"
+#include "encoding3d/encoding3d.hpp"
 
-#ifdef FSPM_TF_WITH_ZMQ
+#ifdef ENCODING3D_WITH_ZMQ
 #include <zmq.h>
 #endif
 
-namespace fspm_tf::coupling {
+namespace encoding3d::coupling {
 
 namespace {
 
@@ -99,7 +99,7 @@ class FolderChannel : public Channel {
     std::vector<filesystem::path> read_files_;       // those of the messages read and kept
 };
 
-#ifdef FSPM_TF_WITH_ZMQ
+#ifdef ENCODING3D_WITH_ZMQ
 /// A DEALER socket named after the participant, connected to the coordinator's ROUTER socket; a message is one or two
 /// frames, its header then its payload.
 class ZmqChannel : public Channel {
@@ -158,7 +158,7 @@ std::string environment(const char *name) {
 } // namespace
 
 bool has_zeromq() {
-#ifdef FSPM_TF_WITH_ZMQ
+#ifdef ENCODING3D_WITH_ZMQ
     return true;
 #else
     return false;
@@ -167,10 +167,10 @@ bool has_zeromq() {
 
 std::unique_ptr<Channel> participant_channel(const std::string &endpoint, const std::string &participant) {
     if (endpoint.rfind("files:", 0) == 0) return std::make_unique<FolderChannel>(endpoint.substr(6), participant);
-#ifdef FSPM_TF_WITH_ZMQ
+#ifdef ENCODING3D_WITH_ZMQ
     return std::make_unique<ZmqChannel>(endpoint, participant);
 #else
-    throw Error("the endpoint " + endpoint + " needs ZeroMQ: build fspm_tf with libzmq, or use a folder (files:path)");
+    throw Error("the endpoint " + endpoint + " needs ZeroMQ: build encoding3d with libzmq, or use a folder (files:path)");
 #endif
 }
 
@@ -220,4 +220,4 @@ void Participant::send_update(Frame frame) {
 
 void Participant::fail(const std::string &message) { channel_->send({{"type", "error"}, {"message", message}}); }
 
-} // namespace fspm_tf::coupling
+} // namespace encoding3d::coupling

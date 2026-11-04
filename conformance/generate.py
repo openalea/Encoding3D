@@ -1,6 +1,6 @@
 """
-The conformance files of fspm-TF: small reference scenes covering the specification, each written as a GLB with its
-expected values as JSON (openalea.fspm_tf.dump). A reader in any language passes when what it reads from each GLB equals the
+The conformance files of encoding3d: small reference scenes covering the specification, each written as a GLB with its
+expected values as JSON (openalea.encoding3d.dump). A reader in any language passes when what it reads from each GLB equals the
 JSON; a writer passes when the validator accepts what it writes for the same scenes.
 
     python conformance/generate.py          (re)writes the files next to this script
@@ -14,12 +14,12 @@ import sys
 
 import numpy as np
 
-from openalea.fspm_tf import (DataStructure, EntitySet, Frame, Grid, Mapping, Mesh, NO_ID, Relation, Table, Variable,
+from openalea.encoding3d import (DataStructure, EntitySet, Frame, Grid, Mapping, Mesh, NO_ID, Relation, Table, Variable,
                      to_bytes, write_index)
-from openalea.fspm_tf.dump import frame_to_dict
+from openalea.encoding3d.dump import frame_to_dict
 
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
-WRITER = {"platform": "fspm-tf", "model": "conformance"}
+WRITER = {"platform": "encoding3d", "model": "conformance"}
 
 
 def _segment_triangles(start, end, radius, sides: int = 6):
@@ -108,7 +108,7 @@ def root_system(n_segments: int = 6, lateral_from: int = 2, ids_from: int = 10, 
     data_structure = DataStructure(plant_id, kind="graph", entity_sets=[plants, axes, segments], meshes=[mesh],
                                    scalars=Table("scalars", columns=dict(time_step=[3600.]),
                                                  variables=_declare(time_step=dict(unit="s", role="setting"))),
-                                   platform="fspm-tf", model="toy root system")
+                                   platform="encoding3d", model="toy root system")
     return Frame([data_structure], time=time, time_unit="d", step=step, writer=WRITER, vocabulary_version="0.2")
 
 
@@ -152,7 +152,7 @@ def wheat_shoot() -> Frame:
     organ_rows = np.full(rows.size, 2)
     mesh = Mesh("leaves", positions=quads, feature_rows={"SubOrgan": rows, "Organ": organ_rows})
     data_structure = DataStructure("shoot", entity_sets=[plants, axes, organs, elements], meshes=[mesh],
-                                   platform="fspm-tf", model="toy shoot",
+                                   platform="encoding3d", model="toy shoot",
                                    origin=np.array([[1., 0., 0., 0.5], [0., 1., 0., 0.25], [0., 0., 1., 0.],
                                                     [0., 0., 0., 1.]]))
     return Frame([data_structure], time=12.5, step=300, writer=WRITER, vocabulary_version="0.2")
@@ -187,8 +187,8 @@ def section_cells() -> Frame:
         rows += [row] * 6
     mesh = Mesh("cells", positions=squares, feature_rows={"Compartment": rows})
     data_structure = DataStructure("section", entity_sets=[cells], relations=[connections], meshes=[mesh],
-                                   platform="fspm-tf", model="toy cell network",
-                                   extras={"fspm-tf": {"note": "extras are the writer's, kept by readers"}})
+                                   platform="encoding3d", model="toy cell network",
+                                   extras={"encoding3d": {"note": "extras are the writer's, kept by readers"}})
     return Frame([data_structure], time=0., step=0, writer=WRITER, vocabulary_version="0.2")
 
 
@@ -210,7 +210,7 @@ def soil_and_roots() -> Frame:
     soil = DataStructure("soil", kind="regular_grid", entity_sets=[voxels],
                          grid=Grid(kind="regular", shape=shape, origin=(-0.02, -0.02, 0.), spacing=(0.02, 0.02, 0.02),
                                    axes=("x", "y", "z"), periodic=(True, True, False), z_up=False, cells="Voxel"),
-                         platform="fspm-tf", model="toy soil")
+                         platform="encoding3d", model="toy soil")
     segments = roots.entity_set("SubOrgan")
     middle_depth = -(segments.columns["z1"] + segments.columns["z2"]) / 2
     middle_x = (segments.columns["x1"] + segments.columns["x2"]) / 2
@@ -238,7 +238,7 @@ def adaptive_soil() -> Frame:
     soil = DataStructure("soil", kind="adaptive_grid", entity_sets=[cells],
                          grid=Grid(kind="adaptive", shape=(2, 1, 1), origin=(0., 0., 0.), spacing=(0.1, 0.1, 0.1),
                                    axes=("x", "y", "z"), periodic=(False, False, False), z_up=False, max_level=1,
-                                   cells="Cell"), platform="fspm-tf", model="toy adaptive soil")
+                                   cells="Cell"), platform="encoding3d", model="toy adaptive soil")
     return Frame([soil], time=0., step=0, writer=WRITER, vocabulary_version="0.2")
 
 
@@ -262,7 +262,7 @@ def parameter_set() -> Frame:
                                        T_ref=dict(unit="K", role="parameter", kind="intensive"),
                                        method=dict(unit="1", role="setting")))
     data_structure = DataStructure("archisimple_parameters", kind="table", entity_sets=[plants], scalars=scalars,
-                                   platform="fspm-tf", model="RootArchitecture parameters")
+                                   platform="encoding3d", model="RootArchitecture parameters")
     return Frame([data_structure], time=0., step=0, writer=WRITER, vocabulary_version="0.2")
 
 
@@ -306,7 +306,7 @@ def missing_values() -> Frame:
         source=np.array([15], dtype=np.int64), target=np.array([1], dtype=np.int64),
         relation=np.array(["decomposition"], dtype=object)))
     data_structure = DataStructure("plant", entity_sets=[plant, axes, organs], relations=[bearer_axes, bearer_buds],
-                                   platform="fspm-tf", model="toy plant with per-class fields",
+                                   platform="encoding3d", model="toy plant with per-class fields",
                                    labels={"Internode": "StemInternode", "Leaf": "Leaf", "Bud": "Meristem",
                                            "Root": "RootAxis", "Axis": "ShootAxis"})
     return Frame([data_structure], time=3., time_unit="d", step=72, writer=WRITER, vocabulary_version="0.2")

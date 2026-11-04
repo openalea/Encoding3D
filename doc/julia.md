@@ -1,6 +1,6 @@
 # Reading and writing in Julia
 
-FspmTF.jl, in `bindings/julia/FspmTF/`, reads and writes fspm-TF files in Julia (1.10 or later). It passes the
+encoding3d.jl, in `bindings/julia/encoding3d/`, reads and writes encoding3d files in Julia (1.10 or later). It passes the
 conformance check like the Python codec. Two VirtualPlantLab models are covered:
 
 - with MultiScaleTreeGraph.jl loaded, it turns an MTG into a data structure, and back. This is the multiscale graph
@@ -9,17 +9,17 @@ conformance check like the Python codec. Two VirtualPlantLab models are covered:
 
 ## Installing
 
-FspmTF.jl is MIT-licensed, as VirtualPlantLab (the rest of fspm-TF is CeCILL-C). It is not registered yet. Add it from the repository's subfolder:
+encoding3d.jl is MIT-licensed, as VirtualPlantLab (the rest of encoding3d is CeCILL-C). It is not registered yet. Add it from the repository's subfolder:
 
 ```julia
 using Pkg
-Pkg.add(url = "https://github.com/openalea/fspm-TF", subdir = "bindings/julia/FspmTF")
+Pkg.add(url = "https://github.com/openalea/encoding3d", subdir = "bindings/julia/encoding3d")
 ```
 
 ## An MTG, written and read back
 
 ```julia
-using FspmTF, MultiScaleTreeGraph
+using encoding3d, MultiScaleTreeGraph
 
 mtg = read_mtg("plant.mtg")
 plants = from_mtg(mtg; id = "plant",
@@ -38,12 +38,12 @@ Two things differ from the other platform's graph, and are undone by `from_mtg`:
 
 - **Ids.** MTG.jl's node ids start at 1 and size its attribute store. When ids start at 0 or are sparse (CPlantBox's
   segments: 2^32 + node id), the nodes are numbered 1, 2, … in id order, and each keeps its id in the attribute
-  `fspm_tf_id`.
+  `encoding3d_id`.
 - **A parent in another complex**, such as a lateral root's first segment. MTG.jl takes a node's complex from its
-  ancestors, so the node stays under its own axis (`/`) and keeps its parent in the attributes `fspm_tf_parent` and
-  `fspm_tf_edge_type`.
+  ancestors, so the node stays under its own axis (`/`) and keeps its parent in the attributes `encoding3d_parent` and
+  `encoding3d_edge_type`.
 
-| fspm-TF | MultiScaleTreeGraph |
+| encoding3d | MultiScaleTreeGraph |
 |---|---|
 | one entity set per scale ≥ 1, `rank` the scale | the nodes of that scale |
 | `id`, `label` | `node_id`, `symbol` |
@@ -75,7 +75,7 @@ PlantGeomTurtle loaded too, `add_geometry!` adds the graph's turtle mesh, each t
 that made it.
 
 ```julia
-using FspmTF, PlantGraphs, PlantGeomTurtle, PlantGeomPrimitives
+using encoding3d, PlantGraphs, PlantGeomTurtle, PlantGeomPrimitives
 
 plants = from_graph(graph; id = "plant",
                     variables = Dict("length" => Variable(unit = "m", standard_name = "length")))
@@ -90,7 +90,7 @@ graph = Graph(axiom = static, rules = rules)
 ## The format's own tables
 
 ```julia
-using FspmTF
+using encoding3d
 
 frame = read_frame("scene.glb")
 frame.time, frame.time_unit, frame.step
@@ -123,19 +123,19 @@ entity). NaN and infinities are written with the specification's stand-ins and r
 
 ## Coupling with other platforms
 
-FspmTF.jl takes part in coupling sessions run by fspm-TF's coordinator ([Coupling platforms](coupling.md)):
+encoding3d.jl takes part in coupling sessions run by encoding3d's coordinator ([Coupling platforms](coupling.md)):
 `Participant(declaration)` joins one (its address and name from the environment when the coordinator launches it),
 `turns(participant)` gives each turn's inputs, `send_update(participant, frame)` answers with its outputs. The folder
-transport needs nothing more; ZeroMQ needs `using ZMQ` (the `FspmTFZMQExt` extension). A declaration can be built
+transport needs nothing more; ZeroMQ needs `using ZMQ` (the `encoding3dZMQExt` extension). A declaration can be built
 (`Declaration`, `EntitySetSpec`, `VariableSpec`, `MappingSpec`) or read from its JSON (`declaration_from_json`).
 `bindings/julia/coupling_conformance.jl` is its program for the conformance sessions.
 
 ## Checking it
 
 ```bash
-julia --project=bindings/julia/FspmTF -e 'using Pkg; Pkg.test()'
-julia --project=bindings/julia/FspmTF bindings/julia/conformance_run.jl conformance out
-fspm-tf compare-all out/dumps conformance && fspm-tf validate out/written/*.glb
+julia --project=bindings/julia/encoding3d -e 'using Pkg; Pkg.test()'
+julia --project=bindings/julia/encoding3d bindings/julia/conformance_run.jl conformance out
+encoding3d compare-all out/dumps conformance && encoding3d validate out/written/*.glb
 ```
 
 The workflow `.github/workflows/julia-codec.yml` runs both, on Julia 1.10 and the latest release.

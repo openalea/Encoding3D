@@ -5,9 +5,9 @@ import numpy as np
 import pytest
 
 import generate
-from openalea.fspm_tf import NO_ID, Variable, to_bytes, write_sequence
-from openalea.fspm_tf.glb import pack, unpack
-from openalea.fspm_tf.validate import validate_bytes, validate_sequence
+from openalea.encoding3d import NO_ID, Variable, to_bytes, write_sequence
+from openalea.encoding3d.glb import pack, unpack
+from openalea.encoding3d.validate import validate_bytes, validate_sequence
 
 
 def messages(frame) -> str:

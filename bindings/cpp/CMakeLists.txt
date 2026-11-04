@@ -1,19 +1,19 @@
-# fspm_tf, the C++ codec of fspm-TF: a library (fspm_tf::fspm_tf), its tests, the conformance tool, and, when
-# CPlantBox is given (FSPM_TF_CPLANTBOX_SOURCE_DIR and FSPM_TF_CPLANTBOX_LIBRARY), CPlantBox's adapter.
+# encoding3d, the C++ codec of encoding3d: a library (encoding3d::encoding3d), its tests, the conformance tool, and, when
+# CPlantBox is given (ENCODING3D_CPLANTBOX_SOURCE_DIR and ENCODING3D_CPLANTBOX_LIBRARY), CPlantBox's adapter.
 #
 #   cmake -S bindings/cpp -B build && cmake --build build && ctest --test-dir build
 #
-# Licence: GPL-3.0 (LICENSE), as CPlantBox; the rest of fspm-TF is CeCILL-C.
+# Licence: GPL-3.0 (LICENSE), as CPlantBox; the rest of encoding3d is CeCILL-C.
 cmake_minimum_required(VERSION 3.16)
-project(fspm_tf VERSION 0.1.0 LANGUAGES CXX)
+project(encoding3d VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(FSPM_TF_BUILD_TESTS "Build the tests and the conformance tool" ${PROJECT_IS_TOP_LEVEL})
-set(FSPM_TF_CPLANTBOX_SOURCE_DIR "" CACHE PATH "CPlantBox's source folder (its src/ holds structural/), for the adapter")
-set(FSPM_TF_CPLANTBOX_LIBRARY "" CACHE FILEPATH "CPlantBox's built library (libCPlantBox), for the adapter")
+option(ENCODING3D_BUILD_TESTS "Build the tests and the conformance tool" ${PROJECT_IS_TOP_LEVEL})
+set(ENCODING3D_CPLANTBOX_SOURCE_DIR "" CACHE PATH "CPlantBox's source folder (its src/ holds structural/), for the adapter")
+set(ENCODING3D_CPLANTBOX_LIBRARY "" CACHE FILEPATH "CPlantBox's built library (libCPlantBox), for the adapter")
 
 # The one dependency, header-only: nlohmann_json, found installed or fetched
 find_package(nlohmann_json 3.11 QUIET)
@@ -26,71 +26,71 @@ if(NOT nlohmann_json_FOUND)
     FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
-add_library(fspm_tf
+add_library(encoding3d
     src/model.cpp
     src/glb.cpp
     src/codec.cpp
     src/sequence.cpp
     src/dump.cpp
     src/coupling.cpp)
-add_library(fspm_tf::fspm_tf ALIAS fspm_tf)
-target_include_directories(fspm_tf PUBLIC
+add_library(encoding3d::encoding3d ALIAS encoding3d)
+target_include_directories(encoding3d PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
-target_link_libraries(fspm_tf PUBLIC nlohmann_json::nlohmann_json)
+target_link_libraries(encoding3d PUBLIC nlohmann_json::nlohmann_json)
 
 # The coupling's ZeroMQ transport, with libzmq when found (its folder transport needs nothing)
-option(FSPM_TF_WITH_ZMQ "Build the coupling's ZeroMQ transport (libzmq)" ON)
-if(FSPM_TF_WITH_ZMQ)
+option(ENCODING3D_WITH_ZMQ "Build the coupling's ZeroMQ transport (libzmq)" ON)
+if(ENCODING3D_WITH_ZMQ)
     find_path(ZMQ_INCLUDE_DIR zmq.h)
     find_library(ZMQ_LIBRARY NAMES zmq libzmq)
     if(ZMQ_INCLUDE_DIR AND ZMQ_LIBRARY)
-        target_include_directories(fspm_tf PRIVATE ${ZMQ_INCLUDE_DIR})
-        target_link_libraries(fspm_tf PRIVATE ${ZMQ_LIBRARY})
-        target_compile_definitions(fspm_tf PRIVATE FSPM_TF_WITH_ZMQ)
-        message(STATUS "fspm_tf: the coupling's ZeroMQ transport, with ${ZMQ_LIBRARY}")
+        target_include_directories(encoding3d PRIVATE ${ZMQ_INCLUDE_DIR})
+        target_link_libraries(encoding3d PRIVATE ${ZMQ_LIBRARY})
+        target_compile_definitions(encoding3d PRIVATE ENCODING3D_WITH_ZMQ)
+        message(STATUS "encoding3d: the coupling's ZeroMQ transport, with ${ZMQ_LIBRARY}")
     else()
-        message(STATUS "fspm_tf: libzmq not found, the coupling's folder transport only")
+        message(STATUS "encoding3d: libzmq not found, the coupling's folder transport only")
     endif()
 endif()
-target_compile_features(fspm_tf PUBLIC cxx_std_17)
-set_target_properties(fspm_tf PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_compile_features(encoding3d PUBLIC cxx_std_17)
+set_target_properties(encoding3d PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(MSVC)
-    target_compile_options(fspm_tf PRIVATE /W4 /bigobj)
+    target_compile_options(encoding3d PRIVATE /W4 /bigobj)
 else()
-    target_compile_options(fspm_tf PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(encoding3d PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-# Installed as a CMake package: find_package(fspm_tf) then target_link_libraries(... fspm_tf::fspm_tf)
+# Installed as a CMake package: find_package(encoding3d) then target_link_libraries(... encoding3d::encoding3d)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
-install(TARGETS fspm_tf EXPORT fspm_tfTargets
+install(TARGETS encoding3d EXPORT encoding3dTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/fspm_tf)
-install(EXPORT fspm_tfTargets NAMESPACE fspm_tf:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fspm_tf)
-configure_package_config_file(cmake/fspm_tfConfig.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/fspm_tfConfig.cmake
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fspm_tf)
-write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/fspm_tfConfigVersion.cmake
+install(FILES LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/encoding3d)
+install(EXPORT encoding3dTargets NAMESPACE encoding3d:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/encoding3d)
+configure_package_config_file(cmake/encoding3dConfig.cmake.in ${CMAKE_CURRENT_BINARY_DIR}/encoding3dConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/encoding3d)
+write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/encoding3dConfigVersion.cmake
     COMPATIBILITY SameMinorVersion)
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/fspm_tfConfig.cmake ${CMAKE_CURRENT_BINARY_DIR}/fspm_tfConfigVersion.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/fspm_tf)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/encoding3dConfig.cmake ${CMAKE_CURRENT_BINARY_DIR}/encoding3dConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/encoding3d)
 
-if(FSPM_TF_BUILD_TESTS)
+if(ENCODING3D_BUILD_TESTS)
     enable_testing()
-    set(FSPM_TF_CONFORMANCE "${CMAKE_CURRENT_SOURCE_DIR}/../../conformance")
-    add_executable(fspm_tf_conformance_run tools/conformance_run.cpp)
-    target_link_libraries(fspm_tf_conformance_run PRIVATE fspm_tf::fspm_tf)
-    add_executable(fspm_tf_coupling_conformance tools/coupling_conformance.cpp)
-    target_link_libraries(fspm_tf_coupling_conformance PRIVATE fspm_tf::fspm_tf)
-    add_executable(fspm_tf_tests test/test_fspm_tf.cpp)
-    target_link_libraries(fspm_tf_tests PRIVATE fspm_tf::fspm_tf)
-    add_test(NAME fspm_tf_tests COMMAND fspm_tf_tests "${FSPM_TF_CONFORMANCE}")
+    set(ENCODING3D_CONFORMANCE "${CMAKE_CURRENT_SOURCE_DIR}/../../conformance")
+    add_executable(encoding3d_conformance_run tools/conformance_run.cpp)
+    target_link_libraries(encoding3d_conformance_run PRIVATE encoding3d::encoding3d)
+    add_executable(encoding3d_coupling_conformance tools/coupling_conformance.cpp)
+    target_link_libraries(encoding3d_coupling_conformance PRIVATE encoding3d::encoding3d)
+    add_executable(encoding3d_tests test/test_encoding3d.cpp)
+    target_link_libraries(encoding3d_tests PRIVATE encoding3d::encoding3d)
+    add_test(NAME encoding3d_tests COMMAND encoding3d_tests "${ENCODING3D_CONFORMANCE}")
 endif()
 
 # CPlantBox's adapter: built when CPlantBox's sources and library are given
-if(FSPM_TF_CPLANTBOX_SOURCE_DIR AND FSPM_TF_CPLANTBOX_LIBRARY)
+if(ENCODING3D_CPLANTBOX_SOURCE_DIR AND ENCODING3D_CPLANTBOX_LIBRARY)
     add_subdirectory(cplantbox)
 endif()

@@ -1,10 +1,10 @@
-# fspm-TF in five minutes
+# encoding3d in five minutes
 
-This page explains, in plain words, what an fspm-TF file contains. No programming is needed to follow it.
+This page explains, in plain words, what an encoding3d file contains. No programming is needed to follow it.
 
 ## A scene, one time step at a time
 
-A simulation runs a **scene**: plants growing in an environment (soil, light, weather), step after step. fspm-TF saves
+A simulation runs a **scene**: plants growing in an environment (soil, light, weather), step after step. encoding3d saves
 the scene as it is at one step: a **frame**. A simulation saves a frame every so many steps, so a run gives a
 **sequence** of frames:
 

@@ -1,7 +1,7 @@
-# GroIMP's fspm-TF plugin
+# GroIMP's encoding3d plugin
 
-A GroIMP plugin (`org.openalea.fspmtf`, GroIMP 3.0): **File > Export** of the 3D view to a `.glb` file, or the CLI's
-`export3d file.glb`, writes the project as an fspm-TF frame:
+A GroIMP plugin (`org.openalea.encoding3d`, GroIMP 3.0): **File > Export** of the 3D view to a `.glb` file, or the CLI's
+`export3d file.glb`, writes the project as an encoding3d frame:
 
 - the graph below the project's root: its scales, topology and the nodes' fields (`GroImp.toDataStructure`,
   `../groimp`);
@@ -12,10 +12,10 @@ gitlab.com/grogra/groimp-plugins/gltf), which it requires.
 
 ```bash
 mvn -f bindings/java/pom.xml install && mvn -f bindings/java/groimp/pom.xml install
-mvn -f bindings/java/groimp-plugin/pom.xml package       # the plugin's folder: target/plugin/fspmTF
+mvn -f bindings/java/groimp-plugin/pom.xml package       # the plugin's folder: target/plugin/encoding3d
 ```
 
-To install it, copy `target/plugin/fspmTF` into GroIMP's `plugins/` folder, next to the glTF plugin's.
+To install it, copy `target/plugin/encoding3d` into GroIMP's `plugins/` folder, next to the glTF plugin's.
 `test/run_in_groimp.sh` does this in a GroIMP install, grows an example headless, exports it and checks the frame. It
 is run by the `groimp-plugin` job of `.github/workflows/java-codec.yml`.
 

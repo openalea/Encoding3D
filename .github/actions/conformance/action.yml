@@ -1,13 +1,13 @@
-# Checks a codec against fspm-TF's conformance files, in a codec's own CI, once the codec has run:
+# Checks a codec against encoding3d's conformance files, in a codec's own CI, once the codec has run:
 #
-#   - uses: ./.github/actions/conformance            (in this repository; elsewhere openalea/fspm-TF/.github/actions/conformance@main)
+#   - uses: ./.github/actions/conformance            (in this repository; elsewhere openalea/encoding3d/.github/actions/conformance@main)
 #     with:
 #       dumps: out/dumps          # what the codec read: one JSON dump per conformance GLB, x.json for x.expected.json
 #       written: out/written      # what the codec wrote: the conformance scenes, as .glb files (optional)
 #
-# Reading passes when every dump equals its expected values; writing, when every written file passes fspm-tf validate
+# Reading passes when every dump equals its expected values; writing, when every written file passes encoding3d validate
 # and Khronos' glTF-Validator with no error.
-name: fspm-TF conformance
+name: encoding3d conformance
 description: Compare a codec's reading of the conformance files with their expected values, and validate what it wrote
 inputs:
   dumps:
@@ -17,8 +17,8 @@ inputs:
     description: the folder of the .glb files the codec wrote for the conformance scenes (empty to skip)
     required: false
     default: ""
-  fspm-tf:
-    description: the path of an fspm-TF checkout (its conformance folder and Python package)
+  encoding3d:
+    description: the path of an encoding3d checkout (its conformance folder and Python package)
     required: false
     default: "."
   gltf-validator:
@@ -31,16 +31,16 @@ runs:
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-    - name: Install openalea.fspm_tf
+    - name: Install openalea.encoding3d
       shell: bash
-      run: python -m pip install numpy jsonschema "${{ inputs.fspm-tf }}"
+      run: python -m pip install numpy jsonschema "${{ inputs.encoding3d }}"
     - name: Reading
       shell: bash
-      run: fspm-tf compare-all "${{ inputs.dumps }}" "${{ inputs.fspm-tf }}/conformance"
-    - name: Writing, fspm-TF validator
+      run: encoding3d compare-all "${{ inputs.dumps }}" "${{ inputs.encoding3d }}/conformance"
+    - name: Writing, encoding3d validator
       if: inputs.written != ''
       shell: bash
-      run: find "${{ inputs.written }}" -name "*.glb" -print0 | xargs -0 fspm-tf validate
+      run: find "${{ inputs.written }}" -name "*.glb" -print0 | xargs -0 encoding3d validate
     - name: Writing, Khronos' glTF-Validator
       if: inputs.written != '' && runner.os == 'Linux'
       shell: bash

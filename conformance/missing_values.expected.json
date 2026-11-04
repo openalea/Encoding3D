@@ -268,7 +268,7 @@
      "scale": "mixed"
     }
    ],
-   "platform": "fspm-tf",
+   "platform": "encoding3d",
    "model": "toy plant with per-class fields",
    "labels": {
     "Internode": "StemInternode",

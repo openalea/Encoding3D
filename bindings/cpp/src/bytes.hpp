@@ -7,9 +7,9 @@
 #include <string>
 #include <vector>
 
-#include "fspm_tf/model.hpp"
+#include "encoding3d/model.hpp"
 
-namespace fspm_tf::detail {
+namespace encoding3d::detail {
 
 inline bool machine_is_little_endian() {
     const std::uint16_t probe = 1;
@@ -53,4 +53,4 @@ inline std::uint32_t read_word(const std::vector<std::uint8_t> &data, std::size_
 
 inline std::size_t padding(std::size_t length) { return (8 - length % 8) % 8; }
 
-} // namespace fspm_tf::detail
+} // namespace encoding3d::detail

@@ -1,10 +1,10 @@
-# FspmTF.jl's participant under test in the coupling conformance sessions (conformance/coupling, specification §9):
+# encoding3d.jl's participant under test in the coupling conformance sessions (conformance/coupling, specification §9):
 # launched by the coordinator as `julia --project=… coupling_conformance.jl SESSION OUT`, it joins with the session's
 # subject/declaration.json, writes what it reads from each turn to OUT/turn_<step>.json, and sends
-# subject/update_<step>.glb as read and written again by FspmTF.jl.
+# subject/update_<step>.glb as read and written again by encoding3d.jl.
 #
-#     fspm-tf couple-conformance conformance/coupling --participant "julia --project=env bindings/julia/coupling_conformance.jl"
-using FspmTF
+#     encoding3d couple-conformance conformance/coupling --participant "julia --project=env bindings/julia/coupling_conformance.jl"
+using encoding3d
 using JSON
 using ZMQ
 

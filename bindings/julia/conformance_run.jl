@@ -2,9 +2,9 @@
 # it as JSON (OUT/dumps/x.json for x.glb), and write the conformance scenes again as GLB files (OUT/written/x.glb).
 # Then .github/actions/conformance compares the dumps with the expected values and validates the written files.
 #
-#     julia --project=bindings/julia/FspmTF bindings/julia/conformance_run.jl CONFORMANCE OUT
+#     julia --project=bindings/julia/encoding3d bindings/julia/conformance_run.jl CONFORMANCE OUT
 
-using FspmTF
+using encoding3d
 
 function main(conformance::AbstractString, out::AbstractString)
     for (folder, _, files) in walkdir(conformance)

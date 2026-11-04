@@ -20,12 +20,12 @@ numbers, the same bytes on every run; the CI checks that the committed files are
 `coupling/` holds the coupling conformance sessions (specification §9, §11), which `coupling/generate.py` writes: each
 session's peer (a sequence the coordinator replays), its subject's declaration and updates, and the expected values of
 what the subject reads (`expected/turn_<step>.json`) and of the session's record (`expected/record/`). A codec's
-participant runs them with `fspm-tf couple-conformance conformance/coupling --participant COMMAND`. The frame tools
+participant runs them with `encoding3d couple-conformance conformance/coupling --participant COMMAND`. The frame tools
 (`compare-all`, each codec's conformance run) leave this folder out.
 
 ## The expected values
 
-`x.expected.json` is the frame `x.glb` holds, as plain JSON (written by `openalea.fspm_tf.dump.frame_to_dict`):
+`x.expected.json` is the frame `x.glb` holds, as plain JSON (written by `openalea.encoding3d.dump.frame_to_dict`):
 
 ```text
 {"time": 0.0, "time_unit": "d", "step": 0,
@@ -66,8 +66,8 @@ participant runs them with `fspm-tf couple-conformance conformance/coupling --pa
 3. Then:
 
    ```bash
-   fspm-tf compare-all DUMPS conformance          # reading: every dump equals its expected values
-   fspm-tf validate WRITTEN/*.glb                 # writing: valid fspm-TF (and Khronos' glTF-Validator: valid glTF)
+   encoding3d compare-all DUMPS conformance          # reading: every dump equals its expected values
+   encoding3d validate WRITTEN/*.glb                 # writing: valid encoding3d (and Khronos' glTF-Validator: valid glTF)
    ```
 
 In GitHub Actions, the composite action `.github/actions/conformance` runs both. The Python codec's own run is

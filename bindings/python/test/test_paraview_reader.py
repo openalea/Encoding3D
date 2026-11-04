@@ -1,6 +1,6 @@
-"""The ParaView reader's conversion (paraview/fspm_tf_reader.py), with VTK alone: meshes with every entity set's
+"""The ParaView reader's conversion (paraview/encoding3d_reader.py), with VTK alone: meshes with every entity set's
 variables as cell data, segments as lines, grids in VTK's cell order, sequences as time steps. Run inside ParaView
-too when FSPM_TF_PVPYTHON gives a pvpython."""
+too when ENCODING3D_PVPYTHON gives a pvpython."""
 import importlib.util
 import os
 import subprocess
@@ -14,8 +14,8 @@ from conftest import CONFORMANCE, ROOT
 pytest.importorskip("vtkmodules")
 from vtkmodules.util.numpy_support import vtk_to_numpy  # noqa: E402
 
-PLUGIN = os.path.join(ROOT, "paraview", "fspm_tf_reader.py")
-_specification = importlib.util.spec_from_file_location("fspm_tf_reader", PLUGIN)
+PLUGIN = os.path.join(ROOT, "paraview", "encoding3d_reader.py")
+_specification = importlib.util.spec_from_file_location("encoding3d_reader", PLUGIN)
 reader = importlib.util.module_from_spec(_specification)
 _specification.loader.exec_module(reader)
 
@@ -107,13 +107,13 @@ def test_a_sequence_is_time_steps():
 
 
 def test_inside_paraview():
-    pvpython = os.environ.get("FSPM_TF_PVPYTHON")
+    pvpython = os.environ.get("ENCODING3D_PVPYTHON")
     if not pvpython:
-        pytest.skip("FSPM_TF_PVPYTHON (a pvpython) not given")
+        pytest.skip("ENCODING3D_PVPYTHON (a pvpython) not given")
     script = os.path.join(ROOT, "paraview", "check_in_paraview.py")
     result = subprocess.run([pvpython, script, CONFORMANCE], capture_output=True, text=True, timeout=600)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "fspm-TF reader: ok" in result.stdout
+    assert "encoding3d reader: ok" in result.stdout
 
 
 def test_missing_values_are_nan_and_code_minus_one():
@@ -164,7 +164,7 @@ def test_grid_layers_hide_the_cells_not_selected():
     layer = {"name": "wet", "source": {"data_structure": "soil", "kind": "grid"},
              "select": {"entity_set": "Voxel", "where": {"soil_water_potential": ">=-15000"}},
              "color_by": {"entity_set": "Voxel", "variable": "soil_water_potential"}, "opacity": 0.3}
-    image = layers_of(frame, {"fspm_tf_views": 1, "configurations": {"soil": {"layers": [layer]}}})["wet"]
+    image = layers_of(frame, {"encoding3d_views": 1, "configurations": {"soil": {"layers": [layer]}}})["wet"]
     ghosts = vtk_to_numpy(image.GetCellData().GetArray("vtkGhostType"))
     voxels = frame.data_structures[1].entity_set("Voxel")
     order = np.arange(12).reshape((2, 2, 3)).ravel(order="F")
@@ -174,27 +174,27 @@ def test_grid_layers_hide_the_cells_not_selected():
     adaptive = generate.adaptive_soil()
     layer = {"name": "fine", "source": {"data_structure": "soil", "kind": "grid"},
              "select": {"entity_set": "Cell", "where": {"level": ">0"}}}
-    cells = layers_of(adaptive, {"fspm_tf_views": 1, "configurations": {"soil": {"layers": [layer]}}})["fine"]
+    cells = layers_of(adaptive, {"encoding3d_views": 1, "configurations": {"soil": {"layers": [layer]}}})["fine"]
     assert cells.GetNumberOfCells() == (adaptive.data_structures[0].entity_set("Cell").columns["level"] > 0).sum()
 
 
 def test_views_from_a_file_and_wrong_names(tmp_path):
-    from openalea.fspm_tf import views
+    from openalea.encoding3d import views
     from test_views import roots_views
     path = str(tmp_path / "views.json")
     views.write_views(path, roots_views())
     assert list(layers_of(generate.root_system(), path)) == ["first order", "roots"]
     empty = layers_of(generate.wheat_shoot(), path)                       # names the frame lacks: empty blocks
     assert list(empty) == ["first order", "roots"] and all(block.GetNumberOfCells() == 0 for block in empty.values())
-    with pytest.raises(ValueError, match="fspm_tf_views"):
-        reader.frame_to_vtk(generate.root_system(), views={"fspm_tf_views": 2, "configurations": {}})
+    with pytest.raises(ValueError, match="encoding3d_views"):
+        reader.frame_to_vtk(generate.root_system(), views={"encoding3d_views": 2, "configurations": {}})
     assert reader.frame_to_vtk(generate.root_system()).GetNumberOfBlocks() == 1          # no views: as before
 
 
 def test_cells_carry_the_ids_of_the_entities_containing_theirs():
     """What selection by scale reads: each cell the ids of its entity's containing ones, each block its data
     structure and scales."""
-    from openalea.fspm_tf import views
+    from openalea.encoding3d import views
     frame = generate.root_system()
     blocks = blocks_of(frame)
     lines = blocks[("root_system", "SubOrgan segments")]

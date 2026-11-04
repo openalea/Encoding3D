@@ -1,9 +1,9 @@
 # Coupling platforms
 
-fspm-TF also runs models of several platforms together, one time step after the other. This is a **session**:
+encoding3d also runs models of several platforms together, one time step after the other. This is a **session**:
 
 - each platform's model is a **participant**, running in its own process and its own language;
-- a **coordinator** (fspm-TF's, in Python) starts them, passes each one the values it needs from the others, and
+- a **coordinator** (encoding3d's, in Python) starts them, passes each one the values it needs from the others, and
   keeps the plant they share.
 
 Two platforms can work on the same plant: one grows the organs, another splits them into segments and computes a
@@ -39,11 +39,11 @@ segments and tells their refiner.
 
 ## A session in Python
 
-A participant needs the fspm-TF codec, and nothing else of the other platforms:
+A participant needs the encoding3d codec, and nothing else of the other platforms:
 
 ```python
-from openalea import fspm_tf
-from openalea.fspm_tf.coupling import Declaration, EntitySetSpec, Participant, VariableSpec
+from openalea import encoding3d
+from openalea.encoding3d.coupling import Declaration, EntitySetSpec, Participant, VariableSpec
 
 declaration = Declaration("function", entity_sets=[EntitySetSpec("plant", "Organ"),
                                                    EntitySetSpec("plant", "SubOrgan", rights="refines")],
@@ -62,10 +62,10 @@ entities and outputs (only those: the coordinator keeps the rest). The entities 
 
 ## A session in Julia, C++ or Java
 
-The same participant in Julia (FspmTF.jl; ZeroMQ needs `using ZMQ`):
+The same participant in Julia (encoding3d.jl; ZeroMQ needs `using ZMQ`):
 
 ```julia
-using FspmTF, ZMQ
+using encoding3d, ZMQ
 
 participant = Participant(Declaration("function"; entity_sets = [...], variables = [...]))
 for turn in turns(participant)
@@ -75,11 +75,11 @@ for turn in turns(participant)
 end
 ```
 
-In C++ (`fspm_tf/coupling.hpp`; ZeroMQ when built with libzmq) and Java (`org.openalea.fspmtf.coupling`; ZeroMQ with
+In C++ (`encoding3d/coupling.hpp`; ZeroMQ when built with libzmq) and Java (`org.openalea.encoding3d.coupling`; ZeroMQ with
 JeroMQ on the class path), the declaration is its JSON:
 
 ```cpp
-fspm_tf::coupling::Participant participant(declaration);         // a JSON declaration (nlohmann)
+encoding3d::coupling::Participant participant(declaration);         // a JSON declaration (nlohmann)
 while (auto turn = participant.next_turn()) {
     // the model, on turn->frame
     participant.send_update(frame);
@@ -100,7 +100,7 @@ try (Participant participant = new Participant(declaration, null, null, null)) {
 The coordinator starts each participant's command, and waits for the ones started otherwise (`--expect`):
 
 ```bash
-fspm-tf couple --steps 30 --interval 1 --time-unit d \
+encoding3d couple --steps 30 --interval 1 --time-unit d \
     --participant growth="julia --project=vpl growth.jl" \
     --participant function="python function.py" \
     --links links.json --record run/
@@ -118,7 +118,7 @@ fspm-tf couple --steps 30 --interval 1 --time-unit d \
 - `--stages "growth;function"`: who runs first in each step (by default, the participants creating entities, then
   the others). Each step, a stage sees what the previous stages did in that step.
 
-In Python, `openalea.fspm_tf.coupling.Coordinator` does the same from a script.
+In Python, `openalea.encoding3d.coupling.Coordinator` does the same from a script.
 
 ## In metafspm
 
@@ -146,7 +146,7 @@ work on the shared structure, in Python.
 ## Checking a participant
 
 `conformance/coupling/` holds conformance sessions: a peer the coordinator replays, and what the participant under
-test must read and send. `fspm-tf couple-conformance conformance/coupling --participant COMMAND` runs them over both
+test must read and send. `encoding3d couple-conformance conformance/coupling --participant COMMAND` runs them over both
 transports; each codec's CI runs its own participant (Python, Julia, C++, Java) this way.
 
 ## How it behaves

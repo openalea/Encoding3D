@@ -6,9 +6,9 @@ import pytest
 
 import generate
 from conftest import CONFORMANCE
-from openalea.fspm_tf import from_bytes
-from openalea.fspm_tf.dump import frame_to_dict
-from openalea.fspm_tf.validate import validate_file
+from openalea.encoding3d import from_bytes
+from openalea.encoding3d.dump import frame_to_dict
+from openalea.encoding3d.validate import validate_file
 
 FILES = generate.files()
 

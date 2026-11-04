@@ -1,5 +1,5 @@
 // Sequences: a folder of frames (one GLB each) and their index, scene.fspm.json.
-#include "fspm_tf/fspm_tf.hpp"
+#include "encoding3d/encoding3d.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -7,7 +7,7 @@
 #include <set>
 #include <sstream>
 
-namespace fspm_tf {
+namespace encoding3d {
 
 void write_index(const std::string &path, const Index &index) {
     json frames = json::array();
@@ -62,4 +62,4 @@ std::vector<Frame> read_sequence(const std::string &path) {
     return frames;
 }
 
-} // namespace fspm_tf
+} // namespace encoding3d

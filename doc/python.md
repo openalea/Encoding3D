@@ -5,7 +5,7 @@
 A platform writes and reads its own simulations through its adapter. In openalea.metafspm:
 
 ```python
-from openalea.metafspm.io.fspm_tf import export_scene, import_frame
+from openalea.metafspm.io.encoding3d import export_scene, import_frame
 
 export_scene("scene.glb", scene)                       # the scene now
 data_structures = import_frame("scene.glb")            # metafspm's DataStructures, rebuilt bit for bit
@@ -18,12 +18,12 @@ See [metafspm's documentation](https://github.com/openalea/metafspm) for the opt
 
 ## The format's own tables
 
-`openalea.fspm_tf` reads any fspm-TF file, whichever platform wrote it, into plain Python objects holding numpy arrays.
+`openalea.encoding3d` reads any encoding3d file, whichever platform wrote it, into plain Python objects holding numpy arrays.
 
 ```python
-from openalea import fspm_tf
+from openalea import encoding3d
 
-frame = fspm_tf.read("scene.glb")
+frame = encoding3d.read("scene.glb")
 print(frame.time, frame.time_unit, frame.step)
 
 roots = frame.data_structure("RootPopulation")
@@ -52,34 +52,34 @@ Writing builds the same objects:
 
 ```python
 import numpy as np
-from openalea import fspm_tf
+from openalea import encoding3d
 
-segments = fspm_tf.EntitySet("SubOrgan", rank=6, columns=dict(
+segments = encoding3d.EntitySet("SubOrgan", rank=6, columns=dict(
     id=np.array([1, 2, 3]), label=np.array(["RootSegment"] * 3, dtype=object),
     parent=np.array([-1, 1, 2]), edge_type=np.array(["none", "successor", "successor"], dtype=object),
     length=np.array([0.01, 0.01, 0.004])),
-    variables={"length": fspm_tf.Variable(unit="m", standard_name="length", kind="extensive")})
-plant = fspm_tf.DataStructure("roots", entity_sets=[segments])
-fspm_tf.write("roots.glb", fspm_tf.Frame([plant], time=0., time_unit="d"))
+    variables={"length": encoding3d.Variable(unit="m", standard_name="length", kind="extensive")})
+plant = encoding3d.DataStructure("roots", entity_sets=[segments])
+encoding3d.write("roots.glb", encoding3d.Frame([plant], time=0., time_unit="d"))
 ```
 
 A sequence is a folder of frames with its index:
 
 ```python
-fspm_tf.write_sequence("outputs/frames", frames)       # frame_000000.glb, ..., scene.fspm.json
-for frame in fspm_tf.read_sequence("outputs/frames/scene.fspm.json"):
+encoding3d.write_sequence("outputs/frames", frames)       # frame_000000.glb, ..., scene.fspm.json
+for frame in encoding3d.read_sequence("outputs/frames/scene.fspm.json"):
     ...
 ```
 
 ## Large frames: reading lazily
 
-`fspm_tf.read(path, lazy=True)` maps the file in memory and parses only its JSON: names, declarations, ranks and
+`encoding3d.read(path, lazy=True)` maps the file in memory and parses only its JSON: names, declarations, ranks and
 counts are there at once, and each column (and each mesh) is decoded when first read. A reader using a few columns of
 a large frame decodes only those (a GroIMP frame of 7.4 MB with a 456,000-vertex mesh: 17 ms read whole, 0.8 ms for
 one column). The frame holds the file until it is closed:
 
 ```python
-with fspm_tf.read("plant.glb", lazy=True) as frame:
+with encoding3d.read("plant.glb", lazy=True) as frame:
     segments = frame.data_structure("plant").entity_set("SubOrgan")
     lengths = segments.columns["length"]          # decoded now; the other columns are not
 ```
@@ -90,7 +90,7 @@ link uses).
 ## The vocabulary
 
 ```python
-from openalea.fspm_tf import vocabulary
+from openalea.encoding3d import vocabulary
 
 vocabulary.standard_names()["water_potential"]          # its unit, kind, definition, platform names
 vocabulary.platform_names("metafspm")                   # {"water_potential": "water_potential", "x1": "proximal_end_x", ...}

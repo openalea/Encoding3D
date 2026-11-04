@@ -1,10 +1,10 @@
 // The GLB container: a 12-byte header (magic, version 2, total length), a JSON chunk padded with spaces, a binary
 // chunk padded with zeros, each 8-byte aligned (as EXT_structural_metadata requires). Little-endian throughout.
-#include "fspm_tf/fspm_tf.hpp"
+#include "encoding3d/encoding3d.hpp"
 
 #include "bytes.hpp"
 
-namespace fspm_tf {
+namespace encoding3d {
 
 namespace {
 constexpr std::uint32_t GLB_MAGIC = 0x46546C67;     // "glTF"
@@ -69,4 +69,4 @@ std::pair<json, std::vector<std::uint8_t>> unpack(const std::vector<std::uint8_t
     return {std::move(document), std::move(binary)};
 }
 
-} // namespace fspm_tf
+} // namespace encoding3d

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- fspm-tf, the Java codec of fspm-TF: reading and writing frames and sequences (spec 0.3), a coupling session's participant. One dependency: Jackson
+<!-- encoding3d, the Java codec of encoding3d: reading and writing frames and sequences (spec 0.3), a coupling session's participant. One dependency: Jackson
      (and JeroMQ, optional, for the coupling's ZeroMQ transport).
 
        mvn -f bindings/java/pom.xml verify          the tests, the conformance files included
@@ -9,17 +9,17 @@
   <modelVersion>4.0.0</modelVersion>
 
   <groupId>org.openalea</groupId>
-  <artifactId>fspm-tf</artifactId>
+  <artifactId>encoding3d</artifactId>
   <version>0.1.0</version>
   <packaging>jar</packaging>
-  <name>fspm-TF (Java)</name>
-  <description>Reading and writing fspm-TF files: functional-structural plant model scenes as glTF 2.0 binaries</description>
-  <url>https://github.com/openalea/fspm-TF</url>
+  <name>encoding3d (Java)</name>
+  <description>Reading and writing encoding3d files: functional-structural plant model scenes as glTF 2.0 binaries</description>
+  <url>https://github.com/openalea/encoding3d</url>
   <licenses>
     <license>
       <name>GPL-3.0-or-later</name>
       <url>https://www.gnu.org/licenses/gpl-3.0.txt</url>
-      <comments>As GroIMP, the platform this codec serves (bindings/java/LICENSE); the rest of fspm-TF is CeCILL-C</comments>
+      <comments>As GroIMP, the platform this codec serves (bindings/java/LICENSE); the rest of encoding3d is CeCILL-C</comments>
     </license>
   </licenses>
 
@@ -28,7 +28,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <jackson.version>2.18.2</jackson.version>
     <junit.version>5.11.4</junit.version>
-    <fspmtf.conformance>${project.basedir}/../../conformance</fspmtf.conformance>
+    <encoding3d.conformance>${project.basedir}/../../conformance</encoding3d.conformance>
   </properties>
 
   <dependencies>
@@ -70,7 +70,7 @@
         <version>3.5.2</version>
         <configuration>
           <systemPropertyVariables>
-            <fspmtf.conformance>${fspmtf.conformance}</fspmtf.conformance>
+            <encoding3d.conformance>${encoding3d.conformance}</encoding3d.conformance>
           </systemPropertyVariables>
         </configuration>
       </plugin>
@@ -81,10 +81,10 @@
         <configuration>
           <archive>
             <manifest>
-              <mainClass>org.openalea.fspmtf.ConformanceRun</mainClass>
+              <mainClass>org.openalea.encoding3d.ConformanceRun</mainClass>
             </manifest>
             <manifestEntries>
-              <Automatic-Module-Name>org.openalea.fspmtf</Automatic-Module-Name>
+              <Automatic-Module-Name>org.openalea.encoding3d</Automatic-Module-Name>
             </manifestEntries>
           </archive>
         </configuration>

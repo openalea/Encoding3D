@@ -17,11 +17,11 @@ import threading
 
 import numpy as np
 
-from openalea.fspm_tf import (DataStructure, EntitySet, Frame, Mapping, NO_ID, Variable, read, read_index, to_bytes,
+from openalea.encoding3d import (DataStructure, EntitySet, Frame, Mapping, NO_ID, Variable, read, read_index, to_bytes,
                               write_sequence)
-from openalea.fspm_tf.coupling import (Coordinator, Declaration, EntitySetSpec, Link, MappingSpec, Participant,
+from openalea.encoding3d.coupling import (Coordinator, Declaration, EntitySetSpec, Link, MappingSpec, Participant,
                                        VariableSpec)
-from openalea.fspm_tf.dump import frame_to_dict
+from openalea.encoding3d.dump import frame_to_dict
 
 DIRECTORY = os.path.dirname(os.path.abspath(__file__))
 STEPS = 4

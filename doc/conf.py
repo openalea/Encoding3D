@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Sphinx configuration of fspm-TF's documentation. The vocabulary's pages are generated from spec/vocabulary at each
+"""Sphinx configuration of encoding3d's documentation. The vocabulary's pages are generated from spec/vocabulary at each
 build (_generated/), so that they never differ from the agreed files."""
 import csv
 import json
@@ -13,9 +13,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
 # The package's metadata (pyproject.toml), as every OpenAlea documentation reads it
-package = "openalea.fspm_tf"
+package = "openalea.encoding3d"
 meta = metadata(package)
-project = "fspm-TF"
+project = "encoding3d"
 release = meta.get("version")
 version = ".".join(release.split(".")[:3])
 author = meta["Author-email"].split(" <")[0]
@@ -76,14 +76,14 @@ html_split_index = False
 html_show_sourcelink = True
 html_show_sphinx = True
 html_show_copyright = True
-htmlhelp_basename = "fspm_tf_documentation"
-html_context = {"github_user": "openalea", "github_repo": "fspm-TF", "github_version": "main", "doc_path": "doc"}
+htmlhelp_basename = "encoding3d_documentation"
+html_context = {"github_user": "openalea", "github_repo": "encoding3d", "github_version": "main", "doc_path": "doc"}
 
 # -- Options for LaTeX, manual page and Texinfo output ---------------------
 latex_elements = {}
-latex_documents = [(master_doc, "fspm_tf.tex", "fspm-TF Documentation", "INRAE / inria / CIRAD", "manual")]
-man_pages = [(master_doc, "fspm_tf", "fspm-TF Documentation", [author], 1)]
-texinfo_documents = [(master_doc, "fspm_tf", "fspm-TF Documentation", author, "fspm_tf", desc, "Miscellaneous")]
+latex_documents = [(master_doc, "encoding3d.tex", "encoding3d Documentation", "INRAE / inria / CIRAD", "manual")]
+man_pages = [(master_doc, "encoding3d", "encoding3d Documentation", [author], 1)]
+texinfo_documents = [(master_doc, "encoding3d", "encoding3d Documentation", author, "encoding3d", desc, "Miscellaneous")]
 intersphinx_mapping = {"python": ("https://docs.python.org/3", None)}
 
 

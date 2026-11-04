@@ -1,8 +1,8 @@
-# fspm-TF 0.3 specification
+# encoding3d 0.3 specification
 
 Status: draft (2026-11-03). 0.3 adds coupling sessions and partial frames to 0.2 (see "Changes from 0.2" at the end); a 0.1 or 0.2 file is a valid 0.3 file. The key words MUST, SHOULD and MAY are to be read as in RFC 2119 (https://www.rfc-editor.org/rfc/rfc2119).
 
-fspm-TF is an exchange format for whole functional-structural plant model scenes: multiscale plant graphs, their
+encoding3d is an exchange format for whole functional-structural plant model scenes: multiscale plant graphs, their
 variables and parameters, their geometry, and the environment's grids, at successive time steps. A **frame** (one
 time step) is one glTF 2.0 binary file (GLB). A **sequence** of frames is a folder of GLB files with an index.
 
@@ -324,7 +324,7 @@ A sequence (or a frame) MAY come with a companion `views.json`, next to its `sce
 valid without it. It is platform-independent; any viewer may apply it.
 
 ```text
-{"fspm_tf_views": 1, "active": "default",
+{"encoding3d_views": 1, "active": "default",
  "configurations": {"default": {"layers": [
    {"name": "roots", "source": {"data_structure": "plants", "kind": "segments", "entity_set": "SubOrgan"},
     "select": {"entity_set": "SubOrgan", "where": {"label": ["RootSegment"], "length": ">0"}},
@@ -347,7 +347,7 @@ valid without it. It is platform-independent; any viewer may apply it.
 - **Defaults.** `colormap` `"Viridis (matplotlib)"`, `range` `"auto"`, `log` false, `opacity` 1, `visible` true,
   `representation` `"Surface"`, `solid_color` white, a tube's `scale` 1.
 - Every name a layer gives (data structure, mesh, entity sets, columns) SHOULD be in the frames it goes with;
-  the Python reference implementation checks them (`openalea.fspm_tf.views.check_views(views, frame)`). In a frame
+  the Python reference implementation checks them (`openalea.encoding3d.views.check_views(views, frame)`). In a frame
   that lacks one (e.g. a mesh drawn from a later frame on), a viewer draws the layer empty.
 
 ## 9. Conformance
@@ -371,7 +371,7 @@ An implementation conforms to 0.3 when two things hold:
 - **Reading:** what it reads from every conformance GLB equals the expected JSON. Floats are compared exactly; NaN and
   missing values are null in the JSON, +∞ and −∞ the strings `"Infinity"` and `"-Infinity"`; positions are the
   FLOAT32 values.
-- **Writing:** what it writes passes `fspm-tf validate` with no error, and Khronos' glTF-Validator with no error.
+- **Writing:** what it writes passes `encoding3d validate` with no error, and Khronos' glTF-Validator with no error.
 
 A codec's participant (§11) conforms when it runs every **coupling session** of `conformance/coupling/` as expected,
 over both transports. A session's folder holds the coordinator's settings (`session.json`), a peer (a sequence the
@@ -379,7 +379,7 @@ coordinator replays), the subject's declaration and the updates it sends (`subje
 (`expected/turn_<step>.json`: what the subject reads from each turn; `expected/record/frame_<step>.json`: the
 session's record). The participant under test is a program run as `COMMAND SESSION OUT`: it joins with the
 declaration, writes what it reads from each turn to `OUT/turn_<step>.json` (in the expected values' layout), and sends
-`subject/update_<step>.glb` as its codec reads and writes it again. `fspm-tf couple-conformance conformance/coupling
+`subject/update_<step>.glb` as its codec reads and writes it again. `encoding3d couple-conformance conformance/coupling
 --participant COMMAND` runs and compares them all.
 
 | Session | Covers |
@@ -394,7 +394,7 @@ the glTF root's other extensions and `extras`, when they hold no buffer views.
 
 ## 11. Coupling
 
-Platforms couple their models through fspm-TF in a **session**: each **participant** is a platform's model running
+Platforms couple their models through encoding3d in a **session**: each **participant** is a platform's model running
 in its own process, or a recorded sequence (§11.6), and a **coordinator** runs the session. The coordinator holds the
 session's shared structure (the entities of every data structure and the values each participant provides), applies
 the links between them and sends each participant its inputs. A participant only declares itself, then answers each
@@ -530,7 +530,7 @@ Both transports carry the same messages.
     coordinator, from the start. Kept, the folder is the session's log; a session needs a new folder. The usual log of
     a session is its record, a sequence of full frames (§8) the coordinator writes when asked.
 - **Launching.** A participant launched by the coordinator finds the endpoint in the environment variable
-  `FSPM_TF_ENDPOINT` and its name in `FSPM_TF_PARTICIPANT`.
+  `ENCODING3D_ENDPOINT` and its name in `ENCODING3D_PARTICIPANT`.
 - **Replay.** A recorded sequence (§8) may be a participant, so a platform's log feeds another platform's inputs without
   the first one running.
   - It owns its entity sets, and provides their variables.

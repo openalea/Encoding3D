@@ -1,7 +1,7 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
- "$id": "https://github.com/openalea/fspm-TF/spec/schema/coupling.schema.json",
- "title": "fspm-TF coupling messages",
+ "$id": "https://github.com/openalea/encoding3d/spec/schema/coupling.schema.json",
+ "title": "encoding3d coupling messages",
  "description": "The JSON header of a coupling session's message (specification §11). Turns and updates also carry a payload: a partial frame's GLB bytes.",
  "oneOf": [
   {"$ref": "#/$defs/hello"}, {"$ref": "#/$defs/welcome"}, {"$ref": "#/$defs/turn"}, {"$ref": "#/$defs/update"},

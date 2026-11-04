@@ -1,9 +1,9 @@
-#include "fspm_tf/model.hpp"
+#include "encoding3d/model.hpp"
 
 #include <algorithm>
 #include <numeric>
 
-namespace fspm_tf {
+namespace encoding3d {
 
 std::size_t Column::size() const {
     return std::visit([](const auto &column_values) { return column_values.size(); }, values);
@@ -145,4 +145,4 @@ DataStructure &Frame::data_structure(const std::string &id) {
     return const_cast<DataStructure &>(static_cast<const Frame &>(*this).data_structure(id));
 }
 
-} // namespace fspm_tf
+} // namespace encoding3d

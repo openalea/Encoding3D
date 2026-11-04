@@ -10,8 +10,8 @@ import os
 import shutil
 import sys
 
-from openalea import fspm_tf
-from openalea.fspm_tf.dump import frame_to_dict
+from openalea import encoding3d
+from openalea.encoding3d.dump import frame_to_dict
 
 
 def main(conformance: str, out: str) -> int:
@@ -22,14 +22,14 @@ def main(conformance: str, out: str) -> int:
             if not name.endswith(".glb"):
                 continue
             relative = os.path.relpath(os.path.join(folder, name), conformance)
-            frame = fspm_tf.read(os.path.join(conformance, relative))
+            frame = encoding3d.read(os.path.join(conformance, relative))
             dump = os.path.join(out, "dumps", relative[:-len(".glb")] + ".json")
             written = os.path.join(out, "written", relative)
             for path in (dump, written):
                 os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(dump, "w", encoding="utf-8") as file:
                 json.dump(frame_to_dict(frame), file, indent=1)
-            fspm_tf.write(written, frame)                       # written again from what was read
+            encoding3d.write(written, frame)                       # written again from what was read
     index = os.path.join(conformance, "growing_sequence", "scene.fspm.json")
     if os.path.exists(index):
         shutil.copy(index, os.path.join(out, "written", "growing_sequence", "scene.fspm.json"))

@@ -1,4 +1,4 @@
-name: fspm_tf
+name: encoding3d
 channels:
   - openalea3
   - conda-forge

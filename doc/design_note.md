@@ -1,4 +1,4 @@
-# fspm-TF: design note
+# encoding3d: design note
 
 *An exchange format for whole FSPM scenes, across platforms and languages.*
 
@@ -20,7 +20,7 @@ Functional-structural plant models are written on several platforms, each in its
 These platforms share no common representation of a *scene*: plants with their multiscale structure, their state
 variables, their geometry, and their environment (soil grids, light, weather).
 
-fspm-TF aims at two uses:
+encoding3d aims at two uses:
 
 1. **Static exchange:** one file, written by one platform and read by another. It holds a scene, or a sequence of time
    steps of it: a simulation's output, or an initial state given to another model.
@@ -32,7 +32,7 @@ units, which each platform maps its own names to.
 
 Precedent: RSML ([openalea/RSML](https://github.com/openalea/RSML), Lobet et al. 2015) did this for root
 architectures. It is adopted by about ten tools, including CPlantBox, ArchiSimple, GroIMP's `rsmlreader` and
-openalea's `rsml2mtg`. fspm-TF extends the idea to whole scenes, all scales, state variables and environments.
+openalea's `rsml2mtg`. encoding3d extends the idea to whole scenes, all scales, state variables and environments.
 
 ## 2. Requirements
 
@@ -282,7 +282,7 @@ The following are **not** exchanged; they stay in metafspm's own checkpoint:
 - derivation formulas and mask rules, since these are code;
 - the random streams' counters.
 
-**As implemented in P2** (`openalea.metafspm.io.fspm_tf`):
+**As implemented in P2** (`openalea.metafspm.io.encoding3d`):
 
 - **Every MPG scale holding vertices is an entity set**, Compartments included; the Connections are a relation, with
   their vids as ids. `complex` is the containing entity in any coarser set: a wall Compartment belongs to its
@@ -306,7 +306,7 @@ One glTF asset is **one frame**. The binding uses only:
 - `EXT_structural_metadata`, property tables only: no property textures and no property attributes, because these
   can't hold float64;
 - `EXT_mesh_features`, attribute feature IDs only;
-- one fspm-TF extension, `FSPM_scene` (decided, §7.1), holding what the
+- one encoding3d extension, `FSPM_scene` (decided, §7.1), holding what the
   metadata extension cannot hold.
 
 #### Layout
@@ -336,7 +336,7 @@ meshes                             TRIANGLES or LINES, POSITION in float32 relat
   - One glTF node per entity, as PlantConvert does, puts 10⁵ objects in the JSON. It also holds only one tree, so
     PlantConvert has to duplicate a scene per scale.
   - The MTG's relations are columns instead, where they are compact, typed and complete.
-- **The relational columns are uint64 ids** whose meaning is fixed by fspm-TF, since the metadata extension has no
+- **The relational columns are uint64 ids** whose meaning is fixed by encoding3d, since the metadata extension has no
   reference type. `FSPM_scene` declares, per column, which entity set the ids point to.
 - **float64 state lives in property tables only.**
   - Viewers that ignore the extensions still show the geometry, and the `_NAME` float32 display copies (ParaView
@@ -359,10 +359,10 @@ pointing at them, capped at 4 GiB.
 #### Viewing
 
 - Any glTF viewer shows the geometry.
-- ParaView, with the `openalea.fspm_tf` reader plugin, shows every variable at every scale as float64 cell data, with the
+- ParaView, with the `openalea.encoding3d` reader plugin, shows every variable at every scale as float64 cell data, with the
   index's frames as time steps (§7.4).
 - ParaView without the plugin, and other viewers, show the display copies: float32 per-vertex copies of chosen
-  variables. Files have none by default; the writer's `display=` option or the `fspm-tf display` tool adds them.
+  variables. Files have none by default; the writer's `display=` option or the `encoding3d display` tool adds them.
 - Cesium and 3DTilesRendererJS show every table.
 
 ### 4.5 The vocabulary
@@ -406,7 +406,7 @@ A coupling **protocol** shaped like BMI:
 
 This is a later phase (§6). The data model is specified first, so that the coupling inherits it.
 
-**Update (2026-11-03): built differently.** The coupling is the specification's §11. A coordinator (fspm-TF's, in
+**Update (2026-11-03): built differently.** The coupling is the specification's §11. A coordinator (encoding3d's, in
 Python) holds the shared structure and applies the links; each platform's participant declares what it works on,
 provides and requires, then answers turns with updates. The messages carry **partial frames**, the same GLB as a time
 step, not Arrow batches: every codec already reads and writes GLB, Arrow would have been a large new dependency in
@@ -416,7 +416,7 @@ in-process interface is not part of it.
 
 ### 4.7 VTKHDF (dropped)
 
-A VTKHDF export was considered for viewing long simulations in ParaView. It is dropped, to keep fspm-TF free of an
+A VTKHDF export was considered for viewing long simulations in ParaView. It is dropped, to keep encoding3d free of an
 HDF5 dependency (§7.8). ParaView views the glTF files themselves, through display copies.
 
 ### 4.8 Read and write cost in metafspm, and the glTF-backed DataStructure question
@@ -442,7 +442,7 @@ A DataStructure *backed* by a glTF buffer would have to keep the JSON and the bu
 speed. **Recommendation: no backing DataStructure.** Provide instead (all done in P2):
 
 - `export_frame(path, data structures)`, `export_scene(path, scene)` and `import_frame(path) -> data structures`, in
-  metafspm's `io` module, on top of the `openalea.fspm_tf` codec (§5.1);
+  metafspm's `io` module, on top of the `openalea.encoding3d` codec (§5.1);
 - a `SceneRecorder` option writing frames every N steps: `Scene(frame_period=N)`;
 - the round-trip test as the contract: export → import gives the same ids, topology, values (bit for bit), metadata
   and mappings, for every DataStructure type and location;
@@ -453,7 +453,7 @@ speed. **Recommendation: no backing DataStructure.** Provide instead (all done i
 This repository is platform-neutral, separate from metafspm, like RSML.
 
 ```
-fspm-TF/
+encoding3d/
   README.md
   doc/design_note.md          this note
   spec/                       the agreement, the only folder discussed with the platforms:
@@ -461,7 +461,7 @@ fspm-TF/
     schema/                   JSON Schema of FSPM_scene and of the index file
     vocabulary/               standard_names.csv (with one column of names per platform), labels.csv, enums.json
   bindings/python/            the Python reference package (§5.1): codec, validator, display tool, command line, and
-                              its tests; it reads spec/ and ships it (openalea.fspm_tf.spec)
+                              its tests; it reads spec/ and ships it (openalea.encoding3d.spec)
   bindings/<language>/        the other languages' codecs, by their teams (adapters stay in the platforms)
   paraview/                   the ParaView reader plugin
   conformance/                the reference files: a root system, a wheat shoot, a cell network, a soil grid with
@@ -475,7 +475,7 @@ fspm-TF/
 - **The repository holds:** the specification, the schema, the vocabulary, the conformance files, and a small Python
   package, which is generic and knows no platform.
 - **Each platform's own mapping lives in that platform:** metafspm's in metafspm, CPlantBox's in CPlantBox, and so on.
-- **fspm-TF is separate from RSML and PlantConvert** (decided, §7.6). Converters from OPF, `.mtg` or RSML can come
+- **encoding3d is separate from RSML and PlantConvert** (decided, §7.6). Converters from OPF, `.mtg` or RSML can come
   later, in PlantConvert.
 - **Rules:**
   - semantic versioning of the specification;
@@ -488,19 +488,19 @@ fspm-TF/
 Everything maintained in this repository is Python. The other platforms take part through files and a command line,
 not code: no C++, Java or Julia has to be maintained here.
 
-**The Python package `openalea.fspm_tf`.** Its only dependencies are numpy and jsonschema; GLB is a 12-byte header plus a JSON
+**The Python package `openalea.encoding3d`.** Its only dependencies are numpy and jsonschema; GLB is a 12-byte header plus a JSON
 chunk and a binary chunk, so no glTF library is needed. It contains:
 
-- `openalea.fspm_tf.codec`:
+- `openalea.encoding3d.codec`:
   - `write(path, frame)` and `read(path) -> frame`, where a frame is plain Python: data structures, entity sets as
     `{column: numpy array}`, variable declarations as dicts, meshes as arrays with feature IDs;
   - `write_index` and `read_index` for sequences.
-- `openalea.fspm_tf.validate`: JSON Schema checks of `FSPM_scene` and the index; the checks the schema cannot express (ids
+- `openalea.encoding3d.validate`: JSON Schema checks of `FSPM_scene` and the index; the checks the schema cannot express (ids
   unique and never reused across frames, `complex` and `parent` pointing to existing entities, units parsable as UCUM,
   kinds and standard names in the vocabulary, tables 8-byte aligned, display copies flagged).
-- `openalea.fspm_tf.display`: adds or removes display copies (§7.4).
-- `openalea.fspm_tf.vocabulary`: the vocabulary table, shipped as package data.
-- A command line: `fspm-tf validate file.glb`, `fspm-tf display file.glb name ...`, `fspm-tf info file.glb`.
+- `openalea.encoding3d.display`: adds or removes display copies (§7.4).
+- `openalea.encoding3d.vocabulary`: the vocabulary table, shipped as package data.
+- A command line: `encoding3d validate file.glb`, `encoding3d display file.glb name ...`, `encoding3d info file.glb`.
 
 **Tests and CI**, the same way as metafspm:
 
@@ -514,7 +514,7 @@ chunk and a binary chunk, so no glTF library is needed. It contains:
 
 **How another platform tests its implementation**, in its own CI:
 
-- **Writing:** it writes the conformance scenes with its own code and runs `fspm-tf validate` (conda or pip, or
+- **Writing:** it writes the conformance scenes with its own code and runs `encoding3d validate` (conda or pip, or
   a container).
 - **Reading:** it reads the conformance GLBs with its own code and compares the values with the expected JSON.
 
@@ -523,14 +523,14 @@ claims.
 
 **How metafspm uses it:**
 
-- `openalea.metafspm.io.fspm_tf`, a new module, maps metafspm's DataStructures, mappings and declarations to
-  `fspm_tf` frames and back (§4.3), and calls the codec. It is the only metafspm code concerned.
-- metafspm's environment and recipe add `openalea.fspm_tf`, pinned to the specification version it implements
-  (`openalea.fspm_tf >=0.1,<0.2`).
-- During development it is installed with `pip install -e ../fspm-TF`, as metafspm itself is in the ported packages.
-- metafspm's tests use the round trip (§4.8), `openalea.fspm_tf.validate` on what it writes, and the conformance files on
+- `openalea.metafspm.io.encoding3d`, a new module, maps metafspm's DataStructures, mappings and declarations to
+  `encoding3d` frames and back (§4.3), and calls the codec. It is the only metafspm code concerned.
+- metafspm's environment and recipe add `openalea.encoding3d`, pinned to the specification version it implements
+  (`openalea.encoding3d >=0.1,<0.2`).
+- During development it is installed with `pip install -e ../encoding3d`, as metafspm itself is in the ported packages.
+- metafspm's tests use the round trip (§4.8), `openalea.encoding3d.validate` on what it writes, and the conformance files on
   what it reads.
-- A new release of the specification is a new `openalea.fspm_tf` version. metafspm moves to it with a pin change, and its
+- A new release of the specification is a new `openalea.encoding3d` version. metafspm moves to it with a pin change, and its
   tests tell what has to follow.
 
 ### 5.2 What other languages need
@@ -544,7 +544,7 @@ in `schema/`, `vocabulary/` and `conformance/` (and as release assets):
 | `schema/fspm_scene.schema.json`, `schema/index.schema.json` | the structure of `FSPM_scene` and of the index | any JSON Schema validator: valijson or json-schema-validator (C++), networknt json-schema-validator (Java), JSONSchema.jl (Julia) |
 | `vocabulary/standard_names.csv`, `vocabulary/enums.json` | standard names with units and kinds; labels, edge types, relations, kinds, roles | any CSV or JSON reader |
 | `conformance/*.glb` with `*.expected.json` | the reference scenes and their values | the platform's own codec, against the JSON |
-| `fspm-tf validate` | the full checks, as a command line | its CI (conda, pip, or a container image) |
+| `encoding3d validate` | the full checks, as a command line | its CI (conda, pip, or a container image) |
 
 What a platform writes is **its codec**:
 - **The GLB container:** a 12-byte header, a JSON chunk and a binary chunk.
@@ -553,13 +553,13 @@ What a platform writes is **its codec**:
 
 That is a few hundred lines in any language, and existing libraries can help:
 - **C++ (CPlantBox):** cesium-native reads and writes `EXT_structural_metadata` fully. CPlantBox can also begin
-  through its Python layer, with `openalea.fspm_tf` directly.
+  through its Python layer, with `openalea.encoding3d` directly.
 - **Java (GroIMP):** JglTF has the extension's JSON classes. GroIMP's existing glTF plugin is the place to extend.
 - **Julia (VPL):** GLTF.jl handles `.gltf` JSON only, so a small GLB reader has to be written. That is the part
   above, the header and the two chunks.
 
 These codecs live in the platforms' repositories, maintained by their teams. `implementations.md` lists them with
-the specification version each one passes. fspm-TF itself maintains only Python.
+the specification version each one passes. encoding3d itself maintains only Python.
 
 **Update (2026-11-03): decided otherwise.** The codecs live in this repository (`bindings/<language>/`: Python, Julia,
 C++, Java), each passing the conformance files; the adapters (a platform's model to and from the codec's tables)
@@ -571,9 +571,9 @@ belong to the platforms, as Julia package extensions where the platform's librar
 | Phase | Content | Done when | Status |
 |---|---|---|---|
 | P0 | This note, discussed with the partner platforms | the [decision] points settled | decisions taken on the metafspm side; review by the partners to come |
-| P1 | Specification v0.1: data model, glTF binding, JSON Schema, first vocabulary; the `openalea.fspm_tf` package (codec, validator, display tool), the conformance files, CI | the validator and glTF-Validator accept the conformance files | done |
+| P1 | Specification v0.1: data model, glTF binding, JSON Schema, first vocabulary; the `openalea.encoding3d` package (codec, validator, display tool), the conformance files, CI | the validator and glTF-Validator accept the conformance files | done |
 | P2 | metafspm reference implementation: `export_frame` and `import_frame` for MPG, Array and AdaptiveGrid DataStructures, mappings and triangles | round-trip tests bit-exact on the ported models' scenes (ArchiSimple, Adel, Caribu, GRANAP and MECHA, soil) | done, with `Scene(frame_period=)`; the continuation after an import is exact too |
-| P3 | The ParaView reader plugin (Python, on the `openalea.fspm_tf` codec: every variable as cell data, frames as time steps); viewer checks of display copies: ParaView without the plugin, three.js/3DTilesRenderer, Blender | the example files viewed with their variables | ParaView done (6.0.1, the plugin and ParaView's own glTF reader); three.js and Blender skipped |
+| P3 | The ParaView reader plugin (Python, on the `openalea.encoding3d` codec: every variable as cell data, frames as time steps); viewer checks of display copies: ParaView without the plugin, three.js/3DTilesRenderer, Blender | the example files viewed with their variables | ParaView done (6.0.1, the plugin and ParaView's own glTF reader); three.js and Blender skipped |
 | P4 | A second platform: CPlantBox through its Python layer (the easiest), or VPL through PlantGeom.jl | a file written by one platform and read by the other, with the same values | done, and more: the Julia (VirtualPlantLab, MTG.jl), C++ (CPlantBox) and Java (GroIMP) codecs and adapters ([Implementations](implementations.md)) |
 | P5 | Arrow binding and coupling protocol; a two-platform coupled run | one component in metafspm and one in another platform exchanging tables at each step | done without Arrow (§4.6's update): the coupling sessions of the specification's §11; metafspm coupled with VirtualPlantLab |
 
@@ -603,7 +603,7 @@ answer: I don't understand the question.
    **Proposal:**
    - Files hold no display copies by default: they are exact and lean.
    - The writer takes an option `display=[names]` to add some.
-   - The repository's tool also adds them to an existing file afterwards (`fspm-tf display file.glb
+   - The repository's tool also adds them to an existing file afterwards (`encoding3d display file.glb
      water_potential`), computed from the tables. A file can then be prepared for ParaView at any time, and no
      platform has to implement this.
    - Display copies are flagged as such, and readers ignore them as state.
@@ -618,10 +618,10 @@ answer: I don't understand the question.
      show its values, and colour by a property through a custom shader. But they are geospatial and web-graphics
      tools: there is no plot, no filter, and no notion of our index of time steps.
 
-   The best-suited option is a **ParaView reader plugin written in Python**, shipped with `openalea.fspm_tf`:
+   The best-suited option is a **ParaView reader plugin written in Python**, shipped with `openalea.encoding3d`:
    - ParaView loads Python readers (a `VTKPythonAlgorithmBase` with its decorators, since ParaView 5.6). It runs
-     them in its own Python, which has numpy, so the pure-Python `openalea.fspm_tf` codec runs inside ParaView.
-     (Checked with ParaView 6.0.1: nothing to install, the plugin finds `openalea.fspm_tf` in the clone's `bindings/python/src/`.)
+     them in its own Python, which has numpy, so the pure-Python `openalea.encoding3d` codec runs inside ParaView.
+     (Checked with ParaView 6.0.1: nothing to install, the plugin finds `openalea.encoding3d` in the clone's `bindings/python/src/`.)
    - The plugin reads the GLB (or the index file) and turns each triangle's entity value into float64 *cell data*
      (one value per triangle, from the feature IDs). Every variable, at every scale, becomes available for colouring,
      filters and plots. The index's frames become ParaView's time steps, with a growing topology.
@@ -638,18 +638,18 @@ answer: also parameters, that would enable also to exchange them between platfor
      - one value per entity type, as a column of that scale.
    - A file holding only parameters, with no entities, is valid: a **parameter set** that can be exchanged on its own
      (§4.2).
-6. Coordination with PlantConvert and with the RSML maintainers: one family of formats, or fspm-TF absorbing RSML's
+6. Coordination with PlantConvert and with the RSML maintainers: one family of formats, or encoding3d absorbing RSML's
    use cases.
 answer: should be a separated initiative. In this regard, how is the test / source management and CI to be handled, since I am only used to python? In the example of metafspm, how will this repo or its release be used to build metafspm's io?
-   → **Decided:** fspm-TF is an initiative separate from RSML and PlantConvert. Converters to and from them can come
+   → **Decided:** encoding3d is an initiative separate from RSML and PlantConvert. Converters to and from them can come
    later, in PlantConvert. On tests, sources, CI and metafspm's use of the repository: see §5.1. In short:
-   - The repository holds the specification and a **Python** package, `openalea.fspm_tf`, which depends only on numpy and
+   - The repository holds the specification and a **Python** package, `openalea.encoding3d`, which depends only on numpy and
      jsonschema. It is the reference codec: it reads and writes GLB files, their property tables and the index, and
      knows nothing of metafspm. It also contains the validator and the conformance files.
    - Other platforms need no Python of yours. They use the conformance files (GLBs plus their expected values as
      JSON) as test fixtures in their own CI, and run the validator on what they write. The validator is installed by
      `pip` or `conda` and run as a command line.
-   - metafspm depends on `openalea.fspm_tf` like on any package, pinned to a specification version. Its `io` module maps
+   - metafspm depends on `openalea.encoding3d` like on any package, pinned to a specification version. Its `io` module maps
      DataStructures to the generic model and calls the codec.
      answer: ok for the strategy, I see how the python package will make it easily available in python, but for other languages / platforms what does it imply to make the format's conventions available?
 
@@ -660,7 +660,7 @@ answer: should be a separated initiative. In this regard, how is the test / sour
      conventions.
    - Each platform writes **its own codec**: GLB's three parts, the property tables, and the mapping to its own model.
    - The validator checks every platform's output from the command line.
-   - CPlantBox can also start from its Python layer with `openalea.fspm_tf` directly.
+   - CPlantBox can also start from its Python layer with `openalea.encoding3d` directly.
 7. The first vocabulary: who proposes it, and the 30 names to start from.
 The first vocabulary can be inspired from metafspm's current version, but if metafspm lacks some aspects, you can inspire from other platforms.
    → **Decided:** the first vocabulary is drafted from the declarations of metafspm and of its ported packages

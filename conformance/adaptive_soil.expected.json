@@ -141,7 +141,7 @@
      "rank": null
     }
    ],
-   "platform": "fspm-tf",
+   "platform": "encoding3d",
    "model": "toy adaptive soil",
    "grid": {
     "kind": "adaptive",

@@ -2,7 +2,7 @@
 // and read back; a static root system rebuilt from its own frame and from another platform's (the conformance root
 // system, three scales).
 //
-//     fspm_tf_cplantbox_tests CONFORMANCE MODELPARAMETER OUT
+//     encoding3d_cplantbox_tests CONFORMANCE MODELPARAMETER OUT
 #include <algorithm>
 #include <cmath>
 #include <functional>
@@ -11,13 +11,13 @@
 #include <map>
 #include <set>
 
-#include "fspm_tf/cplantbox.hpp"
+#include "encoding3d/cplantbox.hpp"
 
 #include "MappedOrganism.h"
 #include "Plant.h"
 
 namespace filesystem = std::filesystem;
-using namespace fspm_tf;
+using namespace encoding3d;
 
 namespace {
 
@@ -236,7 +236,7 @@ void test_another_platform(const filesystem::path &conformance) {
 } // namespace
 
 /// CPlantBox's log of a growing root system: a frame a day for six days (out/anagallis_log/), the sequence a coupling
-/// session replays (bindings/python/test/test_coupling.py, FSPM_TF_CPLANTBOX_LOG).
+/// session replays (bindings/python/test/test_coupling.py, ENCODING3D_CPLANTBOX_LOG).
 void test_growing_log(const filesystem::path &parameters, const filesystem::path &out) {
     auto plant = std::make_shared<CPlantBox::Plant>(1);
     plant->readParameters((parameters / "plant" / "Anagallis_femina_Leitner_2010.xml").string(), "plant", true, false);
@@ -263,7 +263,7 @@ void test_growing_log(const filesystem::path &parameters, const filesystem::path
 
 int main(int argument_count, char **arguments) {
     if (argument_count != 4) {
-        std::cerr << "usage: fspm_tf_cplantbox_tests CONFORMANCE MODELPARAMETER OUT\n";
+        std::cerr << "usage: encoding3d_cplantbox_tests CONFORMANCE MODELPARAMETER OUT\n";
         return 2;
     }
     const filesystem::path conformance = arguments[1], parameters = arguments[2], out = arguments[3];

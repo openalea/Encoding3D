@@ -101,7 +101,7 @@
      "rank": 1
     }
    ],
-   "platform": "fspm-tf",
+   "platform": "encoding3d",
    "model": "RootArchitecture parameters",
    "scalars": {
     "name": "scalars",

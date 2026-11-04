@@ -1,11 +1,11 @@
 // A frame as plain JSON values, in the layout of the conformance files' expected values (conformance/README.md), and
-// the comparison `fspm-tf compare` makes.
-#include "fspm_tf/fspm_tf.hpp"
+// the comparison `encoding3d compare` makes.
+#include "encoding3d/encoding3d.hpp"
 
 #include <cmath>
 #include <type_traits>
 
-namespace fspm_tf {
+namespace encoding3d {
 
 namespace {
 
@@ -180,4 +180,4 @@ std::vector<std::string> compare(const json &actual, const json &expected, const
     return {};
 }
 
-} // namespace fspm_tf
+} // namespace encoding3d

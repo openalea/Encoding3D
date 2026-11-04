@@ -1,4 +1,4 @@
-#include "fspm_tf/cplantbox.hpp"
+#include "encoding3d/cplantbox.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -18,7 +18,7 @@
 #include "rootparameter.h"
 #include "tinyxml2.h"
 
-namespace fspm_tf::cplantbox {
+namespace encoding3d::cplantbox {
 
 namespace {
 
@@ -210,7 +210,7 @@ Frame to_frame(const CPlantBox::Organism &organism, const Options &options) {
     frame.data_structures.push_back(to_data_structure(organism, options));
     frame.time = organism.getSimTime();
     frame.time_unit = "d";
-    frame.writer = {{"platform", "CPlantBox"}, {"adapter", "fspm_tf::cplantbox"}};
+    frame.writer = {{"platform", "CPlantBox"}, {"adapter", "encoding3d::cplantbox"}};
     frame.vocabulary_version = "0.1";
     return frame;
 }
@@ -293,7 +293,7 @@ Mapping segments_in_soil(const CPlantBox::MappedSegments &segments, const DataSt
         if (!known.count(id))
             throw Error("segment " + std::to_string(segment) + " of the mapped segments is not in '" + plant.id +
                         "': set the grid without cutting segments");
-        // CPlantBox's cell index has x fastest, then y, then z from the bottom: fspm-TF's is C order of (x, y, z)
+        // CPlantBox's cell index has x fastest, then y, then z from the bottom: encoding3d's is C order of (x, y, z)
         const std::int64_t i = cell % nx, j = (cell / nx) % ny, k = cell / (nx * ny);
         sources.push_back(id);
         targets.push_back((i * ny + j) * nz + k);
@@ -313,7 +313,7 @@ void add_cell_values(DataStructure &soil, const CPlantBox::MappedSegments &segme
             throw Error("'" + item.name + "': " + std::to_string(item.values.size()) + " values, the grid has " +
                         std::to_string(nx * ny * nz) + " cells");
         std::vector<double> column(item.values.size());
-        for (std::size_t cell = 0; cell < item.values.size(); ++cell) {   // CPlantBox: x fastest; fspm-TF: C order
+        for (std::size_t cell = 0; cell < item.values.size(); ++cell) {   // CPlantBox: x fastest; encoding3d: C order
             const std::size_t i = cell % nx, j = (cell / nx) % ny, k = cell / (nx * ny);
             column[(i * ny + j) * nz + k] = item.values[cell];
         }
@@ -538,4 +538,4 @@ std::shared_ptr<CPlantBox::Plant> to_root_system(const DataStructure &data_struc
     return plant;
 }
 
-} // namespace fspm_tf::cplantbox
+} // namespace encoding3d::cplantbox

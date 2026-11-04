@@ -1,4 +1,4 @@
-# The conformance files are valid glTF for every viewer (Khronos' glTF-Validator) and valid fspm-TF (our validator)
+# The conformance files are valid glTF for every viewer (Khronos' glTF-Validator) and valid encoding3d (our validator)
 name: Conformance
 
 on:
@@ -17,7 +17,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install openalea.fspm_tf (its dependencies, conda-only in pyproject.toml, given here), and VTK for the ParaView reader's tests
+      - name: Install openalea.encoding3d (its dependencies, conda-only in pyproject.toml, given here), and VTK for the ParaView reader's tests
         run: python -m pip install numpy jsonschema pytest pyzmq vtk . 
       - name: Tests, the ParaView reader's conversion included
         run: pytest bindings/python/test -v
@@ -25,8 +25,8 @@ jobs:
         run: |
           python conformance/generate.py
           git diff --exit-code -- conformance
-      - name: fspm-TF validator
-        run: fspm-tf validate conformance/*.glb conformance/growing_sequence/scene.fspm.json
+      - name: encoding3d validator
+        run: encoding3d validate conformance/*.glb conformance/growing_sequence/scene.fspm.json
       - name: Khronos glTF-Validator
         run: |
           curl -sSL -o validator.tar.xz "https://github.com/KhronosGroup/glTF-Validator/releases/download/${GLTF_VALIDATOR}/gltf_validator-${GLTF_VALIDATOR}-linux64.tar.xz"
@@ -42,7 +42,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install openalea.fspm_tf and the documentation's tools
+      - name: Install openalea.encoding3d and the documentation's tools
         run: |
           sudo apt-get install -y pandoc
           python -m pip install numpy jsonschema pytest sphinx ".[doc]"

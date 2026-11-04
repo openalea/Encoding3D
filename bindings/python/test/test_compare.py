@@ -1,4 +1,4 @@
-"""Comparing a codec's dumps with the conformance files' expected values (fspm-tf compare, compare-all)."""
+"""Comparing a codec's dumps with the conformance files' expected values (encoding3d compare, compare-all)."""
 import json
 import os
 import shutil
@@ -6,8 +6,8 @@ import shutil
 import pytest
 
 from conftest import CONFORMANCE
-from openalea.fspm_tf.cli import main
-from openalea.fspm_tf.compare import compare, compare_all
+from openalea.encoding3d.cli import main
+from openalea.encoding3d.compare import compare, compare_all
 
 
 @pytest.mark.parametrize("actual, expected, equal", [

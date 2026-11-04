@@ -2,30 +2,30 @@
 
 ## Installing
 
-The Python package `openalea.fspm_tf` brings the command line, the validator and the reader used by ParaView's
+The Python package `openalea.encoding3d` brings the command line, the validator and the reader used by ParaView's
 plugin. Until it is published on the `openalea3` channel, install it from the sources:
 
 ```bash
-git clone https://github.com/openalea/fspm-TF.git
-cd fspm-TF
+git clone https://github.com/openalea/encoding3d.git
+cd encoding3d
 mamba env create -f conda/environment.yml
-mamba activate fspm_tf
+mamba activate encoding3d
 ```
 
 To use it in another environment, e.g. a model's, install its dependencies there (`mamba install numpy jsonschema`),
-then `pip install -e path/to/fspm-TF`.
+then `pip install -e path/to/encoding3d`.
 
 ## In ParaView
 
-fspm-TF comes with a ParaView reader plugin: `paraview/fspm_tf_reader.py`. It works with ParaView 5.10 and later,
+encoding3d comes with a ParaView reader plugin: `paraview/encoding3d_reader.py`. It works with ParaView 5.10 and later,
 and has been checked with 6.0.1 and 6.2.0.
 
-1. In ParaView, open **Tools → Manage Plugins → Load New…**, choose `fspm_tf_reader.py`, and tick **Auto Load** to
+1. In ParaView, open **Tools → Manage Plugins → Load New…**, choose `encoding3d_reader.py`, and tick **Auto Load** to
    keep it loaded.
 2. **File → Open** a frame (`.glb`), or a sequence's `scene.fspm.json` to play its frames as time steps, and choose
-   **fspm-TF reader**.
+   **encoding3d reader**.
 
-The plugin needs nothing installed in ParaView: it reads files with the code of the fspm-TF folder it comes from.
+The plugin needs nothing installed in ParaView: it reads files with the code of the encoding3d folder it comes from.
 
 What you see:
 
@@ -52,8 +52,8 @@ In a `pvpython` script:
 
 ```python
 from paraview import simple
-simple.LoadPlugin("fspm-TF/paraview/fspm_tf_reader.py", ns=globals())
-roots = fspmTFreader(FileName="outputs/frames/scene.fspm.json")
+simple.LoadPlugin("encoding3d/paraview/encoding3d_reader.py", ns=globals())
+roots = encoding3dreader(FileName="outputs/frames/scene.fspm.json")
 roots.UpdatePipeline(roots.TimestepValues[-1])          # the last frame
 ```
 
@@ -74,29 +74,29 @@ so showing one is instant, and a layer is empty in the frames that lack what it 
 
 Two macros, shipped next to the plugin in `paraview/`, turn the layers into pipeline items and back:
 
-1. Load them once: **Macros → Import new macro…**, choose `paraview/apply_fspm_tf_views.py`, then again for
-   `paraview/save_fspm_tf_views.py`. They appear in the **Macros** menu and toolbar, and stay there.
-2. Open a sequence with the fspm-TF reader, select the reader in the Pipeline Browser, and run
-   **apply_fspm_tf_views**: each layer becomes its own item, named by the layer (an *ExtractBlock*, and a *Tube* for
+1. Load them once: **Macros → Import new macro…**, choose `paraview/apply_encoding3d_views.py`, then again for
+   `paraview/save_encoding3d_views.py`. They appear in the **Macros** menu and toolbar, and stay there.
+2. Open a sequence with the encoding3d reader, select the reader in the Pipeline Browser, and run
+   **apply_encoding3d_views**: each layer becomes its own item, named by the layer (an *ExtractBlock*, and a *Tube* for
    segments), shown as the layer says. Toggle the eyes to show or hide layers; play the time steps as usual.
-3. Change colours, ranges, opacities, then select the reader again and run **save_fspm_tf_views**: the items' display
+3. Change colours, ranges, opacities, then select the reader again and run **save_encoding3d_views**: the items' display
    options are written back into `views.json`, over the configuration. To keep the old one, set `CONFIGURATION` at the
    top of the macro (**Macros → Edit…**) to a new name: the views are saved as that configuration, made the active
    one.
 
-The macros import `openalea.fspm_tf`, which the plugin puts on ParaView's path: load the plugin before running them.
+The macros import `openalea.encoding3d`, which the plugin puts on ParaView's path: load the plugin before running them.
 A colour map's preset name is not read back from ParaView, so a saved layer keeps its `colormap`; layers coloured by
 the same variable share one colour map in ParaView.
 
 In a script, the same views without ParaView: `frame_to_vtk(frame, views="views.json", configuration="default")` from
-`paraview/fspm_tf_reader.py`, and `openalea.fspm_tf.views` to read, check and write views:
+`paraview/encoding3d_reader.py`, and `openalea.encoding3d.views` to read, check and write views:
 
 ```python
-from openalea import fspm_tf
-from openalea.fspm_tf import views
+from openalea import encoding3d
+from openalea.encoding3d import views
 
 document = views.read_views("outputs/frames/views.json")
-report = views.check_views(document, fspm_tf.read("outputs/frames/frame_000000.glb"))   # every name in the frame
+report = views.check_views(document, encoding3d.read("outputs/frames/frame_000000.glb"))   # every name in the frame
 print(report)
 ```
 
@@ -106,9 +106,9 @@ The plugin has a filter that selects by scale: pick an element, and get its whol
 with everything it contains at finer scales, in every layer, hidden ones included (a segment's section drawings, a
 hidden layer by default, come with the selection).
 
-1. Pick cells in the view (**Select Cells On**, or `s`), on any fspm-TF item: a layer, the reader, or a selection
+1. Pick cells in the view (**Select Cells On**, or `s`), on any encoding3d item: a layer, the reader, or a selection
    shown before. The item picked on becomes the active one in the Pipeline Browser.
-2. **Filters → fspm-TF → fspm-TF Select at scale**, then **Apply**. The filter takes ParaView's current selection
+2. **Filters → encoding3d → encoding3d Select at scale**, then **Apply**. The filter takes ParaView's current selection
    when it is made, as *Extract Selection* does (its **Selection** property: **Copy Active Selection** takes the
    selection made since, on the same item).
 3. Choose the **Scale** in its Properties: a drop-down of the frames' scales, coarser first (`Plant`, `Axis`,
@@ -123,23 +123,23 @@ the scales the picked cells have. To drop the selection, delete the filter.
 To look at the selection alone, a macro shows it as its layers, each part drawn as its layer (the same colour map,
 a tube for roots):
 
-1. Load it once like the others: **Macros → Import new macro…**, `paraview/show_fspm_tf_selection.py`. At its top
+1. Load it once like the others: **Macros → Import new macro…**, `paraview/show_encoding3d_selection.py`. At its top
    (**Macros → Edit…**), set `MODE`.
-2. With the filter selected in the Pipeline Browser, run **show_fspm_tf_selection**. With `MODE = "isolate"`, the
+2. With the filter selected in the Pipeline Browser, run **show_encoding3d_selection**. With `MODE = "isolate"`, the
    view shows only the selection, the other items hidden; with `MODE = "panel"`, a new view opens beside it with
    the selection alone, its camera fit to it, the first view untouched. Each layer's part is an item named
    `<layer> selection`; changing the filter's Scale or the time step updates them.
-3. To narrow it (an axis of the plant shown), pick on these items, apply another fspm-TF Select at scale, and run
+3. To narrow it (an axis of the plant shown), pick on these items, apply another encoding3d Select at scale, and run
    the macro again: it is shown over the first.
 4. Run the macro again (with anything else selected, or the same filter) to go back one step: the items it made are
    removed, the panel closed, the hidden items shown again. Then delete the filter.
 
 The macro is only for what a filter cannot do: hiding the other items, opening a panel. Both need the plugin
-loaded (it puts the macro's code, `paraview/fspm_tf_selection.py`, on ParaView's path); which cells are selected is
-`openalea.fspm_tf.views.picked_entities` and `selection_mask`, tested without ParaView.
+loaded (it puts the macro's code, `paraview/encoding3d_selection.py`, on ParaView's path); which cells are selected is
+`openalea.encoding3d.views.picked_entities` and `selection_mask`, tested without ParaView.
 
 `paraview/check_in_paraview.py` checks all this inside ParaView. `pvpython paraview/check_in_paraview.py
-conformance` runs on the conformance files (the binding tests run it when `FSPM_TF_PVPYTHON` names a `pvpython`);
+conformance` runs on the conformance files (the binding tests run it when `ENCODING3D_PVPYTHON` names a `pvpython`);
 `pvbatch paraview/check_in_paraview.py --design <scene.fspm.json> <folder>` is a check by hand, on a sequence with
 its `views.json`: it applies and saves the views, selects at several scales with the filter (switching its Scale,
 stepping in time), shows the selections isolated, in a panel and one over another, goes back, and saves a screenshot
@@ -152,8 +152,8 @@ To colour shapes there by a variable, add a **display copy**: a per-vertex copy 
 which viewers read as a colouring attribute.
 
 ```bash
-fspm-tf display scene.glb water_potential               # adds _WATER_POTENTIAL to the meshes
-fspm-tf display scene.glb --remove                      # removes the display copies
+encoding3d display scene.glb water_potential               # adds _WATER_POTENTIAL to the meshes
+encoding3d display scene.glb --remove                      # removes the display copies
 ```
 
 Display copies are optional and flagged as such. Readers never take them for the variable itself.
@@ -161,8 +161,8 @@ Display copies are optional and flagged as such. Readers never take them for the
 ## Checking a file
 
 ```bash
-fspm-tf validate scene.glb                              # one frame
-fspm-tf validate outputs/frames/scene.fspm.json         # a sequence: every frame, and the rules between frames
+encoding3d validate scene.glb                              # one frame
+encoding3d validate outputs/frames/scene.fspm.json         # a sequence: every frame, and the rules between frames
 ```
 
 The validator reports **errors** (the file does not follow the specification) and **warnings** (it does, but something
@@ -179,7 +179,7 @@ The command exits with 1 when a file has errors, so it can run in a CI.
 ## Looking inside a file
 
 ```bash
-fspm-tf info scene.glb
+encoding3d info scene.glb
 ```
 
 For example, for a frame of a metafspm scene with roots in a soil grid:

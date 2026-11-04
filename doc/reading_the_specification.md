@@ -14,15 +14,15 @@ Everything the platforms agree on is in the repository's `spec/` folder, togethe
 
 | File | What it fixes | How it is checked |
 |---|---|---|
-| `spec/specification.md` | the rules, in words (MUST, SHOULD, MAY as in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119)) | by the validator, `fspm-tf validate` |
+| `spec/specification.md` | the rules, in words (MUST, SHOULD, MAY as in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119)) | by the validator, `encoding3d validate` |
 | `spec/schema/fspm_scene.schema.json` | the shape of the `FSPM_scene` JSON (its fields and their types) | by any JSON Schema validator |
 | `spec/schema/index.schema.json` | the shape of a sequence's index, `scene.fspm.json` | by any JSON Schema validator |
 | `spec/schema/coupling.schema.json` | the shape of a coupling session's messages (their JSON headers, §11) | by any JSON Schema validator |
-| `spec/schema/views.schema.json` | the shape of a sequence's optional views, `views.json` (how to look at it) | by any JSON Schema validator; names against a frame by `openalea.fspm_tf.views.check_views` |
+| `spec/schema/views.schema.json` | the shape of a sequence's optional views, `views.json` (how to look at it) | by any JSON Schema validator; names against a frame by `openalea.encoding3d.views.check_views` |
 | `spec/vocabulary/standard_names.csv` | the shared quantities: canonical unit, kind, definition, and each platform's names for them | by the validator (units, kinds) |
 | `spec/vocabulary/labels.csv` | the entity labels, with their scale and Plant Ontology term | by the validator (warnings) |
 | `spec/vocabulary/enums.json` | the allowed values: edge types, kinds, roles, base scales, formats… | by the schemas and the validator |
-| `conformance/` | the specification as test cases: reference files and what a reader must find in them | `fspm-tf compare-all` |
+| `conformance/` | the specification as test cases: reference files and what a reader must find in them | `encoding3d compare-all` |
 
 When they disagree, `specification.md` prevails, then the schemas, then the conformance files. A disagreement is a
 defect of the lower one. A change of the format is a pull request to `spec/`, with its conformance scene
@@ -50,7 +50,7 @@ layers hold the scene:
 |---|---|---|
 | Property tables | the glTF extension [`EXT_structural_metadata`](https://github.com/CesiumGS/glTF/tree/3d-tiles-next/extensions/2.0/Vendor/EXT_structural_metadata) | every table: one column per variable, with its values in the binary part |
 | Feature IDs | the glTF extension [`EXT_mesh_features`](https://github.com/CesiumGS/glTF/tree/3d-tiles-next/extensions/2.0/Vendor/EXT_mesh_features) | for each vertex of a mesh, the row of its entity in one or several tables |
-| `FSPM_scene` | fspm-TF (`spec/schema/fspm_scene.schema.json`) | what glTF cannot say: the time, the data structures, which table is which scale, relations, grids, mappings, the variables' units and standard names |
+| `FSPM_scene` | encoding3d (`spec/schema/fspm_scene.schema.json`) | what glTF cannot say: the time, the data structures, which table is which scale, relations, grids, mappings, the variables' units and standard names |
 
 Here is the JSON part of `conformance/root_system.glb`, abridged:
 
@@ -92,7 +92,7 @@ To read the segments' lengths, a reader:
 3. reads `count` (10) FLOAT64 values from the binary part;
 4. finds their unit (`m`) and standard name in `variables`.
 
-`fspm-tf info file.glb` lists what a frame holds: its data structures, their tables and their variables.
+`encoding3d info file.glb` lists what a frame holds: its data structures, their tables and their variables.
 
 ## Words
 
@@ -107,7 +107,7 @@ To read the segments' lengths, a reader:
 | **entity** | one row of an entity set: a plant, a root axis, a segment, a cell |
 | **relation** | an edge table between two entity sets: a cell network, a branch's bearer |
 | **mapping** | weights between the entities of two data structures, e.g. root segments and soil voxels |
-| **class** | `EXT_structural_metadata`'s word for a table's type: its columns. fspm-TF names them `<data structure>__<table>`. |
+| **class** | `EXT_structural_metadata`'s word for a table's type: its columns. encoding3d names them `<data structure>__<table>`. |
 | **variable** | a column that is not reserved, with its declaration: unit, standard name, kind, role |
 | **standard name** | the vocabulary's name for a quantity, the same on every platform (`length`, `water_potential`) |
 | **codec** | a language's reading and writing of the format (`bindings/<language>/`) |
@@ -121,7 +121,7 @@ of [the conformance files](conformance.md)). A codec:
 1. reads each GLB and writes what it read as JSON, in that layout;
 2. writes the same scenes back as GLB files.
 
-`fspm-tf compare-all` then compares its JSON with the expected values, exactly. `fspm-tf validate` and Khronos'
+`encoding3d compare-all` then compares its JSON with the expected values, exactly. `encoding3d validate` and Khronos'
 [glTF-Validator](https://github.com/KhronosGroup/glTF-Validator) check what it wrote. In GitHub Actions, the
 composite action `.github/actions/conformance` runs these checks. The Python, Julia, C++ and Java codecs all pass them
 ([Implementations](implementations.md)).

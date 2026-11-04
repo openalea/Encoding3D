@@ -43,7 +43,7 @@ jobs:
       - name: Dump and write the conformance scenes with the Java codec
         run: |
           mvn -B -q -f bindings/java/pom.xml package -DskipTests dependency:copy-dependencies -DincludeScope=runtime
-          java -cp "bindings/java/target/fspm-tf-0.1.0.jar:bindings/java/target/dependency/*" org.openalea.fspmtf.ConformanceRun conformance out
+          java -cp "bindings/java/target/encoding3d-0.1.0.jar:bindings/java/target/dependency/*" org.openalea.encoding3d.ConformanceRun conformance out
       - uses: ./.github/actions/conformance
         with:
           dumps: out/dumps
@@ -52,8 +52,8 @@ jobs:
       - name: The coupling conformance sessions
         run: |
           python -m pip install pyzmq
-          fspm-tf couple-conformance conformance/coupling --participant \
-            "java -cp $PWD/bindings/java/target/fspm-tf-0.1.0.jar:$PWD/bindings/java/target/dependency/* org.openalea.fspmtf.coupling.ConformanceParticipant"
+          encoding3d couple-conformance conformance/coupling --participant \
+            "java -cp $PWD/bindings/java/target/encoding3d-0.1.0.jar:$PWD/bindings/java/target/dependency/* org.openalea.encoding3d.coupling.ConformanceParticipant"
 
   groimp-adapter:
     runs-on: ubuntu-latest
@@ -68,13 +68,13 @@ jobs:
         run: |
           mvn -B -q -f bindings/java/pom.xml install -DskipTests
           mvn -B -f bindings/java/groimp/pom.xml verify
-      - name: What the adapter wrote is valid fspm-TF
+      - name: What the adapter wrote is valid encoding3d
         run: |
           python -m pip install numpy jsonschema .
-          fspm-tf validate bindings/java/groimp/target/groimp_out/*.glb
+          encoding3d validate bindings/java/groimp/target/groimp_out/*.glb
 
   # The plugin in GroIMP itself, headless: GroIMP 3.0.0's release, its glTF plugin (a pinned commit, which meshes the
-  # shapes), an example grown and its 3D view exported as an fspm-TF frame
+  # shapes), an example grown and its 3D view exported as an encoding3d frame
   groimp-plugin:
     runs-on: ubuntu-latest
     steps:
@@ -109,10 +109,10 @@ jobs:
         run: |
           python -m pip install numpy jsonschema .
           bash bindings/java/groimp-plugin/test/run_in_groimp.sh groimp-install/usr/share/GroIMP gltf-plugin \
-               bindings/java/groimp-plugin/target/plugin/fspmTF out
+               bindings/java/groimp-plugin/target/plugin/encoding3d out
       - name: GroIMP's log replayed in a coupling session
         env:
-          FSPM_TF_GROIMP_LOG: out/log/scene.fspm.json
+          ENCODING3D_GROIMP_LOG: out/log/scene.fspm.json
         run: |
           python -m pip install pytest pyzmq
           pytest -v bindings/python/test/test_coupling.py -k platform_log

@@ -1,8 +1,8 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
- "$id": "https://github.com/openalea/fspm-TF/schema/0.3/index.schema.json",
- "title": "fspm-TF sequence index",
- "description": "scene.fspm.json: the frames of a sequence, one GLB file each, in time order (fspm-TF 0.3).",
+ "$id": "https://github.com/openalea/encoding3d/schema/0.3/index.schema.json",
+ "title": "encoding3d sequence index",
+ "description": "scene.fspm.json: the frames of a sequence, one GLB file each, in time order (encoding3d 0.3).",
  "type": "object",
  "required": ["fspmIndex", "timeUnit", "frames"],
  "properties": {

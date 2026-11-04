@@ -1,6 +1,6 @@
-# The Julia codec (bindings/julia/FspmTF): its tests, on the oldest supported Julia and the latest release, and the
+# The Julia codec (bindings/julia/encoding3d): its tests, on the oldest supported Julia and the latest release, and the
 # conformance check other codecs run (its dumps of the conformance files compared with their expected values, the files
-# it writes validated by fspm-tf validate and Khronos' glTF-Validator). OpenAlea's conda CI builds the Python package
+# it writes validated by encoding3d validate and Khronos' glTF-Validator). OpenAlea's conda CI builds the Python package
 # only.
 name: Julia codec
 
@@ -32,10 +32,10 @@ jobs:
       - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-buildpkg@v1
         with:
-          project: bindings/julia/FspmTF
+          project: bindings/julia/encoding3d
       - uses: julia-actions/julia-runtest@v1
         with:
-          project: bindings/julia/FspmTF
+          project: bindings/julia/encoding3d
 
   # VirtualPlantLab's PlantGraphs needs Julia 1.12 or later: its extensions are tested in their own project
   virtualplantlab:
@@ -48,8 +48,8 @@ jobs:
       - uses: julia-actions/cache@v2
       - name: PlantGraphs and PlantGeomTurtle extensions
         run: |
-          julia --project=bindings/julia/FspmTF/test/plantgraphs -e 'using Pkg; Pkg.develop(path="bindings/julia/FspmTF"); Pkg.instantiate()'
-          julia --project=bindings/julia/FspmTF/test/plantgraphs bindings/julia/FspmTF/test/plantgraphs/runtests.jl
+          julia --project=bindings/julia/encoding3d/test/plantgraphs -e 'using Pkg; Pkg.develop(path="bindings/julia/encoding3d"); Pkg.instantiate()'
+          julia --project=bindings/julia/encoding3d/test/plantgraphs bindings/julia/encoding3d/test/plantgraphs/runtests.jl
 
   conformance:
     runs-on: ubuntu-latest
@@ -61,14 +61,14 @@ jobs:
       - uses: julia-actions/cache@v2
       - name: Dump and write the conformance scenes with the Julia codec
         run: |
-          julia --project=bindings/julia/FspmTF -e 'using Pkg; Pkg.instantiate()'
-          julia --project=bindings/julia/FspmTF bindings/julia/conformance_run.jl conformance out
+          julia --project=bindings/julia/encoding3d -e 'using Pkg; Pkg.instantiate()'
+          julia --project=bindings/julia/encoding3d bindings/julia/conformance_run.jl conformance out
       - uses: ./.github/actions/conformance
         with:
           dumps: out/dumps
           written: out/written
 
-  # FspmTF.jl as a participant of coupling sessions run by the Python coordinator (specification §11), over ZeroMQ
+  # encoding3d.jl as a participant of coupling sessions run by the Python coordinator (specification §11), over ZeroMQ
   # and over a folder
   coupling:
     runs-on: ubuntu-latest
@@ -83,16 +83,16 @@ jobs:
           python-version: "3.12"
       - name: The Python coordinator
         run: pip install -e . pytest pyzmq jsonschema
-      - name: A Julia project with FspmTF and ZMQ
+      - name: A Julia project with encoding3d and ZMQ
         run: |
           mkdir -p coupling-env
-          julia --project=coupling-env -e 'using Pkg; Pkg.develop(path="bindings/julia/FspmTF"); Pkg.add("ZMQ")'
+          julia --project=coupling-env -e 'using Pkg; Pkg.develop(path="bindings/julia/encoding3d"); Pkg.add("ZMQ")'
       - name: The coupling tests, with the Julia participant
         env:
-          FSPM_TF_JULIA: julia --project=coupling-env
+          ENCODING3D_JULIA: julia --project=coupling-env
         run: pytest -v bindings/python/test/test_coupling.py
       - name: The coupling conformance sessions, the Julia participant
         run: |
           julia --project=coupling-env -e 'using Pkg; Pkg.add("JSON")'
-          fspm-tf couple-conformance conformance/coupling --participant \
+          encoding3d couple-conformance conformance/coupling --participant \
             "julia --project=$PWD/coupling-env $PWD/bindings/julia/coupling_conformance.jl"
