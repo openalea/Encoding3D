@@ -1,23 +1,24 @@
 """
-The reader inside ParaView: loads the plugin, opens conformance files and a sequence, checks their blocks, arrays and
-time steps, and renders a picture of each; then a frame with views (one block per layer, the configurations'
-drop-down), the macros applying and saving them, and selection by scale (the filter "encoding3d Select at scale", its
-Scale drop-down, the macro showing it isolated, then going back).
+The plugin inside ParaView: loads plugin_encoding3d.py, opens conformance files and a sequence, checks their blocks,
+arrays and time steps, and renders a picture of each; then a frame with views (one block per layer, drawn by the
+plugin as its layers when shown, the configurations' drop-down, "Save Views"), and selection by scale (the filter
+"encoding3d Select at scale", its Scale drop-down, its Isolate and Put Back buttons).
 
     pvpython paraview/check_in_paraview.py conformance [output folder]
 
 A design check, by hand (no test runs it): a sequence with its views.json (e.g. metafspm's
 SceneRecorder(frame_views="default", display_period=...) frames of plants with shoots, roots and sections, and a soil
-grid) opened, each configuration applied, saved back unchanged and changed (the round trip), then selections by the
-filter "encoding3d Select at scale" (cells picked as a click would, the filter made with ParaView's selection as the GUI
-makes it, its Scale switched, the time stepped), shown by the macro isolated, in a panel, one over another, and put
-back; a screenshot of each step in the output folder, to look at (colours, opacities, tubes, hidden layers,
-isolation). The views file is put back as it was.
+grid) opened and shown as the GUI's Apply does (each layer its colouring and opacity, with no macro), a configuration
+of distinct colour maps added and chosen in the drop-down, the display saved back unchanged and changed (the round
+trip, "Save Views" and "Save As"), then selections by the filter "encoding3d Select at scale" (cells picked as a click
+would, the filter made with ParaView's selection as the GUI makes it, its Scale switched, the time stepped), shown by
+its buttons isolated, in a panel, one over another, and put back; a screenshot of each step in the output folder, to
+look at (colours, opacities, tubes, hidden layers, isolation). Run it on a copy of the frames: the views file is put
+back as it was, but the check writes it meanwhile.
 
-    pvbatch paraview/check_in_paraview.py --design outputs/frames/scene.fspm.json screenshots
+    pvbatch paraview/check_in_paraview.py --design copy/frames/scene.fspm.json screenshots
 """
 import os
-import runpy
 import sys
 
 from paraview import servermanager, simple
@@ -28,7 +29,8 @@ conformance = sys.argv[1] if not DESIGN else None
 pictures = sys.argv[2 + DESIGN] if len(sys.argv) > 2 + DESIGN else None
 # (not "output": a Programmable Filter removes that name from the main module once it has run)
 
-simple.LoadPlugin(os.path.join(HERE, "encoding3d_reader.py"), ns=globals())
+simple.LoadPlugin(os.path.join(HERE, "plugin_encoding3d.py"), ns=globals())
+import encoding3d_displays  # noqa: E402       (on ParaView's path once the plugin is loaded)
 
 
 def arrays(source) -> set:
@@ -44,9 +46,11 @@ def blocks(source) -> int:
     return servermanager.Fetch(source).GetNumberOfBlocks()
 
 
-def run_macro(name: str, source) -> None:
-    simple.SetActiveSource(source)
-    runpy.run_path(os.path.join(HERE, name))
+def block_names(source) -> list:
+    """The names of *source*'s blocks, in order (its hierarchy's labels: Fetch renames them)."""
+    hierarchy = source.GetDataInformation().DataInformation.GetHierarchy()
+    return [hierarchy.GetAttributeOrDefault(node, "label", hierarchy.GetNodeName(node))
+            for node in hierarchy.GetChildNodes(hierarchy.GetRootNode(), False)]
 
 
 def picture(source, name, colour_by, side=False):
@@ -56,13 +60,71 @@ def picture(source, name, colour_by, side=False):
     view = simple.CreateView("RenderView")
     view.ViewSize = [800, 600]
     display = simple.Show(source, view)
-    simple.ColorBy(display, ("CELLS", colour_by))
-    display.RescaleTransferFunctionToDataRange(True)
+    if colour_by:
+        simple.ColorBy(display, ("CELLS", colour_by))
+        display.RescaleTransferFunctionToDataRange(True)
     if side:                                            # seen from the side: z up
         view.CameraPosition, view.CameraFocalPoint, view.CameraViewUp = [0., -1., 0.], [0., 0., 0.], [0., 0., 1.]
     view.ResetCamera()
     simple.SaveScreenshot(os.path.join(pictures, f"{name}.png"), view)
     simple.Delete(view)
+
+
+def drawn(display) -> dict:
+    """The block properties of a display, as the plugin set them."""
+    return {name: [str(value) for value in display.GetProperty(name)]
+            for name in ("BlockSelectors", "BlockColorArrayNames", "BlockColors", "BlockOpacities")}
+
+
+def pairs(values: list, size: int) -> dict:
+    return {values[start]: values[start + 1:start + size] for start in range(0, len(values), size)}
+
+
+def check_drawn(display, layers: list, selection: bool = False) -> None:
+    """*display* drawn as *layers* say: shown blocks, colourings, solid colours, opacities."""
+    from openalea.encoding3d import views
+    found = drawn(display)
+    if selection:
+        layers = [dict(layer, visible=True) for layer in layers]
+    expected = views.block_displays(layers, set(display.Input.CellData.keys()))
+    assert found["BlockSelectors"] == expected["selectors"], (found, expected)
+    colourings = {selector: values[1] for selector, values in pairs(found["BlockColorArrayNames"], 3).items()}
+    assert colourings == dict(expected["colourings"]), (colourings, expected)
+    opacities = {selector: float(values[0]) for selector, values in pairs(found["BlockOpacities"], 2).items()}
+    assert opacities == dict(expected["opacities"]), (opacities, expected)
+    assert set(pairs(found["BlockColors"], 4)) == {selector for selector, _ in expected["solid_colours"]}
+    if expected["main_array"]:
+        assert display.ColorArrayName[1] == expected["main_array"], display.ColorArrayName
+
+
+def flat_index(source, name: str) -> int:
+    """The flat index of the reader's (or a selection's) block *name* (the root is 0)."""
+    return block_names(source).index(name) + 1
+
+
+def pick(item, block: str, array: str, value: float) -> int:
+    """Pick (select) the first cell of *item*'s *block* whose *array* is *value*, as a click would; its index."""
+    import numpy as np
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+    data = servermanager.Fetch(item)
+    leaf = data.GetBlock(block_names(item).index(block))
+    cell = int(np.flatnonzero(vtk_to_numpy(leaf.GetCellData().GetArray(array)) == value)[0])
+    simple.SelectCompositeDataIDs(IDs=[flat_index(item, block), 0, cell], FieldType="CELL", Source=item)
+    return cell
+
+
+def cells(source, block: str) -> int:
+    data = servermanager.Fetch(source)
+    return data.GetBlock(block_names(source).index(block)).GetNumberOfCells()
+
+
+def scale_names(selection) -> list:
+    selection.UpdatePropertyInformation()
+    return list(selection.GetProperty("ScaleNames"))
+
+
+def visible(item, view) -> bool:
+    return bool(simple.GetDisplayProperties(item, view).Visibility)
 
 
 def check_conformance() -> None:
@@ -82,12 +144,12 @@ def check_conformance() -> None:
     sequence = encoding3dreader(FileName=os.path.join(conformance, "growing_sequence", "scene.fspm.json"))  # noqa: F821
     sequence.UpdatePipelineInformation()
     assert list(sequence.TimestepValues) == [0., 1., 2.], list(sequence.TimestepValues)
-    cells = []
+    counts = []
     for time in sequence.TimestepValues:
         sequence.UpdatePipeline(time)
-        cells.append(sequence.GetDataInformation().GetNumberOfCells())
-    assert cells[0] < cells[1] < cells[2], cells                # the root system grows
-    print("cells per time step", cells)
+        counts.append(sequence.GetDataInformation().GetNumberOfCells())
+    assert counts[0] < counts[1] < counts[2], counts             # the root system grows
+    print("cells per time step", counts)
 
     # Without the plugin: ParaView's own glTF reader shows the geometry and the display copies (float32 point data)
     import tempfile
@@ -98,15 +160,15 @@ def check_conformance() -> None:
     with tempfile.TemporaryDirectory() as directory:
         copied = os.path.join(directory, "roots_display.glb")
         encoding3d.write(copied, add_display(encoding3d.read(os.path.join(conformance, "root_system.glb")),
-                                          ["water_potential"]))
+                                             ["water_potential"]))
         plain = simple.glTFReader(FileName=copied)          # ParaView's own reader, not the plugin
         plain.UpdatePipeline()
         names = set(plain.PointData.keys())
         print("glTF reader", type(plain).__name__, "point data", sorted(names))
         assert any("WATER_POTENTIAL" in name for name in names), sorted(names)
 
-    # Views: a views.json next to the frame gives one block per layer; the macros make and save the layers' items;
-    # a picked segment grows to its axis, isolated, then cleared
+    # Views: a views.json next to the frame gives one block per layer, each drawn as its layer when shown; "Save
+    # Views" writes the display back; a picked segment grows to its axis, isolated, then put back
     import shutil
 
     from openalea.encoding3d import views
@@ -125,19 +187,17 @@ def check_conformance() -> None:
         viewed = encoding3dreader(FileName=os.path.join(directory, "root_system.glb"))  # noqa: F821
         assert configuration_names(viewed) == ["default", "mesh only"], configuration_names(viewed)
         viewed.UpdatePipeline()
-        assert blocks(viewed) == 2
-        simple.GetActiveViewOrCreate("RenderView")
-        run_macro("apply_encoding3d_views.py", viewed)
-        tube = simple.FindSource("roots")
-        assert tube is not None and simple.FindSource("mesh") is not None
-        simple.GetDisplayProperties(tube).Opacity = 0.5
-        run_macro("save_encoding3d_views.py", viewed)
+        assert block_names(viewed) == ["roots", "mesh"], block_names(viewed)
+        view = simple.GetActiveViewOrCreate("RenderView")
+        display = simple.Show(viewed, view)                   # as the GUI's Apply: drawn as its layers
+        check_drawn(display, views.configuration(views.read_views(path))[1])
+        display.BlockOpacities = [views.block_selector("roots"), "0.5"]
+        viewed.InvokeCommand("SaveViews")                     # the reader's button
         assert views.read_views(path)["configurations"]["default"]["layers"][0]["opacity"] == 0.5
-        picture(tube, "root_system_views", "SubOrgan.water_potential", side=True)
+        picture(viewed, "root_system_views", None, side=True)
 
-        import encoding3d_selection
-        lateral = pick(tube, "Axis.id", 101.)
-        selection = encoding3dSelectatscale(Input=tube)  # noqa: F821       (ParaView's selection, as the GUI takes it)
+        lateral = pick(viewed, "roots", "Axis.id", 101.)
+        selection = encoding3dSelectatscale(Input=viewed)  # noqa: F821       (ParaView's selection, as the GUI takes it)
         assert selection.Selection is not None
         assert scale_names(selection) == ["Plant", "Axis", "SubOrgan"], scale_names(selection)
         assert selection.Scale == "Plant"                              # the drop-down's first, the coarsest
@@ -147,36 +207,17 @@ def check_conformance() -> None:
         assert grown.GetNumberOfBlocks() == 2                         # the layers, the hidden one too
         assert set(grown.GetBlock(0).GetCellData().GetArray("Axis.id").GetRange()) == {101.}, lateral
         assert 0 < grown.GetBlock(1).GetNumberOfCells() < servermanager.Fetch(viewed).GetBlock(1).GetNumberOfCells()
-        made = encoding3d_selection.show_selection(selection, "isolate")
-        assert sorted(made) == ["mesh selection", "roots selection", "roots selection block"], made
-        assert not simple.GetDisplayProperties(tube).Visibility
-        assert encoding3d_selection.back()
-        assert simple.GetDisplayProperties(tube).Visibility and simple.FindSource("roots selection") is None
+        selection_display = simple.Show(selection, view)              # as the GUI's Apply: drawn as the layers
+        check_drawn(selection_display, views.configuration(views.read_views(path))[1], selection=True)
+        selection.InvokeCommand("Isolate")
+        assert not visible(viewed, view) and visible(selection, view)
+        selection.InvokeCommand("PutBack")
+        assert visible(viewed, view) and not visible(selection, view)
         simple.Delete(selection)                                      # the selection dropped
-        viewed.Configuration = "mesh only"
-        viewed.UpdatePipeline()
-        assert blocks(viewed) == 1
-
-
-def cells(name: str) -> int:
-    return simple.FindSource(name).GetDataInformation().GetNumberOfCells()
-
-
-def scale_names(selection) -> list:
-    selection.UpdatePropertyInformation()
-    return list(selection.GetProperty("ScaleNames"))
-
-
-def pick(item, array: str, value: float) -> int:
-    """Pick (select) the first cell of *item* whose *array* is *value*, as a click would; its index."""
-    import numpy as np
-    from vtkmodules.util.numpy_support import vtk_to_numpy
-    data = servermanager.Fetch(item)
-    leaf = data.GetBlock(0) if hasattr(data, "GetNumberOfBlocks") else data
-    cell = int(np.flatnonzero(vtk_to_numpy(leaf.GetCellData().GetArray(array)) == value)[0])
-    simple.Show(item, simple.GetActiveViewOrCreate("RenderView"))     # a selection is made in a view
-    simple.SelectIDs(IDs=[0, cell], FieldType="CELL", Source=item)
-    return cell
+        viewed.Configuration = "mesh only"                            # the drop-down: drawn again
+        simple.Render(view)
+        assert block_names(viewed) == ["mesh"]
+        check_drawn(display, views.configuration(views.read_views(path), "mesh only")[1])
 
 
 # ── The design check, by hand ────────────────────────────────────────────────
@@ -201,13 +242,6 @@ def side_view(view) -> None:
     view.ResetCamera()
 
 
-def displayed(view, name: str) -> dict:
-    display = simple.GetDisplayProperties(simple.FindSource(name), view)
-    return {"visible": bool(display.Visibility), "opacity": float(display.Opacity),
-            "color_array": display.ColorArrayName[1] or None,
-            "representation": display.GetProperty("Representation").GetData()}
-
-
 def display_mesh(layer: dict) -> bool:
     """Whether *layer* shows a component's display mesh (e.g. sections: a mesh other than the shoot's triangles),
     whatever its name ("<population> <component>")."""
@@ -216,30 +250,38 @@ def display_mesh(layer: dict) -> bool:
 
 
 def check_design(index_path: str) -> None:
-    """Views and selection by scale on a sequence with its views.json, screenshots in *pictures*."""
+    """The plugin's layers and selection by scale on a sequence with its views.json, screenshots in *pictures*."""
     import json
     import shutil
 
+    import numpy as np
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+
     from openalea.encoding3d import views
-    import encoding3d_selection
 
     views_file = os.path.join(os.path.dirname(os.path.abspath(index_path)), views.VIEWS_FILE)
     shutil.copy(views_file, views_file + ".before_check")
     try:
         document = views.read_views(views_file)
         name, layers = views.configuration(document)
-        roots_only = [dict(layer, visible=True) for layer in layers if "roots" in layer["name"]
-                      or display_mesh(layer)]                 # a second configuration: the sections shown, the
-        for layer in roots_only:                              # roots by radius, a range, a log scale, a colour map
+        shoot = next(layer["name"] for layer in layers if layer["name"].endswith("shoot"))
+        roots = next(layer["name"] for layer in layers if layer["name"].endswith("roots"))
+        sections = next(layer["name"] for layer in layers if display_mesh(layer))
+        grids = [layer["name"] for layer in layers if layer["source"]["kind"] == "grid"]
+        maps = {shoot: "Cool to Warm", roots: "Inferno (matplotlib)"}         # a configuration of distinct maps
+        distinct = [dict(layer, colormap=maps.get(layer["name"], layer["colormap"])) for layer in layers]
+        roots_only = [dict(layer, visible=True) for layer in layers if layer["name"] in (roots, sections)]
+        for layer in roots_only:                              # and one of the roots by radius, a range, a log scale
             if layer.get("tube"):
-                layer.update(color_by={"entity_set": "SubOrgan", "variable": "radius"}, range=[0.002, 0.005],
+                layer.update(color_by={"entity_set": "SubOrgan", "variable": "radius"}, range=[0.0002, 0.002],
                              log=True, colormap="Inferno (matplotlib)")
+        document = views.save_configuration(document, "distinct colour maps", distinct, active=False)
         views.write_views(views_file, views.save_configuration(document, "roots and sections", roots_only,
                                                                active=False))
         reader = encoding3dreader(FileName=os.path.abspath(index_path))  # noqa: F821
         names = configuration_names(reader)
         print("configurations", names)
-        assert names == [name, "roots and sections"], names
+        assert names == [name, "distinct colour maps", "roots and sections"], names
         domain = reader.GetProperty("Configuration").SMProperty.GetDomain("list")
         assert [domain.GetString(number) for number in range(domain.GetNumberOfStrings())] == names
         reader.UpdatePipelineInformation()
@@ -250,124 +292,123 @@ def check_design(index_path: str) -> None:
         reader.UpdatePipeline(last)
         assert blocks(reader) == len(layers)
 
-        run_macro("apply_encoding3d_views.py", reader)
+        display = simple.Show(reader, view)                   # as the GUI's Apply: no macro, drawn as the layers
+        check_drawn(display, layers)
+        print("drawn", json.dumps(drawn(display)))
+        encoding3d_displays.show_scalar_bars(display.SMProxy, view.SMProxy)   # (the GUI's Apply shows them)
         side_view(view)
-        screenshot(view, "1_views_default")
-        before = {layer["name"]: displayed(view, layer["name"]) for layer in layers}
-        print("displays", json.dumps(before))
-        for layer in layers:                                # the views as the layers say
-            settings = views.display_settings(layer)
-            assert before[layer["name"]]["visible"] == settings["visible"], layer["name"]
-            assert abs(before[layer["name"]]["opacity"] - settings["opacity"]) < 1e-9, layer["name"]
+        screenshot(view, "1_default_configuration")
 
-        run_macro("save_encoding3d_views.py", reader)           # saved unchanged: the same configuration
-        saved = views.read_views(views_file)
-        assert [views.filled(layer) for layer in saved["configurations"][name]["layers"]] == layers, \
-            (saved["configurations"][name]["layers"], layers)
-        shoot = next(layer["name"] for layer in layers if layer["name"].endswith("shoot"))
-        simple.GetDisplayProperties(simple.FindSource(shoot), view).Opacity = 0.3
-        run_macro("save_encoding3d_views.py", reader)           # changed, saved, applied again: as changed
-        run_macro("apply_encoding3d_views.py", reader)
-        assert abs(displayed(view, shoot)["opacity"] - 0.3) < 1e-9
-        screenshot(view, "2_views_shoot_opacity_0.3")
+        reader.Configuration = "distinct colour maps"         # the drop-down, Apply: drawn again
+        simple.Render(view)
+        check_drawn(display, distinct)
+        encoding3d_displays.show_scalar_bars(display.SMProxy, view.SMProxy)
+        colourings = views.block_displays(distinct, set(reader.CellData.keys()))["colourings"]
+        firsts = {array: tuple(list(simple.GetColorTransferFunction(array).RGBPoints)[1:4]) for _, array in colourings}
+        print("first colour of each layer's map", firsts)
+        assert len(set(firsts.values())) == len(firsts), firsts
+        screenshot(view, "2_distinct_colour_maps")
 
-        roots = next(layer["name"] for layer in layers if layer["name"].endswith("roots"))
-        sections = next(layer["name"] for layer in layers if display_mesh(layer))
-        roots_item = simple.FindSource(roots)
-        data = servermanager.Fetch(roots_item)
-        leaf = data.GetBlock(0) if hasattr(data, "GetNumberOfBlocks") else data
-        import numpy as np
-        from vtkmodules.util.numpy_support import vtk_to_numpy
-        axes = vtk_to_numpy(leaf.GetCellData().GetArray("Axis.id"))
+        reader.InvokeCommand("SaveViews")                     # saved unchanged: the same configuration
+        saved = views.configuration(views.read_views(views_file), "distinct colour maps")[1]
+        assert saved == [views.filled(layer) for layer in distinct], (saved, distinct)
+        display.BlockOpacities = [views.block_selector(grids[0]), "0.15", views.block_selector(shoot), "0.6"]
+        reader.SaveAs = "faded"                               # changed, saved as another configuration
+        reader.InvokeCommand("SaveViews")
+        faded = views.configuration(views.read_views(views_file), "faded")[1]
+        assert [layer["opacity"] for layer in faded if layer["name"] in (shoot, grids[0])] == [0.6, 0.15], faded
+        assert views.read_views(views_file)["active"] == "faded" and reader.Configuration == "faded"
+        reader.SaveAs = ""
+        simple.Render(view)
+        screenshot(view, "3_faded_saved")
+
+        reader.Configuration = name                           # back to the default
+        simple.Render(view)
+        check_drawn(display, layers)
+        data = servermanager.Fetch(reader)
+        tubes = data.GetBlock(block_names(reader).index(roots))
+        axes = vtk_to_numpy(tubes.GetCellData().GetArray("Axis.id"))
         lateral = float(axes.max())                           # the last axis: a lateral root
-        pick(roots_item, "Axis.id", lateral)
-        selection = encoding3dSelectatscale(Input=roots_item)  # noqa: F821   (the GUI's Filters > encoding3d, Apply)
+        pick(reader, roots, "Axis.id", lateral)
+        selection = encoding3dSelectatscale(Input=reader)  # noqa: F821   (the GUI's Filters > encoding3d, Apply)
         scales = scale_names(selection)
         print("scales", scales)
         assert scales[0] == "Plant" and "Axis" in scales and "Compartment" in scales, scales
         selection.Scale = "Axis"
-        run_macro("show_encoding3d_selection.py", selection)    # the macro, MODE "isolate"
-        screenshot(view, "3_isolate_axis")
-        assert [layer["name"] for layer in layers if displayed(view, layer["name"])["visible"]] == []
-        part = simple.FindSource(f"{roots} selection")
-        assert set(servermanager.Fetch(part).GetBlock(0).GetCellData().GetArray("Axis.id").GetRange()) == {lateral}
-        axis_cells = cells(f"{roots} selection block")
+        selection_display = simple.Show(selection, view)      # Apply shows it, drawn as the layers
+        check_drawn(selection_display, layers, selection=True)
+        selection.InvokeCommand("Isolate")
+        assert not visible(reader, view) and visible(selection, view)
+        screenshot(view, "4_isolate_axis")
+        assert set(servermanager.Fetch(selection).GetBlock(block_names(selection).index(roots)).GetCellData()
+                   .GetArray("Axis.id").GetRange()) == {lateral}
+        axis_cells = cells(selection, roots)
         selection.Scale = "Plant"                             # the drop-down changed, Apply: re-grown
         simple.Render(view)
-        assert cells(f"{roots} selection block") > axis_cells, (cells(f"{roots} selection block"), axis_cells)
-        screenshot(view, "4_isolate_scale_switched_to_plant")
+        assert cells(selection, roots) > axis_cells, (cells(selection, roots), axis_cells)
+        screenshot(view, "5_isolate_scale_switched_to_plant")
         if reader.TimestepValues:                             # stepping in time: the same plant followed
-            first = list(reader.TimestepValues)[0]
-            view.ViewTime = first
+            view.ViewTime = list(reader.TimestepValues)[0]
             simple.Render(view)
-            plant_ids = servermanager.Fetch(simple.FindSource(f"{roots} selection block")).GetBlock(0)
-            print("first time step", first, "plant", plant_ids.GetCellData().GetArray("Plant.id").GetRange())
-            screenshot(view, "5_isolate_plant_first_time_step")
+            screenshot(view, "6_isolate_plant_first_time_step")
             view.ViewTime = last
             simple.Render(view)
-        run_macro("show_encoding3d_selection.py", selection)    # run again: put back
-        after = {layer["name"]: displayed(view, layer["name"]) for layer in layers}
-        before[shoot]["opacity"] = 0.3
-        assert after == before, (after, before)                # as they were
-        assert simple.FindSource(f"{roots} selection") is None
+        selection.InvokeCommand("PutBack")
+        assert visible(reader, view) and not visible(selection, view)
         simple.Delete(selection)                              # the selection dropped
-        screenshot(view, "6_put_back")
+        screenshot(view, "7_put_back")
 
-        segment = float(vtk_to_numpy(leaf.GetCellData().GetArray("SubOrgan.id"))[
-            np.flatnonzero(axes == lateral)[0]])
-        pick(roots_item, "SubOrgan.id", segment)
-        selection = encoding3dSelectatscale(Input=roots_item, Scale="SubOrgan")  # noqa: F821
-        encoding3d_selection.show_selection(selection, "isolate")
-        assert cells(f"{sections} selection") > 0             # the hidden layer's part: the segment's section
-        assert displayed(view, f"{sections} selection")["visible"]
+        segment = float(vtk_to_numpy(tubes.GetCellData().GetArray("SubOrgan.id"))[np.flatnonzero(axes == lateral)[0]])
+        pick(reader, roots, "SubOrgan.id", segment)
+        selection = encoding3dSelectatscale(Input=reader, Scale="SubOrgan")  # noqa: F821
+        simple.Show(selection, view)
+        selection.InvokeCommand("Isolate")
+        assert cells(selection, sections) > 0                 # the hidden layer's part: the segment's section
+        assert views.block_selector(sections) in drawn(simple.GetDisplayProperties(selection, view))["BlockSelectors"]
         view.ResetCamera()
-        screenshot(view, "7_isolate_segment_with_its_section")
-        encoding3d_selection.back()
+        screenshot(view, "8_isolate_segment_with_its_section")
+        selection.InvokeCommand("PutBack")
         simple.Delete(selection)
         side_view(view)
 
-        shoot_item = simple.FindSource(shoot)
-        shoot_data = servermanager.Fetch(shoot_item)
-        shoot_leaf = shoot_data.GetBlock(0) if hasattr(shoot_data, "GetNumberOfBlocks") else shoot_data
-        plant = float(vtk_to_numpy(shoot_leaf.GetCellData().GetArray("Plant.id"))[0])
-        pick(shoot_item, "Plant.id", plant)
-        plant_selection = encoding3dSelectatscale(Input=shoot_item)  # noqa: F821   (Scale: Plant, the first)
-        encoding3d_selection.show_selection(plant_selection, "panel")
+        shoot_data = data.GetBlock(block_names(reader).index(shoot))
+        plant = float(vtk_to_numpy(shoot_data.GetCellData().GetArray("Plant.id"))[0])
+        pick(reader, shoot, "Plant.id", plant)
+        plant_selection = encoding3dSelectatscale(Input=reader)  # noqa: F821   (Scale: Plant, the first)
+        plant_selection.InvokeCommand("ShowInPanel")
         layout = simple.GetLayout(view)
         layout.SetSize(1600, 700)
-        layout_screenshot(layout, "8_panel_plant")
-        assert {layer["name"]: displayed(view, layer["name"]) for layer in layers} == before   # the view untouched
-
-        panel = [proxy for proxy in encoding3d_selection._named_views().values() if proxy.SMProxy is not view.SMProxy][0]
+        layout_screenshot(layout, "9_panel_plant")
+        assert visible(reader, view)                          # the view untouched
+        panel = [proxy for proxy in simple.GetViews() if proxy.SMProxy is not view.SMProxy][0]
         simple.SetActiveView(panel)                           # an axis of the plant, picked in the panel
-        plant_roots = simple.FindSource(f"{roots} selection")
-        plant_axes = vtk_to_numpy(servermanager.Fetch(plant_roots).GetBlock(0).GetCellData().GetArray("Axis.id"))
-        pick(plant_roots, "Axis.id", float(plant_axes.max()))
-        axis_selection = encoding3dSelectatscale(Input=plant_roots, Scale="Axis")  # noqa: F821
-        made = encoding3d_selection.show_selection(axis_selection, "isolate", panel)
-        assert f"{roots} selection 2" in made, made
-        assert not displayed(panel, f"{roots} selection")["visible"]
-        layout_screenshot(layout, "9_panel_an_axis_of_the_plant")
-        assert encoding3d_selection.back()                       # back to the plant in the panel
-        assert displayed(panel, f"{roots} selection")["visible"]
+        plant_axes = vtk_to_numpy(servermanager.Fetch(plant_selection).GetBlock(
+            block_names(plant_selection).index(roots)).GetCellData().GetArray("Axis.id"))
+        pick(plant_selection, roots, "Axis.id", float(plant_axes.max()))
+        axis_selection = encoding3dSelectatscale(Input=plant_selection, Scale="Axis")  # noqa: F821
+        simple.Show(axis_selection, panel)
+        axis_selection.InvokeCommand("Isolate")               # in the active view: the panel
+        assert not visible(plant_selection, panel) and visible(axis_selection, panel)
+        layout_screenshot(layout, "10_panel_an_axis_of_the_plant")
+        axis_selection.InvokeCommand("PutBack")               # back to the plant in the panel
+        assert visible(plant_selection, panel)
         simple.Delete(axis_selection)
-        assert encoding3d_selection.back()                       # the panel closed
+        plant_selection.InvokeCommand("PutBack")              # the panel closed
+        assert len(simple.GetViews()) == 1, simple.GetViews()
         simple.Delete(plant_selection)
         simple.SetActiveView(view)
         view.ViewSize = [900, 700]
-        screenshot(view, "10_panel_closed")
+        screenshot(view, "11_panel_closed")
 
         reader.Configuration = "roots and sections"           # the drop-down
-        reader.UpdatePipeline(last)
-        assert blocks(reader) == len(roots_only)
-        run_macro("apply_encoding3d_views.py", reader)
-        assert simple.FindSource(shoot) is None               # the other configuration's items replaced
+        simple.Render(view)
+        check_drawn(display, roots_only)
         colours = simple.GetColorTransferFunction("SubOrgan.radius")
         points = list(colours.RGBPoints)
-        assert colours.UseLogScale and abs(points[0] - 0.002) < 1e-12 and abs(points[-4] - 0.005) < 1e-12, points
+        assert colours.UseLogScale and abs(points[0] - 0.0002) < 1e-12 and abs(points[-4] - 0.002) < 1e-12, points
         side_view(view)
-        screenshot(view, "11_configuration_roots_and_sections")
-        run_macro("save_encoding3d_views.py", reader)           # its range and log scale read back
+        screenshot(view, "12_configuration_roots_and_sections")
+        reader.InvokeCommand("SaveViews")                     # its range and log scale read back
         saved = views.configuration(views.read_views(views_file), "roots and sections")[1]
         assert saved == [views.filled(layer) for layer in roots_only], (saved, roots_only)
     finally:

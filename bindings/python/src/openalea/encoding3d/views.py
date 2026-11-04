@@ -17,12 +17,15 @@ drawn::
     configuration(views, name=None)      (its name, its layers, each with its defaults filled)
     selected(table, where)               the rows of *table* where every condition holds
 
-ParaView's macros (paraview/apply_encoding3d_views.py, save_encoding3d_views.py) go through display_settings(layer) (a
-layer to its display options) and layer_from_display(layer, display) (back, to save them), plain dicts both ways.
+ParaView's plugin (paraview/plugin_encoding3d.py) draws each layer as a block of the reader's representation, with its
+own colouring and opacity: block_displays(layers, arrays) (the layers to the representation's block properties) and
+displays_from_blocks(layers, representation) then layer_from_display(layer, display) (back, to save them), plain
+dicts and lists both ways; display_settings(layer) gives one layer's options.
 
-Selection by scale (the plugin's filter "encoding3d Select at scale", the macro paraview/show_encoding3d_selection.py): the
-reader gives every cell the ids of its entity and of the entities containing it ("<entity set>.id", ancestor_ids),
-and each block its data structure and its graph's scales as field data (scale_names: the filter's drop-down);
+Selection by scale (the plugin's filter "encoding3d Select at scale", its Isolate, Show In Panel and Put Back
+buttons): the reader gives every cell the ids of its entity and of the entities containing it ("<entity set>.id",
+ancestor_ids), and each block its data structure and its graph's scales as field data (scale_names: the filter's
+drop-down);
 picked_entities(picked, scale) grows picked cells to their entities at *scale*, selection_mask(...) gives the cells of
 any block those entities contain, at any finer scale.
 """
@@ -143,7 +146,7 @@ def check_views(views: dict, frame=None):
 
 
 def _structure_errors(views) -> list:
-    """[(where, message)]: what the schema requires that the reader and the macros rely on, without jsonschema."""
+    """[(where, message)]: what the schema requires that the reader and the plugin rely on, without jsonschema."""
     if not isinstance(views, dict):
         return [("views", "not an object")]
     errors = []
@@ -269,7 +272,7 @@ def selected(table, where: dict) -> np.ndarray:
     return result
 
 
-# ── Display options (ParaView's macros) ──────────────────────────────────
+# ── Display options (ParaView's plugin) ──────────────────────────────────
 
 def property_text(value) -> str:
     """A ParaView string property's value as text: ParaView gives a str, a property (its GetData(): a str, or a list
@@ -283,10 +286,10 @@ def property_text(value) -> str:
 
 
 def block_selector(name: str) -> str:
-    """The selector of the reader's block *name* in ParaView's ExtractBlock: /Root/ and the name as ParaView makes it a
-    valid node name: VTK's vtkDataAssembly.MakeValidNodeName when VTK is there (its rule changed between versions),
-    else ParaView 6's (the characters other than letters, digits, '_', '-' and '.' removed, and '_' before a first
-    character that is not a letter or '_')."""
+    """The selector of the reader's block *name* in ParaView (a representation's BlockSelectors, an ExtractBlock):
+    /Root/ and the name as ParaView makes it a valid node name: VTK's vtkDataAssembly.MakeValidNodeName when VTK is
+    there (its rule changed between versions), else ParaView 6's (the characters other than letters, digits, '_', '-'
+    and '.' removed, and '_' before a first character that is not a letter or '_')."""
     try:
         from vtkmodules.vtkCommonDataModel import vtkDataAssembly
     except ImportError:
@@ -319,9 +322,9 @@ def colour_array(layer: dict, arrays=()) -> str:
 
 
 def display_settings(layer: dict, arrays=()) -> dict:
-    """What ParaView's "Apply encoding3d views" does for *layer*: the block to extract (selector), a Tube on
-    TUBE_RADIUS or not, the colouring (a cell array, its colour map, its range: None for the data's), the solid
-    colour, the opacity, the visibility and the representation."""
+    """How ParaView's plugin draws *layer*: its block (selector), a tube or not (the reader draws a segments layer
+    with a "tube" as tubes, their radius also as point data TUBE_RADIUS), the colouring (a cell array, its colour map,
+    its range: None for the data's), the solid colour, the opacity, the visibility and the representation."""
     layer = filled(layer)
     return {"name": layer["name"], "selector": block_selector(layer["name"]),
             "tube": {"radius_array": TUBE_RADIUS} if layer.get("tube") else None,
@@ -333,7 +336,7 @@ def display_settings(layer: dict, arrays=()) -> dict:
 
 
 def layer_from_display(layer: dict, display: dict) -> dict:
-    """*layer* updated from a ParaView item's display options, as "Save encoding3d views" reads them: visible,
+    """*layer* updated from its display options in ParaView (displays_from_blocks'), to save them: visible,
     opacity, representation, color_array (None: a solid colour), solid_color, range (None: the data's), log and
     colormap, each optional (absent: the layer's own). A "<entity set>.<variable>_code" array is the variable."""
     updated = copy.deepcopy(layer)
@@ -343,7 +346,8 @@ def layer_from_display(layer: dict, display: dict) -> dict:
     if "opacity" in updated:
         updated["opacity"] = float(updated["opacity"])
     if "range" in display:
-        updated["range"] = "auto" if display["range"] is None else [float(value) for value in display["range"]]
+        updated["range"] = "auto" if display["range"] is None else \
+            [float(f"{float(value):.12g}") for value in display["range"]]     # (a colour map's float noise off)
     if "color_array" in display:
         array = display["color_array"]
         if not array:
@@ -355,6 +359,86 @@ def layer_from_display(layer: dict, display: dict) -> dict:
                 variable = variable[:-len("_code")]
             updated["color_by"] = {"entity_set": entity_set, "variable": variable}
     return updated
+
+
+def block_displays(layers: list, arrays=()) -> dict:
+    """What ParaView's plugin sets on the reader's representation for the *layers* of a configuration (its blocks,
+    *arrays* the cell arrays they hold), each layer drawn as its own block:
+
+        selectors       the visible layers' blocks (the representation's BlockSelectors)
+        colourings      [(selector, cell array)] of the coloured layers (BlockColorArrayNames)
+        solid_colours   [(selector, RGB)] of the others (BlockColors)
+        opacities       [(selector, opacity)] of the layers not opaque (BlockOpacities)
+        colour_maps     {cell array: {"colormap", "range", "log"}}, the first layer coloured by it giving it
+        main_array      the array the representation itself is coloured by (the first visible coloured layer's, else
+                        the first coloured one's; None: no layer coloured): ParaView colours a block by its own array
+                        only when the representation is coloured by one
+        scalar_bars     the arrays of the visible coloured layers
+        representation  the visible layers' representation when they agree, else "Surface"
+    """
+    settings = [display_settings(layer, arrays) for layer in layers]
+    colourings = [(setting["selector"], setting["color_array"]) for setting in settings if setting["color_array"]]
+    colour_maps = {}
+    for setting in settings:
+        if setting["color_array"] and setting["color_array"] not in colour_maps:
+            colour_maps[setting["color_array"]] = {key: setting[key] for key in ("colormap", "range", "log")}
+    visible = [setting for setting in settings if setting["visible"]]
+    shown_arrays = [setting["color_array"] for setting in visible if setting["color_array"]]
+    representations = {setting["representation"] for setting in visible}
+    return {"selectors": [setting["selector"] for setting in visible], "colourings": colourings,
+            "solid_colours": [(setting["selector"], setting["solid_color"]) for setting in settings
+                              if not setting["color_array"]],
+            "opacities": [(setting["selector"], setting["opacity"]) for setting in settings
+                          if setting["opacity"] != 1.],
+            "colour_maps": colour_maps,
+            "main_array": shown_arrays[0] if shown_arrays else (colourings[0][1] if colourings else None),
+            "scalar_bars": list(dict.fromkeys(shown_arrays)),
+            "representation": representations.pop() if len(representations) == 1 else "Surface"}
+
+
+def _groups(values, size: int) -> list:
+    values = [str(value) for value in values]
+    return [values[start:start + size] for start in range(0, len(values) - size + 1, size)]
+
+
+def _shows(selectors: list, selector: str) -> bool:
+    """Whether the BlockSelectors *selectors* show the block *selector* (itself, or a block holding it: "/Root")."""
+    return any(shown in ("/", selector) or selector.startswith(shown.rstrip("/") + "/") for shown in selectors)
+
+
+def displays_from_blocks(layers: list, representation: dict) -> list:
+    """The display options of each of *layers* (as layer_from_display takes them) read back from the reader's
+    representation: *representation* holds its properties as ParaView gives them, flat lists: BlockSelectors,
+    BlockColorArrayNames (selector, association, array ...), BlockColors (selector, r, g, b ...), BlockOpacities
+    (selector, opacity ...), and its own ColorArrayName (the array name), DiffuseColor, Opacity and Representation;
+    with "colour_maps", {array: (range, or None when it follows the data; log scale)}. A block without a colouring of
+    its own has the representation's."""
+    selectors = [str(value) for value in representation.get("BlockSelectors", [])]
+    colourings = {selector: array for selector, _, array in _groups(representation.get("BlockColorArrayNames", []), 3)}
+    solid = {group[0]: [float(value) for value in group[1:]]
+             for group in _groups(representation.get("BlockColors", []), 4)}
+    opacities = {selector: float(value) for selector, value in _groups(representation.get("BlockOpacities", []), 2)}
+    colour_maps = representation.get("colour_maps", {})
+    found = []
+    for layer in layers:
+        selector = block_selector(layer["name"])
+        display = {"visible": _shows(selectors, selector),
+                   "opacity": opacities.get(selector, float(representation.get("Opacity", 1.))),
+                   "representation": representation.get("Representation") or None}
+        if colourings.get(selector):
+            array = colourings[selector]
+        elif selector in solid:
+            array = None
+            display["solid_color"] = solid[selector]
+        else:                                                   # the representation's own colouring
+            array = representation.get("ColorArrayName") or None
+            if array is None and representation.get("DiffuseColor") is not None:
+                display["solid_color"] = [float(value) for value in representation["DiffuseColor"]]
+        display["color_array"] = array
+        if array is not None and array in colour_maps:
+            display["range"], display["log"] = colour_maps[array][0], bool(colour_maps[array][1])
+        found.append(display)
+    return found
 
 
 def save_configuration(views: dict, name: str, layers: list, active: bool = True) -> dict:

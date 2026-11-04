@@ -6,16 +6,23 @@
   of layers, each a mesh's, segments' or grid's entities selected by `where` conditions, coloured by a variable (or a
   solid colour), with a colour map, range, log scale, opacity, visibility, representation, and tubes for segments.
 - `openalea.encoding3d.views`: reading, writing and checking views (the schema, and every name against a frame), the
-  selection, and the display options the ParaView macros apply and save back.
-- The ParaView reader: "Views" and "Configuration" (a drop-down), one block per layer holding only its entities;
-  `frame_to_vtk(frame, views=, configuration=)`, unchanged without views. The macros `apply_encoding3d_views.py` (each
-  layer its own pipeline item) and `save_encoding3d_views.py` (the items' display options back into `views.json`).
+  selection, and the display options ParaView's plugin draws and saves back (`block_displays`,
+  `displays_from_blocks`, `layer_from_display`).
+- The ParaView plugin is one file, `paraview/plugin_encoding3d.py` (was `encoding3d_reader.py`), with a how-to,
+  `paraview/README.md`; no macros (`apply_encoding3d_views.py`, `save_encoding3d_views.py` and
+  `show_encoding3d_selection.py` removed, their work in the plugin).
+- The ParaView reader: "Views" and "Configuration" (a drop-down), one block per layer holding only its entities, a
+  segments layer with a `tube` as tubes (one closed strip per segment); `frame_to_vtk(frame, views=, configuration=)`,
+  unchanged without views. The plugin draws each layer as its block when ParaView shows the reader (Apply), with its
+  own colour variable, colour map, range, log scale or solid colour, opacity and visibility (the representation's
+  block properties, editable in the MultiBlock Inspector), drawn again when the Configuration or the views file
+  changes; the reader's "Save Views" button (and "Save As") writes the display back into `views.json`.
 - Selection by scale in ParaView: the plugin's filter "encoding3d Select at scale" (Filters → encoding3d) takes ParaView's
   selection and grows the picked cells to their entity at its **Scale** (a drop-down of the frames' scales) with
   everything it contains, in every layer of the reader, hidden ones included, following the picked entities through
-  the time steps; the macro `show_encoding3d_selection.py` shows it as its layers, isolated in the view or in a panel of
-  its own, one selection over another, run again to go back. Each cell carries the ids of the entities containing it
-  (`<scale>.id`), each block its data structure and scales.
+  the time steps, drawn as the layers; its buttons Isolate (the other items hidden), Show In Panel (a view of its
+  own) and Put Back (one step back), one selection over another. Each cell carries the ids of the entities
+  containing it (`<scale>.id`), each block its data structure and scales.
 
 ## Unreleased: specification 0.3 (draft), coupling platforms
 

@@ -1,8 +1,9 @@
 """
-encoding3d reader for ParaView: opens a frame (.glb) or a sequence (scene.fspm.json, its frames as time steps), with
-every variable of every scale as data arrays.
+encoding3d's ParaView plugin: the "encoding3d reader" opens a frame (.glb) or a sequence (scene.fspm.json, its frames as
+time steps), with every variable of every scale as data arrays, and draws its views (views.json) layer by layer; the
+filter "encoding3d Select at scale" grows picked cells to their plant, axis, organ ... (paraview/README.md, the how-to).
 
-    ParaView ≥ 5.10: Tools > Manage Plugins > Load New..., choose this file (tick "Auto Load" to keep it); then
+    ParaView >= 5.11: Tools > Manage Plugins > Load New..., choose this file (tick "Auto Load" to keep it); then
     File > Open a .glb or a scene.fspm.json and pick "encoding3d reader".
 
 The reader needs openalea.encoding3d: found in ParaView's Python when installed there, else in the bindings/python/src
@@ -27,19 +28,21 @@ Data structures are placed by their origin.
 With views (specification §8.1: a views.json next to the file, or the one "Views" names), the output is instead one
 block per layer of the chosen "Configuration" (the file's active one by default), named by the layer: only its
 selected entities (a mesh's triangles whose rows at the select entity set match, the segments whose rows match, the
-grid's cells, the others hidden), its colour variable as the active scalars, a segments layer's tube radius as point
-data "tube_radius"; hidden layers are there too, and a layer whose names a frame lacks is an empty block. The macros
-apply_encoding3d_views.py and save_encoding3d_views.py (next to this file; Macros > Import new macro...) make each layer its
-own pipeline item, and write the items' display options back into the views file.
+grid's cells, the others hidden), its colour variable as the active scalars, a segments layer with a "tube" as tubes
+(radius also as point data "tube_radius"); hidden layers are there too, and a layer whose names a frame lacks is an
+empty block. The plugin then draws each layer as its block, with its own colour variable, colour map, range, log
+scale or solid colour, opacity and visibility (encoding3d_displays.py, next to this file: it watches the
+representations ParaView makes, and draws them again when "Configuration" changes); the MultiBlock Inspector edits a
+layer, the reader's "Save Views" button writes the display back into the views file ("Save As": a new configuration).
 
 Every cell also has the ids of the entities containing its own ("<entity set>.id" at each coarser scale, through the
 complex links: a root segment's Organ, Axis and Plant), and every block its data structure (field data
 encoding3d_data_structure) and its graph's scales (encoding3d_scales, coarser first). The plugin's filter "encoding3d Select
 at scale" (Filters > encoding3d), applied with cells picked on the reader or any item drawn from it, grows them to their
 plant, axis, organ ... ("Scale", a drop-down of the scales) with everything it holds at finer scales, in every block
-of the reader (every layer, the hidden ones included), the same blocks with their arrays; the picked entities are
-followed through the time steps. The macro show_encoding3d_selection.py draws it as its layers, isolated in the view or
-in a panel of its own.
+of the reader (every layer, the hidden ones included), the same blocks with their arrays, drawn as the layers; the
+picked entities are followed through the time steps. Its buttons Isolate (the other items hidden), Show In Panel (a
+render view of its own) and Put Back (one step back) show it.
 
 frame_to_vtk(frame) builds the output without ParaView (VTK only), e.g. for scripts and tests; picked_cells and
 grow_selection, the filter's.
@@ -63,7 +66,7 @@ def _encoding3d():
     try:
         from openalea import encoding3d
     except ImportError:
-        source = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bindings", "python", "src")
+        source = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "bindings", "python", "src")
         if source not in sys.path:
             sys.path.insert(0, source)
         from openalea import encoding3d
@@ -297,6 +300,47 @@ def _named(blocks: vtkMultiBlockDataSet, data_set, name: str) -> None:
     blocks.GetMetaData(number).Set(vtkMultiBlockDataSet.NAME(), name)
 
 
+TUBE_SIDES = 8
+
+
+def _tubes(lines):
+    """The *lines* (a segments layer's: the first ends, then the second ends) as tubes of radius "tube_radius" (point
+    data), one closed triangle strip per line holding its cell data: the layer is drawn as tubes with no Tube filter,
+    and picked as such, an entity a cell."""
+    count = lines.GetNumberOfCells()
+    points = vtk_to_numpy(lines.GetPoints().GetData()).astype(np.float64)
+    first, second = points[:count], points[count:]
+    radius = vtk_to_numpy(lines.GetPointData().GetArray(_views().TUBE_RADIUS)).astype(np.float64)[:count]
+    direction = second - first
+    length = np.linalg.norm(direction, axis=1)
+    axis = np.where(length[:, None] > 0, direction / np.where(length > 0, length, 1.)[:, None], [0., 0., 1.])
+    helper = np.where((np.abs(axis[:, 0]) > 0.9)[:, None], [0., 1., 0.], [1., 0., 0.])
+    across = np.cross(axis, helper)
+    across /= np.linalg.norm(across, axis=1)[:, None]
+    other = np.cross(axis, across)
+    angles = 2. * np.pi * np.arange(TUBE_SIDES) / TUBE_SIDES
+    normals = np.cos(angles)[None, :, None] * across[:, None, :] + np.sin(angles)[None, :, None] * other[:, None, :]
+    rings = np.stack([first[:, None, :] + radius[:, None, None] * normals,
+                      second[:, None, :] + radius[:, None, None] * normals], axis=2)    # segment, side, end, xyz
+    tubes = vtkPolyData()
+    tube_points = vtkPoints()
+    tube_points.SetData(numpy_to_vtk(np.ascontiguousarray(rings.reshape(-1, 3)), deep=True))
+    tubes.SetPoints(tube_points)
+    per_tube = 2 * TUBE_SIDES                                    # around the tube, back to its first side
+    corners = np.concatenate([np.arange(per_tube), [0, 1]])
+    connectivity = (np.arange(count)[:, None] * per_tube + corners[None, :]).reshape(-1).astype(np.int64)
+    strips = vtkCellArray()
+    strips.SetData(numpy_to_vtkIdTypeArray(np.arange(0, len(corners) * count + 1, len(corners), dtype=np.int64),
+                                           deep=True), numpy_to_vtkIdTypeArray(connectivity, deep=True))
+    tubes.SetStrips(strips)
+    tubes.GetCellData().ShallowCopy(lines.GetCellData())
+    tubes.GetFieldData().ShallowCopy(lines.GetFieldData())
+    tubes.GetPointData().AddArray(_array(_views().TUBE_RADIUS, np.repeat(radius, per_tube)))
+    point_normals = _array("Normals", np.repeat(normals, 2, axis=1).reshape(-1, 3).astype(np.float32))
+    tubes.GetPointData().SetNormals(point_normals)
+    return tubes
+
+
 def _layer(frame, layer: dict, settings: bool = False):
     """The data set of a layer (views.configuration's, its defaults filled): its selected entities only, its colour
     variable as the active scalars; empty when the frame lacks a name it gives (e.g. a mesh drawn from a later frame
@@ -324,9 +368,14 @@ def _layer(frame, layer: dict, settings: bool = False):
         entity_set = data_structure.entity_set(source["entity_set"])
         rows = np.flatnonzero(views.selected(*chosen)) if chosen is not None else None
         tube = layer.get("tube")
-        radius = entity_set.columns[tube["radius"]].astype(np.float64) * float(tube.get("scale", 1.)) if tube else None
+        radius = None
+        if tube:                                                         # a missing radius: none (no NaN points)
+            radius = np.ma.filled(np.ma.asarray(entity_set.columns[tube["radius"]], dtype=np.float64), np.nan)
+            radius = np.nan_to_num(radius * float(tube.get("scale", 1.)), nan=0.)
         data_set = _segments(entity_set, _segment_columns(entity_set), data_structure, settings, rows,
                              forced.get(entity_set.name, ()), radius)
+        if tube:
+            data_set = _tubes(data_set)
     else:
         kept = views.selected(*chosen) if chosen is not None else None
         build = _regular_grid if data_structure.grid.kind == "regular" else _adaptive_grid
@@ -555,13 +604,31 @@ try:
 except ImportError:                                  # VTK without ParaView: frame_to_vtk and Source only
     VTKPythonAlgorithmBase = None
 
+def _displays():
+    """encoding3d_displays (next to this file): how the reader's representations draw the layers, the buttons' work."""
+    import encoding3d_displays
+    return encoding3d_displays
+
+
+def _run(action: str, algorithm, *arguments) -> None:
+    """A button's *action* of encoding3d_displays on the item of *algorithm*; what goes wrong, in ParaView's output."""
+    try:
+        getattr(_displays(), action)(algorithm, *arguments)
+    except Exception as error:                        # a button: ParaView's Output Messages, not a crash
+        vtkOutputWindow.GetInstance().DisplayWarningText(f"encoding3d: {error}\n")
+
+
 if VTKPythonAlgorithmBase is not None:
     try:
-        _encoding3d()                                   # on ParaView's path now: the views macros import it too
+        _encoding3d()                                   # on ParaView's path now
     except ImportError:
         pass
-    if os.path.dirname(os.path.abspath(__file__)) not in sys.path:   # and encoding3d_selection, the selection macro's
-        sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+    if os.path.dirname(os.path.realpath(__file__)) not in sys.path:   # and encoding3d_displays (a link: its folder)
+        sys.path.append(os.path.dirname(os.path.realpath(__file__)))
+    try:
+        _displays().install()                           # the layers drawn on each representation ParaView makes
+    except Exception as error:                          # (none in a server without a client: nothing to draw)
+        vtkOutputWindow.GetInstance().DisplayWarningText(f"encoding3d: layers not drawn ({error})\n")
 
     @smproxy.reader(name="encoding3dReader", label="encoding3d reader", extensions="glb json",
                     file_description="encoding3d frames (.glb) and sequences (scene.fspm.json)")
@@ -569,7 +636,7 @@ if VTKPythonAlgorithmBase is not None:
         def __init__(self):
             VTKPythonAlgorithmBase.__init__(self, nInputPorts=0, nOutputPorts=1, outputType="vtkMultiBlockDataSet")
             self._file_name, self._source, self._settings = None, None, False
-            self._views, self._configuration = "", ""
+            self._views, self._configuration, self._save_as = "", "", ""
 
         @smproperty.stringvector(name="FileName")
         @smdomain.filelist()
@@ -619,6 +686,20 @@ if VTKPythonAlgorithmBase is not None:
                 self._configuration = name or ""
                 self.Modified()
 
+        @smproperty.stringvector(name="SaveAs", label="Save As", number_of_elements="1", default_values="")
+        def SetSaveAs(self, name):
+            """The configuration "Save Views" writes (empty: the one shown)."""
+            self._save_as = name or ""                    # not Modified(): the output does not change
+
+        @smproperty.xml("""<Property name="SaveViews" label="Save Views" command="SaveViews"
+                                     panel_widget="command_button">
+                             <Documentation>Write each layer's display (visibility, colour variable or solid colour,
+                             range, log scale, opacity, representation) into the views file: over the configuration
+                             shown, or into the one "Save As" names, made the active one.</Documentation>
+                           </Property>""")
+        def SaveViews(self):
+            _run("save_views", self, self._save_as or None)
+
         def _opened(self):
             if self._source is None and self._file_name:
                 self._source = Source(self._file_name)
@@ -630,6 +711,10 @@ if VTKPythonAlgorithmBase is not None:
             return source.times if source is not None and len(source.times) > 1 else None
 
         def RequestInformation(self, request, in_info, out_info):
+            try:
+                _displays().install()                     # a session made after the plugin was loaded
+            except Exception:
+                pass
             information = out_info.GetInformationObject(0)
             pipeline = vtkStreamingDemandDrivenPipeline
             information.Remove(pipeline.TIME_STEPS())
@@ -711,6 +796,28 @@ if VTKPythonAlgorithmBase is not None:
             if (name or "") != self._scale:
                 self._scale = name or ""
                 self.Modified()
+
+        @smproperty.xml("""<Property name="Isolate" command="Isolate" panel_widget="command_button">
+                             <Documentation>Show the selection alone in the active view, the other items hidden
+                             (Put Back shows them again).</Documentation>
+                           </Property>""")
+        def Isolate(self):
+            _run("isolate", self)
+
+        @smproperty.xml("""<Property name="ShowInPanel" label="Show In Panel" command="ShowInPanel"
+                                     panel_widget="command_button">
+                             <Documentation>Show the selection in a new render view beside the active one, its
+                             camera fit to it; the view itself untouched (Put Back closes it).</Documentation>
+                           </Property>""")
+        def ShowInPanel(self):
+            _run("show_in_panel", self)
+
+        @smproperty.xml("""<Property name="PutBack" label="Put Back" command="PutBack" panel_widget="command_button">
+                             <Documentation>One step back: the last selection isolated or shown in a panel put back,
+                             the items it hid shown again, its panel closed.</Documentation>
+                           </Property>""")
+        def PutBack(self):
+            _run("put_back", self)
 
         def RequestInformation(self, request, in_info, out_info):
             frame_data = frame_upstream(self)

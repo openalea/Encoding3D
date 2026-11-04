@@ -1,6 +1,6 @@
-"""The ParaView reader's conversion (paraview/encoding3d_reader.py), with VTK alone: meshes with every entity set's
-variables as cell data, segments as lines, grids in VTK's cell order, sequences as time steps. Run inside ParaView
-too when ENCODING3D_PVPYTHON gives a pvpython."""
+"""The ParaView reader's conversion (paraview/plugin_encoding3d.py), with VTK alone: meshes with every entity set's
+variables as cell data, segments as lines (a views layer's as tubes), grids in VTK's cell order, sequences as time
+steps. Run inside ParaView too when ENCODING3D_PVPYTHON gives a pvpython."""
 import importlib.util
 import os
 import subprocess
@@ -14,8 +14,8 @@ from conftest import CONFORMANCE, ROOT
 pytest.importorskip("vtkmodules")
 from vtkmodules.util.numpy_support import vtk_to_numpy  # noqa: E402
 
-PLUGIN = os.path.join(ROOT, "paraview", "encoding3d_reader.py")
-_specification = importlib.util.spec_from_file_location("encoding3d_reader", PLUGIN)
+PLUGIN = os.path.join(ROOT, "paraview", "plugin_encoding3d.py")
+_specification = importlib.util.spec_from_file_location("plugin_encoding3d", PLUGIN)
 reader = importlib.util.module_from_spec(_specification)
 _specification.loader.exec_module(reader)
 
@@ -135,6 +135,11 @@ def layers_of(frame, views, configuration=None) -> dict:
             for number in range(output.GetNumberOfBlocks())}
 
 
+def views_module():
+    from openalea.encoding3d import views
+    return views
+
+
 def test_views_give_a_block_per_layer_with_its_entities_only():
     from test_views import roots_views
     frame = generate.root_system()
@@ -148,13 +153,21 @@ def test_views_give_a_block_per_layer_with_its_entities_only():
     assert set(cell_array(mesh, "Axis.branching_order")) == {1.}
     assert mesh.GetCellData().GetScalars().GetName() == "SubOrgan.water_potential"
     segments = source.entity_set("SubOrgan")
-    lines = blocks["roots"]
+    tubes = blocks["roots"]                                                # a "tube": drawn as tubes
     kept = (segments.columns["label"] == "RootSegment") & (segments.columns["length"] > 0)
-    assert lines.GetNumberOfCells() == kept.sum()
-    np.testing.assert_array_equal(cell_array(lines, "SubOrgan.radius"), segments.columns["radius"][kept])
-    radius = vtk_to_numpy(lines.GetPointData().GetArray("tube_radius"))
-    np.testing.assert_array_equal(radius, np.concatenate([segments.columns["radius"][kept]] * 2) * 2)
-    assert lines.GetCellData().GetScalars().GetName() == "SubOrgan.label_code"     # text: its codes
+    assert tubes.GetNumberOfCells() == tubes.GetNumberOfStrips() == kept.sum()     # a strip per segment
+    assert tubes.GetNumberOfPoints() == 2 * reader.TUBE_SIDES * kept.sum()
+    ring = vtk_to_numpy(tubes.GetPoints().GetData())[:2 * reader.TUBE_SIDES:2]   # the first tube's first end
+    start = np.array([segments.columns[name][kept][0] for name in ("x1", "y1", "z1")])
+    np.testing.assert_allclose(np.linalg.norm(ring - start, axis=1), 2 * segments.columns["radius"][kept][0])
+    np.testing.assert_array_equal(cell_array(tubes, "SubOrgan.radius"), segments.columns["radius"][kept])
+    radius = vtk_to_numpy(tubes.GetPointData().GetArray("tube_radius"))
+    np.testing.assert_allclose(np.unique(radius), np.unique(segments.columns["radius"][kept] * 2))   # its scale
+    bounds = np.array(tubes.GetBounds()).reshape(3, 2)
+    ends = np.stack([segments.columns[name][kept] for name in ("x1", "y1", "z1")], axis=1)
+    assert (bounds[:, 0] <= ends.min(axis=0)).all() and (bounds[:, 1] >= ends.max(axis=0)).all()
+    assert tubes.GetCellData().GetScalars().GetName() == "SubOrgan.label_code"     # text: its codes
+    assert tubes.GetFieldData().GetAbstractArray(views_module().DATA_STRUCTURE_FIELD) is not None
     plain = layers_of(frame, roots_views(), "plain")["all"]
     assert plain.GetNumberOfCells() == len(triangles) and plain.GetCellData().GetScalars() is None
 
@@ -247,7 +260,7 @@ def test_select_at_scale_grows_picked_cells_in_every_layer():
     assert isinstance(axis_lines, vtkPolyData) and set(cell_array(axis_lines, "Axis.id")) == {101.}
     assert axis_lines.GetNumberOfCells() == (cell_array(lines, "Axis.id") == 101.).sum()
     assert axis_lines.GetCellData().GetScalars().GetName() == "SubOrgan.label_code"     # the layer's colouring
-    assert axis_lines.GetPointData().GetArray("tube_radius") is not None                 # a Tube can follow
+    assert axis_lines.GetNumberOfStrips() == axis_lines.GetNumberOfCells()              # tubes still
     first_order = grown.GetBlock(0)
     assert first_order.GetNumberOfCells() == 0                    # the lateral is not of the first order
     plant = reader.grow_selection(data, picked, "Plant")

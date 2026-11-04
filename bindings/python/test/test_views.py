@@ -1,16 +1,11 @@
 """Frame views (openalea.encoding3d.views, specification §8.1): the schema, the names checked against a frame, the
-selection, the display options ParaView's macros apply and save back, and the macros themselves on a stand-in for
-paraview.simple."""
+selection, and the display options ParaView's plugin draws as blocks and saves back."""
 import copy
-import os
-import sys
-import types
 
 import numpy as np
 import pytest
 
 import generate
-from conftest import ROOT
 
 from openalea.encoding3d import views
 
@@ -130,117 +125,54 @@ def test_display_settings_and_back():
     assert "mine" not in roots_views()["configurations"]                         # a copy
 
 
-# ── The macros, on a stand-in for paraview.simple ────────────────────────
+# ── The layers as the blocks of one representation (ParaView's plugin) ──
 
-class _Item:
-    def __init__(self, simple, kind, name, **properties):
-        self.kind, self.name, self.simple = kind, name, simple
-        self.__dict__.update(properties)
-        simple.items[name] = self
-
-    def UpdatePipeline(self, *arguments):
-        pass
-
-    def UpdatePropertyInformation(self):
-        pass
-
-    @property
-    def CellData(self):
-        return types.SimpleNamespace(keys=lambda: ["SubOrgan.water_potential", "SubOrgan.label_code"])
-
-
-class _Display:
-    def __init__(self):
-        self.Visibility, self.Opacity, self.Representation = 1, 1., "Surface"
-        self.ColorArrayName, self.DiffuseColor, self.AmbientColor = ["POINTS", ""], [1., 1., 1.], [1., 1., 1.]
-
-    def SetRepresentationType(self, representation):
-        self.Representation = representation
-
-    def RescaleTransferFunctionToDataRange(self, *arguments):
-        pass
-
-    def SetScalarBarVisibility(self, *arguments):
-        pass
+def test_layers_become_block_properties():
+    _, layers = views.configuration(roots_views())
+    layers[0]["opacity"] = 0.4
+    displays = views.block_displays(layers, {"SubOrgan.water_potential", "SubOrgan.label_code"})
+    assert displays["selectors"] == ["/Root/firstorder"]                       # "roots" hidden
+    assert displays["colourings"] == [("/Root/firstorder", "SubOrgan.water_potential"),
+                                      ("/Root/roots", "SubOrgan.label_code")]     # text: its codes
+    assert displays["solid_colours"] == [] and displays["opacities"] == [("/Root/firstorder", 0.4)]
+    assert displays["main_array"] == "SubOrgan.water_potential"
+    assert displays["scalar_bars"] == ["SubOrgan.water_potential"] and displays["representation"] == "Surface"
+    assert displays["colour_maps"]["SubOrgan.label_code"] == {"colormap": views.DEFAULTS["colormap"], "range": None,
+                                                              "log": False}
+    plain = views.block_displays(views.configuration(roots_views(), "plain")[1])
+    assert plain["solid_colours"] == [("/Root/all", [0.5, 0.4, 0.3])] and plain["main_array"] is None
+    assert plain["opacities"] == [("/Root/all", 0.3)]
 
 
-class _Colours:
-    def __init__(self):
-        self.RGBPoints, self.UseLogScale, self.AutomaticRescaleRangeMode = [0., 0, 0, 0, 1., 1, 1, 1], 0, "Never"
-
-    def ApplyPreset(self, name, rescale):
-        self.preset = name
-
-    def RescaleTransferFunction(self, low, high):
-        self.RGBPoints = [low, 0, 0, 0, high, 1, 1, 1]
-
-
-def _stand_in(reader):
-    simple = types.ModuleType("paraview.simple")
-    simple.items, simple.displays, simple.colours = {}, {}, {}
-    simple.active = reader(simple)
-    simple.GetActiveSource = lambda: simple.active
-    simple.SetActiveSource = lambda item: None
-    simple.GetActiveViewOrCreate = lambda kind: "view"
-    simple.Render = lambda view: None
-    simple.FindSource = lambda name: simple.items.get(name)
-    simple.Delete = lambda item: simple.items.pop(item.name)
-    simple.ExtractBlock = lambda registrationName, Input, Selectors: _Item(simple, "block", registrationName,
-                                                                         Input=Input, Selectors=Selectors)
-    simple.Tube = lambda registrationName, Input: _Item(simple, "tube", registrationName, Input=Input)
-
-    def show(item, view):
-        display = simple.displays.setdefault(item.name, _Display())
-        display.Visibility = 1
-        return display
-
-    def hide(item, view):
-        simple.displays.setdefault(item.name, _Display()).Visibility = 0
-
-    def colour_by(display, value):
-        display.ColorArrayName = ["CELLS", value[1]] if value else ["POINTS", ""]
-
-    simple.Show, simple.Hide, simple.ColorBy = show, hide, colour_by
-    simple.GetDisplayProperties = lambda item, view: simple.displays[item.name]
-    simple.GetColorTransferFunction = lambda name: simple.colours.setdefault(name, _Colours())
-    package = types.ModuleType("paraview")
-    package.simple = simple
-    return package, simple
-
-
-def _run_macro(name: str, simple_package, monkeypatch):
-    monkeypatch.setitem(sys.modules, "paraview", simple_package)
-    monkeypatch.setitem(sys.modules, "paraview.simple", simple_package.simple)
-    path = os.path.join(ROOT, "paraview", name)
-    with open(path, encoding="utf-8") as file:
-        exec(compile(file.read(), path, "exec"), {"__name__": "__main__", "__file__": path})
-
-
-def test_the_macros_apply_and_save_views(tmp_path, monkeypatch):
-    path = str(tmp_path / views.VIEWS_FILE)
-    views.write_views(path, roots_views())
-    package, simple = _stand_in(lambda simple: _Item(simple, "reader", "scene.fspm.json", Configuration="",
-                                                     FileName=str(tmp_path / "scene.fspm.json"), Views=""))
-    _run_macro("apply_encoding3d_views.py", package, monkeypatch)
-    assert simple.items["first order"].kind == "block" and simple.items["roots"].kind == "tube"
-    assert simple.items["roots block"].Selectors == ["/Root/roots"]
-    assert simple.items["roots"].Scalars == ["POINTS", views.TUBE_RADIUS]
-    assert simple.displays["first order"].ColorArrayName == ["CELLS", "SubOrgan.water_potential"]
-    assert simple.displays["roots"].ColorArrayName == ["CELLS", "SubOrgan.label_code"]
-    assert simple.displays["roots"].Visibility == 0 and simple.displays["first order"].Visibility == 1
-    _run_macro("apply_encoding3d_views.py", package, monkeypatch)                  # applied again: replaced
-    assert sorted(simple.items) == ["first order", "roots", "roots block", "scene.fspm.json"]
-
-    simple.displays["first order"].Opacity = 0.25                               # changed in ParaView, then saved
-    simple.displays["roots"].Visibility = 1
-    simple.colours["SubOrgan.label_code"].RescaleTransferFunction(0., 3.)
-    simple.colours["SubOrgan.label_code"].AutomaticRescaleRangeMode = "Never"
-    _run_macro("save_encoding3d_views.py", package, monkeypatch)
-    saved = views.read_views(path)
-    first, roots = saved["configurations"]["default"]["layers"]
-    assert first["opacity"] == 0.25 and roots["visible"] and roots["range"] == [0., 3.]
-    assert roots["color_by"] == {"entity_set": "SubOrgan", "variable": "label"} and roots["tube"]["scale"] == 2
-    assert saved["configurations"]["plain"] == roots_views()["configurations"]["plain"]
+def test_block_properties_read_back_into_layers():
+    """What "Save Views" reads from the representation, after edits in ParaView, saved into the layers."""
+    _, layers = views.configuration(roots_views())
+    representation = {"BlockSelectors": ["/Root/firstorder", "/Root/roots"],          # "roots" shown
+                      "BlockColorArrayNames": ["/Root/roots", "1", "SubOrgan.radius"],
+                      "BlockColors": ["/Root/firstorder", "1", "0", "0"],             # "first order" solid red
+                      "BlockOpacities": ["/Root/roots", "0.5"], "ColorArrayName": "SubOrgan.water_potential",
+                      "DiffuseColor": [1., 1., 1.], "Opacity": 1., "Representation": "Surface",
+                      "colour_maps": {"SubOrgan.radius": ([0.001, 0.004], True)}}
+    first, roots = views.displays_from_blocks(layers, representation)
+    assert first == {"visible": True, "opacity": 1., "representation": "Surface", "solid_color": [1., 0., 0.],
+                     "color_array": None}
+    assert roots == {"visible": True, "opacity": 0.5, "representation": "Surface", "color_array": "SubOrgan.radius",
+                     "range": [0.001, 0.004], "log": True}
+    saved = [views.layer_from_display(layer, display) for layer, display in zip(layers, (first, roots))]
+    assert saved[0]["color_by"] is None and saved[0]["solid_color"] == [1., 0., 0.]
+    assert saved[1]["color_by"] == {"entity_set": "SubOrgan", "variable": "radius"} and saved[1]["log"]
+    assert saved[1]["tube"] == layers[1]["tube"] and saved[1]["visible"] and saved[1]["opacity"] == 0.5
+    inherited = views.displays_from_blocks(layers, {"BlockSelectors": ["/Root"], "ColorArrayName": "SubOrgan.id"})
+    assert [display["visible"] for display in inherited] == [True, True]           # "/Root": every block shown
+    assert [display["color_array"] for display in inherited] == ["SubOrgan.id"] * 2   # the representation's own
+    drawn = views.block_displays(layers)                                           # drawn, then read back as drawn
+    state = {"BlockSelectors": drawn["selectors"], "Opacity": 1.,
+             "BlockColorArrayNames": [value for selector, array in drawn["colourings"]
+                                      for value in (selector, 1, array)],
+             "colour_maps": {array: (None, False) for array in drawn["colour_maps"]}}
+    unchanged = [views.layer_from_display(layer, display)
+                 for layer, display in zip(layers, views.displays_from_blocks(layers, state))]
+    assert unchanged == layers
 
 
 # ── Selection by scale ───────────────────────────────────────────────────

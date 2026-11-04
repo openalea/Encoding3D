@@ -32,7 +32,7 @@ change there, released as a new version. Everything else implements, checks or d
 | `spec/vocabulary/` | the standard names (units, kinds, definitions, and each platform's names for them), the labels with their Plant Ontology terms, the enumerations | **yes** |
 | `conformance/` | reference files, each a GLB with its expected values as JSON, written by `generate.py`: the specification as test cases for every platform's code (`conformance/README.md`; checked with `encoding3d compare-all` and the action `.github/actions/conformance`); `coupling/`: the coupling sessions a participant runs (`encoding3d couple-conformance`) | follows `spec/` |
 | `bindings/<language>/` | each language's codec and coupling participant, with its own build, tests and release; `bindings/python/`: `openalea.encoding3d`, the reference (codec with lazy reading, validator, display copies, views, the coupling's coordinator, command line), which reads `spec/` and ships it; `bindings/julia/`: encoding3d.jl, the Julia codec, with MultiScaleTreeGraph.jl, VirtualPlantLab and ZeroMQ extensions; `bindings/cpp/`: the C++ codec, with CPlantBox's adapter; `bindings/java/`: the Java codec, with GroIMP's adapter and plugin | no |
-| `paraview/` | the ParaView reader plugin, and the script checking it in a `pvpython` | no |
+| `paraview/` | the ParaView plugin (`plugin_encoding3d.py`), its how-to, and the script checking it in a `pvpython` | no |
 | `doc/design_note.md` | how the decisions were reached | no |
 | `pyproject.toml`, `conda/` | the Python package's build, at the root next to `spec/`, which it ships | no |
 
@@ -61,23 +61,30 @@ encoding3d display scene.glb water_potential        # float32 per-vertex copies,
 
 ## Viewing in ParaView
 
-`paraview/encoding3d_reader.py` is a ParaView reader plugin (ParaView ≥ 5.10):
+`paraview/plugin_encoding3d.py` is encoding3d's ParaView plugin (ParaView ≥ 5.11), the only file to load: the
+*encoding3d reader* and the *encoding3d Select at scale* filter, no macros. `paraview/README.md` is the how-to.
 
-1. In ParaView, open Tools → Manage Plugins → Load New…, and choose the file. Tick "Auto Load" to keep it loaded.
-2. File → Open a `.glb` frame or a sequence's `scene.fspm.json`, and pick "encoding3d reader".
+1. In ParaView, open Tools → Manage Plugins..., click Load New ..., and choose the file. Tick "Auto Load" to keep it
+   loaded.
+2. File → Open... a `.glb` frame or a sequence's `scene.fspm.json`, pick "encoding3d reader", and Apply.
 
 What it shows:
 
 - Each data structure is a block: its meshes, its segments as lines (for a Tube filter on `radius`) and its grid.
+- With a `views.json` next to the frames, one block per layer of its configuration instead (a drop-down), drawn at
+  Apply as the layer says: its colour variable and colour map, range, opacity, visibility, tubes for roots, each
+  layer editable on its own in View → MultiBlock Inspector, and saved back with the reader's "Save Views" button.
 - Every variable of every scale is a data array named `<entity set>.<variable>`, at full precision, with no display
   copies needed. A sequence's frames are the time steps.
 - Text columns such as labels become integer codes, `<entity set>.<column>_code`; the names behind the codes are in
   the block's field data.
+- Filters → encoding3d → encoding3d Select at scale grows picked cells to their plant, axis, organ ... in every layer;
+  its buttons isolate the selection, show it in a panel, and put it back.
 
-The plugin finds `openalea.encoding3d` in ParaView's Python if it is installed there, otherwise in this clone's `bindings/python/src/`.
-It needs nothing beyond what ParaView ships (numpy). In `pvpython` scripts the reader is
-`encoding3dreader(FileName=...)`, after `LoadPlugin("paraview/encoding3d_reader.py", ns=globals())`. Checked with
-ParaView 6.0.1: `pvpython paraview/check_in_paraview.py conformance` (also run by the tests when
+The plugin finds `openalea.encoding3d` in ParaView's Python if it is installed there, otherwise in this clone's
+`bindings/python/src/`. It needs nothing beyond what ParaView ships (numpy). In `pvpython` scripts the reader is
+`encoding3dreader(FileName=...)`, after `LoadPlugin("paraview/plugin_encoding3d.py", ns=globals())`. Checked with
+ParaView 6.2.0: `pvpython paraview/check_in_paraview.py conformance` (also run by the tests when
 `ENCODING3D_PVPYTHON` names a pvpython).
 
 ## For another platform

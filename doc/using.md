@@ -17,20 +17,21 @@ then `pip install -e path/to/encoding3d`.
 
 ## In ParaView
 
-encoding3d comes with a ParaView reader plugin: `paraview/encoding3d_reader.py`. It works with ParaView 5.10 and later,
-and has been checked with 6.0.1 and 6.2.0.
+encoding3d comes with a ParaView plugin, one file to load: `paraview/plugin_encoding3d.py` (the *encoding3d reader*
+and the *encoding3d Select at scale* filter; no macros). It works with ParaView 5.11 and later, and has been checked
+with 6.2.0. `paraview/README.md` is the step-by-step how-to, with ParaView 6.2's menu names.
 
-1. In ParaView, open **Tools → Manage Plugins → Load New…**, choose `encoding3d_reader.py`, and tick **Auto Load** to
-   keep it loaded.
-2. **File → Open** a frame (`.glb`), or a sequence's `scene.fspm.json` to play its frames as time steps, and choose
-   **encoding3d reader**.
+1. In ParaView, open **Tools → Manage Plugins...**, click **Load New ...**, choose `plugin_encoding3d.py`, and tick
+   **Auto Load** to keep it loaded.
+2. **File → Open...** a frame (`.glb`), or a sequence's `scene.fspm.json` to play its frames as time steps, choose
+   **encoding3d reader** if ParaView asks, and click **Apply**.
 
 The plugin needs nothing installed in ParaView: it reads files with the code of the encoding3d folder it comes from.
 
 What you see:
 
-- **One block per plant population or environment model.** Each holds its meshes, its root segments as lines (apply
-  a *Tube* filter on `radius` to give them volume), and its grid.
+- **One block per plant population or environment model** (without a views file, below). Each holds its meshes, its
+  root segments as lines (apply a *Tube* filter on `radius` to give them volume), and its grid.
 - **Every variable of every scale is a colouring choice**, named `<scale>.<variable>`: `SubOrgan.water_potential`,
   `Axis.branching_order`, `Voxel.soil_water_potential`. Values are at full precision. Where a triangle has no entity
   at a scale, the value is empty (NaN).
@@ -52,7 +53,7 @@ In a `pvpython` script:
 
 ```python
 from paraview import simple
-simple.LoadPlugin("encoding3d/paraview/encoding3d_reader.py", ns=globals())
+simple.LoadPlugin("encoding3d/paraview/plugin_encoding3d.py", ns=globals())
 roots = encoding3dreader(FileName="outputs/frames/scene.fspm.json")
 roots.UpdatePipeline(roots.TimestepValues[-1])          # the last frame
 ```
@@ -66,30 +67,39 @@ soil is wet), the variable it is coloured by, its colour map and range, its opac
 and tubes for segments. The specification describes the file (§8.1).
 
 With a views file, the reader gives **one block per layer** of the chosen configuration instead of one per data
-structure: each block holds only the layer's entities, already coloured by its variable. Hidden layers are there too,
-so showing one is instant, and a layer is empty in the frames that lack what it shows (a shoot not yet drawn). Two reader options:
+structure: each block holds only the layer's entities, already coloured by its variable, a segments layer with a
+`tube` as tubes. Hidden layers are there too, so showing one is instant, and a layer is empty in the frames that lack
+what it shows (a shoot not yet drawn). Two reader options:
 
 - **Views:** the views file (empty: the `views.json` next to the opened file; without one, the blocks are as above).
 - **Configuration:** a drop-down of the file's configurations (empty: the file's active one).
 
-Two macros, shipped next to the plugin in `paraview/`, turn the layers into pipeline items and back:
+The plugin draws the layers itself, with no macro: when you click **Apply** (or change the Configuration and Apply),
+each layer is drawn as its block with its own colour variable, colour map, range, log scale or solid colour,
+opacity and visibility, with its own colour legend. The soil can be translucent while the roots and the shoot have
+their own colour maps.
 
-1. Load them once: **Macros → Import new macro…**, choose `paraview/apply_encoding3d_views.py`, then again for
-   `paraview/save_encoding3d_views.py`. They appear in the **Macros** menu and toolbar, and stay there.
-2. Open a sequence with the encoding3d reader, select the reader in the Pipeline Browser, and run
-   **apply_encoding3d_views**: each layer becomes its own item, named by the layer (an *ExtractBlock*, and a *Tube* for
-   segments), shown as the layer says. Toggle the eyes to show or hide layers; play the time steps as usual.
-3. Change colours, ranges, opacities, then select the reader again and run **save_encoding3d_views**: the items' display
-   options are written back into `views.json`, over the configuration. To keep the old one, set `CONFIGURATION` at the
-   top of the macro (**Macros → Edit…**) to a new name: the views are saved as that configuration, made the active
-   one.
+- **View → MultiBlock Inspector** lists the layers by name: tick one to show or hide it, click one to change its
+  colouring (*Block Coloring*: the variable, the colour map, *Rescale to Data Range*, *Use Separate Color Map*) or its
+  *Opacity*. In the view, right-click a layer for *Hide Block*, *Show Only Block*, *Set Block Opacity*.
+- **Save Views** (a button of the reader) writes the layers' display back into `views.json`, over the configuration
+  shown; with a name in **Save As** (then Apply), as a new configuration, made the active one.
 
-The macros import `openalea.encoding3d`, which the plugin puts on ParaView's path: load the plugin before running them.
 A colour map's preset name is not read back from ParaView, so a saved layer keeps its `colormap`; layers coloured by
-the same variable share one colour map in ParaView.
+the same variable share one colour map (*Use Separate Color Map* gives a layer its own). One representation draws
+all layers: a layer's own `representation` is kept in the file, not drawn apart.
+
+```{image} _static/images/views_layers.png
+:alt: A wheat seedling and its root system in a translucent soil grid, each layer with its own colour map
+:width: 420px
+```
+
+*metafspm's use case 1 (day 8), as the plugin draws it on Apply, no macro: the soil grid translucent
+(`pressure_head`, Viridis), the roots (`type`, Inferno) and the shoot (`organ_rank`, Cool to Warm), a configuration
+giving each its own colour map.*
 
 In a script, the same views without ParaView: `frame_to_vtk(frame, views="views.json", configuration="default")` from
-`paraview/encoding3d_reader.py`, and `openalea.encoding3d.views` to read, check and write views:
+`paraview/plugin_encoding3d.py`, and `openalea.encoding3d.views` to read, check and write views:
 
 ```python
 from openalea import encoding3d
@@ -106,8 +116,8 @@ The plugin has a filter that selects by scale: pick an element, and get its whol
 with everything it contains at finer scales, in every layer, hidden ones included (a segment's section drawings, a
 hidden layer by default, come with the selection).
 
-1. Pick cells in the view (**Select Cells On**, or `s`), on any encoding3d item: a layer, the reader, or a selection
-   shown before. The item picked on becomes the active one in the Pipeline Browser.
+1. Pick cells in the view (**Select Cells On (s)**, or `s`), on the reader's item or a selection shown before. The
+   item picked on becomes the active one in the Pipeline Browser.
 2. **Filters → encoding3d → encoding3d Select at scale**, then **Apply**. The filter takes ParaView's current selection
    when it is made, as *Extract Selection* does (its **Selection** property: **Copy Active Selection** takes the
    selection made since, on the same item).
@@ -115,35 +125,31 @@ hidden layer by default, come with the selection).
    `Organ`, `SubOrgan`, … `Compartment`), `Plant` at first. **Apply** grows the picked cells again.
 4. Play the time steps: the picked entities are kept, so the plant or organ is followed as it grows.
 
-The filter's output is one block per layer, named and filled like the reader's (their variables kept, so the
-layers' colourings apply), each holding the selection's part of the layer (empty when it has none). A scale finer
-than the picked element (a Compartment of a leaf drawn without sections) is reported in the Output Messages, with
-the scales the picked cells have. To drop the selection, delete the filter.
+The filter's output is one block per layer, named and filled like the reader's, each holding the selection's part
+of the layer (empty when it has none), and it is drawn as the layers (the same colour maps), the hidden ones shown.
+A scale finer than the picked element (a Compartment of a leaf drawn without sections) is reported in the Output
+Messages, with the scales the picked cells have.
 
-To look at the selection alone, a macro shows it as its layers, each part drawn as its layer (the same colour map,
-a tube for roots):
+The filter's buttons show it:
 
-1. Load it once like the others: **Macros → Import new macro…**, `paraview/show_encoding3d_selection.py`. At its top
-   (**Macros → Edit…**), set `MODE`.
-2. With the filter selected in the Pipeline Browser, run **show_encoding3d_selection**. With `MODE = "isolate"`, the
-   view shows only the selection, the other items hidden; with `MODE = "panel"`, a new view opens beside it with
-   the selection alone, its camera fit to it, the first view untouched. Each layer's part is an item named
-   `<layer> selection`; changing the filter's Scale or the time step updates them.
-3. To narrow it (an axis of the plant shown), pick on these items, apply another encoding3d Select at scale, and run
-   the macro again: it is shown over the first.
-4. Run the macro again (with anything else selected, or the same filter) to go back one step: the items it made are
-   removed, the panel closed, the hidden items shown again. Then delete the filter.
+- **Isolate**: the active view shows only the selection, the other items hidden.
+- **Show In Panel**: a new view beside the active one shows the selection alone, its camera fit to it, the first view
+  untouched.
+- **Put Back**: one step back, the hidden items shown again or the panel closed. Then delete the filter to drop the
+  selection.
 
-The macro is only for what a filter cannot do: hiding the other items, opening a panel. Both need the plugin
-loaded (it puts the macro's code, `paraview/encoding3d_selection.py`, on ParaView's path); which cells are selected is
-`openalea.encoding3d.views.picked_entities` and `selection_mask`, tested without ParaView.
+To narrow a selection (an axis of the plant shown), pick on it, apply another encoding3d Select at scale to it, and
+click its Isolate: it is shown over the first, and its Put Back returns to the plant. The buttons work with
+ParaView's built-in server (the default); which cells are selected is `openalea.encoding3d.views.picked_entities`
+and `selection_mask`, tested without ParaView.
 
 `paraview/check_in_paraview.py` checks all this inside ParaView. `pvpython paraview/check_in_paraview.py
 conformance` runs on the conformance files (the binding tests run it when `ENCODING3D_PVPYTHON` names a `pvpython`);
-`pvbatch paraview/check_in_paraview.py --design <scene.fspm.json> <folder>` is a check by hand, on a sequence with
-its `views.json`: it applies and saves the views, selects at several scales with the filter (switching its Scale,
-stepping in time), shows the selections isolated, in a panel and one over another, goes back, and saves a screenshot
-of each step in the folder, to look at.
+`pvbatch paraview/check_in_paraview.py --design <copy>/frames/scene.fspm.json <folder>` is a check by hand, on a
+copy of a sequence with its `views.json`: it shows the layers as the GUI's Apply does, switches configurations,
+saves the views back, selects at several scales with the filter (switching its Scale, stepping in time), shows the
+selections isolated, in a panel and one over another, puts them back, and saves a screenshot of each step in the
+folder, to look at.
 
 ## In other viewers
 
