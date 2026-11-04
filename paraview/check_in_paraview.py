@@ -174,6 +174,7 @@ def pick(item, array: str, value: float) -> int:
     data = servermanager.Fetch(item)
     leaf = data.GetBlock(0) if hasattr(data, "GetNumberOfBlocks") else data
     cell = int(np.flatnonzero(vtk_to_numpy(leaf.GetCellData().GetArray(array)) == value)[0])
+    simple.Show(item, simple.GetActiveViewOrCreate("RenderView"))     # a selection is made in a view
     simple.SelectIDs(IDs=[0, cell], FieldType="CELL", Source=item)
     return cell
 
