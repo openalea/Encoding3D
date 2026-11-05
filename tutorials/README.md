@@ -6,6 +6,8 @@ its explanation (`README.md`), its code, and `run.sh`, which runs it from start 
 | Tutorial | What it shows | What it needs |
 |---|---|---|
 | `01_encoding3d_alone` | writing, checking, reading and viewing a growing root system's files, with no platform | Python, `openalea.encoding3d` |
+| `02a_metafspm` | a metafspm scene recorded as frames, read by encoding3d alone, logged smaller, rebuilt in metafspm | metafspm's environment |
+| `02b_virtualplantlab` | a VirtualPlantLab plant grown by rules, written with its geometry, rebuilt and grown on; an MTG to and from encoding3d | Julia 1.12, VirtualPlantLab's packages, MTG.jl |
 
 **encoding3d depends on no platform.** Tutorial 1 needs encoding3d only, and encoding3d's CI runs it. The tutorials
 using a platform (metafspm, VirtualPlantLab, CPlantBox, GroIMP) list what they need in their own folder, outside
