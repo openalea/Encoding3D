@@ -24,3 +24,9 @@ end. This page gathers their explanations.
 ```{include} ../tutorials/02b_virtualplantlab/README.md
 :start-line: 2
 ```
+
+## Tutorial 2c: CPlantBox
+
+```{include} ../tutorials/02c_cplantbox/README.md
+:start-line: 2
+```
