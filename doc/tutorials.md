@@ -42,3 +42,9 @@ end. This page gathers their explanations.
 ```{include} ../tutorials/03_metafspm_and_virtualplantlab/README.md
 :start-line: 2
 ```
+
+## Tutorial 4: four platforms, one plant
+
+```{include} ../tutorials/04_four_platforms/README.md
+:start-line: 2
+```
