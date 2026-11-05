@@ -30,3 +30,9 @@ end. This page gathers their explanations.
 ```{include} ../tutorials/02c_cplantbox/README.md
 :start-line: 2
 ```
+
+## Tutorial 2d: GroIMP
+
+```{include} ../tutorials/02d_groimp/README.md
+:start-line: 2
+```
