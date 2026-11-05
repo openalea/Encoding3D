@@ -104,6 +104,10 @@ def test_a_sequence_is_time_steps():
     source = reader.Source(os.path.join(CONFORMANCE, "growing_sequence", "scene.fspm.json"))
     assert source.times == [0., 1., 2.]
     assert source.frame_at(1.5).time == 1. and source.frame_at(None).time == 0. and source.frame_at(9.).time == 2.
+    # the reader's Time Unit: the times ParaView shows, converted from the files' (days here), the files unchanged
+    assert source.time_unit == "d"
+    assert source.factor("d") == 1. and source.factor("h") == 24. and source.factor("s") == 86400.
+    assert source.factor("") == 1. and source.factor("week") == 1.        # empty or unknown: the files' times
 
 
 def test_inside_paraview():

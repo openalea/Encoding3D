@@ -153,6 +153,12 @@ def check_conformance() -> None:
         counts.append(sequence.GetDataInformation().GetNumberOfCells())
     assert counts[0] < counts[1] < counts[2], counts             # the root system grows
     print("cells per time step", counts)
+    sequence.TimeUnit = "h"                                       # the times shown in hours: the files' days
+    sequence.UpdatePipelineInformation()
+    assert list(sequence.TimestepValues) == [0., 24., 48.], list(sequence.TimestepValues)
+    sequence.UpdatePipeline(24.)
+    assert sequence.GetDataInformation().GetNumberOfCells() == counts[1]
+    sequence.TimeUnit = "d"
 
     # Without the plugin: ParaView's own glTF reader shows the geometry and the display copies (float32 point data)
     import tempfile

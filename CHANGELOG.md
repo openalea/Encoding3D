@@ -8,6 +8,8 @@
 - `openalea.encoding3d.views`: reading, writing and checking views (the schema, and every name against a frame), the
   selection, and the display options ParaView's plugin draws and saves back (`block_displays`,
   `displays_from_blocks`, `layer_from_display`).
+- The ParaView reader's **Time Unit** (`d` by default, `h`, `min`, `s`): the times ParaView shows, converted from the
+  frames' own unit; the files are unchanged.
 - The ParaView plugin is one file, `paraview/plugin_encoding3d.py` (was `encoding3d_reader.py`), with a how-to,
   `paraview/README.md`; no macros (`apply_encoding3d_views.py`, `save_encoding3d_views.py` and
   `show_encoding3d_selection.py` removed, their work in the plugin).

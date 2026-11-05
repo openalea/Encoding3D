@@ -28,6 +28,11 @@ sits in. Do not move the file out of that folder. A link to it, placed anywhere,
 2. If ParaView asks which reader to use, choose **encoding3d reader**.
 3. Click **Apply** in the *Properties* panel.
 
+**Time Unit** (the reader's *Properties*): the unit of the times ParaView shows in the animation toolbar and the
+*Time Inspector*, days by default (`d`, `h`, `min` or `s`). The frames' files keep their own unit (metafspm writes
+seconds); only what ParaView shows is converted. To print the time in the view, add **Filters → Annotate Time Filter** on
+the reader.
+
 Large runs: frames grow with the plants. To look around quickly, open an early `frame_XXXXXX.glb` first. In a
 sequence, ParaView reads only the frame of the current time.
 

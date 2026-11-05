@@ -421,6 +421,9 @@ def frame_to_vtk(frame, settings: bool = False, views=None, configuration: str =
     return output
 
 
+TIME_UNITS = {"s": 1., "min": 60., "h": 3600., "d": 86400.}    # in seconds: the reader's Time Unit choices
+
+
 class Source:
     """A .glb frame or a scene.fspm.json sequence: its times, and its frame at a time."""
 
@@ -431,11 +434,20 @@ class Source:
             index = encoding3d.read_index(path)
             self.paths = [entry["path"] for entry in index["frames"]]
             self.times = [float(entry["time"]) for entry in index["frames"]]
+            self.time_unit = index.get("timeUnit", "d")
         else:
             self.paths = [path]
             with encoding3d.read(path, lazy=True) as frame:         # its time, from the file's JSON alone
                 self.times = [float(frame.time)]
+                self.time_unit = frame.time_unit
         self._cache = {}
+
+    def factor(self, unit: str) -> float:
+        """The factor from the files' time unit to *unit* (one of TIME_UNITS; empty, or a unit of the files not in
+        TIME_UNITS: 1, the files' times)."""
+        if not unit or unit not in TIME_UNITS or self.time_unit not in TIME_UNITS:
+            return 1.
+        return TIME_UNITS[self.time_unit] / TIME_UNITS[unit]
 
     def frame_at(self, time: float = None):
         """The frame of the last time not after *time* (the first frame for None or an earlier time)."""
@@ -637,6 +649,7 @@ if VTKPythonAlgorithmBase is not None:
             VTKPythonAlgorithmBase.__init__(self, nInputPorts=0, nOutputPorts=1, outputType="vtkMultiBlockDataSet")
             self._file_name, self._source, self._settings = None, None, False
             self._views, self._configuration, self._save_as = "", "", ""
+            self._time_unit = "d"
 
         @smproperty.stringvector(name="FileName")
         @smdomain.filelist()
@@ -656,6 +669,21 @@ if VTKPythonAlgorithmBase is not None:
             if bool(value) != self._settings:
                 self._settings = bool(value)
                 self.Modified()
+
+        @smproperty.stringvector(name="TimeUnit", label="Time Unit", number_of_elements="1", default_values="d")
+        @smdomain.xml("""<StringListDomain name="list">
+                           <String value="d"/><String value="h"/><String value="min"/><String value="s"/>
+                         </StringListDomain>""")
+        def SetTimeUnit(self, unit):
+            """The unit of the times ParaView shows (the animation toolbar, the time inspector): the frames' times
+            (in their file's unit) converted, the files unchanged."""
+            if (unit or "") != self._time_unit:
+                self._time_unit = unit or ""
+                self.Modified()
+
+        def _factor(self):
+            source = self._opened()
+            return source.factor(self._time_unit) if source is not None else 1.
 
         @smproperty.stringvector(name="Views", default_values="")
         @smdomain.filelist()
@@ -708,7 +736,8 @@ if VTKPythonAlgorithmBase is not None:
         @smproperty.doublevector(name="TimestepValues", information_only="1", si_class="vtkSITimeStepsProperty")
         def GetTimestepValues(self):
             source = self._opened()
-            return source.times if source is not None and len(source.times) > 1 else None
+            factor = self._factor()
+            return [time * factor for time in source.times] if source is not None and len(source.times) > 1 else None
 
         def RequestInformation(self, request, in_info, out_info):
             try:
@@ -721,10 +750,11 @@ if VTKPythonAlgorithmBase is not None:
             information.Remove(pipeline.TIME_RANGE())
             source = self._opened()
             if source is not None and len(source.times) > 1:
+                factor = self._factor()
                 for time in source.times:
-                    information.Append(pipeline.TIME_STEPS(), time)
-                information.Append(pipeline.TIME_RANGE(), source.times[0])
-                information.Append(pipeline.TIME_RANGE(), source.times[-1])
+                    information.Append(pipeline.TIME_STEPS(), time * factor)
+                information.Append(pipeline.TIME_RANGE(), source.times[0] * factor)
+                information.Append(pipeline.TIME_RANGE(), source.times[-1] * factor)
             return 1
 
         def RequestData(self, request, in_info, out_info):
@@ -732,13 +762,14 @@ if VTKPythonAlgorithmBase is not None:
             pipeline = vtkStreamingDemandDrivenPipeline
             time = information.Get(pipeline.UPDATE_TIME_STEP()) if information.Has(pipeline.UPDATE_TIME_STEP()) \
                 else None
-            frame = self._opened().frame_at(time)
+            factor = self._factor()
+            frame = self._opened().frame_at(None if time is None else time / factor)
             output = vtkMultiBlockDataSet.GetData(out_info, 0)
             path = self._views_path()
             output.ShallowCopy(frame_to_vtk(frame, settings=self._settings, views=path,
                                             configuration=self._configuration or None))
             if time is not None:
-                output.GetInformation().Set(output.DATA_TIME_STEP(), frame.time)
+                output.GetInformation().Set(output.DATA_TIME_STEP(), frame.time * factor)
             return 1
 
     @smproxy.filter(name=SELECT_AT_SCALE, label="encoding3d Select at scale")
