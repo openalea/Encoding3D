@@ -57,6 +57,7 @@ def picture(source, name, colour_by, side=False):
     if pictures is None:
         return
     os.makedirs(pictures, exist_ok=True)
+    active = simple.GetActiveView()
     view = simple.CreateView("RenderView")
     view.ViewSize = [800, 600]
     display = simple.Show(source, view)
@@ -68,6 +69,8 @@ def picture(source, name, colour_by, side=False):
     view.ResetCamera()
     simple.SaveScreenshot(os.path.join(pictures, f"{name}.png"), view)
     simple.Delete(view)
+    if active is not None:
+        simple.SetActiveView(active)                    # the view picked on afterwards
 
 
 def drawn(display) -> dict:
@@ -209,10 +212,17 @@ def check_conformance() -> None:
         assert 0 < grown.GetBlock(1).GetNumberOfCells() < servermanager.Fetch(viewed).GetBlock(1).GetNumberOfCells()
         selection_display = simple.Show(selection, view)              # as the GUI's Apply: drawn as the layers
         check_drawn(selection_display, views.configuration(views.read_views(path))[1], selection=True)
+        legend = simple.GetScalarBar(simple.GetDisplayProperties(viewed, view).LookupTable, view)
+        legend.Visibility = 1                                         # a legend shown, as the GUI's Apply does
         selection.InvokeCommand("Isolate")
         assert not visible(viewed, view) and visible(selection, view)
         selection.InvokeCommand("PutBack")
         assert visible(viewed, view) and not visible(selection, view)
+        assert legend.Visibility                                      # put back with what Isolate hid
+        selection.InvokeCommand("Isolate")
+        selection.InvokeCommand("ShowInPanel")                        # puts the isolation back first
+        assert visible(viewed, view) and legend.Visibility
+        selection.InvokeCommand("PutBack")
         simple.Delete(selection)                                      # the selection dropped
         viewed.Configuration = "mesh only"                            # the drop-down: drawn again
         simple.Render(view)

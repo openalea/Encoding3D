@@ -571,8 +571,8 @@ def put_back(algorithm=None) -> bool:
         item = simple.FindSource(name)
         if item is not None:
             display = simple.Show(item, view_item)
-            if name in step.get("scalar_bars", []):
-                display.SetScalarBarVisibility(view_item, True)
+            if name in step.get("scalar_bars", []) and display.LookupTable is not None:
+                simple.GetScalarBar(display.LookupTable, view_item).Visibility = 1   # its legend, as Isolate found it
     selection = simple.FindSource(step["selection"])
     if step["panel"]:
         panel = _named_views().get(step["panel"])
