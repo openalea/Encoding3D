@@ -1,0 +1,12 @@
+[deps]
+PlantGraphs = "615ad455-9aac-4340-9247-71ef610f781a"
+ZMQ = "c2297ded-f4af-51ae-bb23-16f91089e4e1"
+encoding3d = "b7fd6adf-cc0c-448b-9b1a-23349074d866"
+
+[sources]
+encoding3d = {path = "../../bindings/julia/encoding3d"}
+
+[compat]
+PlantGraphs = "1"
+ZMQ = "1"
+julia = "1.12"

@@ -36,3 +36,9 @@ end. This page gathers their explanations.
 ```{include} ../tutorials/02d_groimp/README.md
 :start-line: 2
 ```
+
+## Tutorial 3: metafspm and VirtualPlantLab, one plant
+
+```{include} ../tutorials/03_metafspm_and_virtualplantlab/README.md
+:start-line: 2
+```

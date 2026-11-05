@@ -10,6 +10,7 @@ its explanation (`README.md`), its code, and `run.sh`, which runs it from start 
 | `02b_virtualplantlab` | a VirtualPlantLab plant grown by rules, written with its geometry, rebuilt and grown on; an MTG to and from encoding3d | Julia 1.12, VirtualPlantLab's packages, MTG.jl |
 | `02c_cplantbox` | a CPlantBox plant written day by day with its geometry, soil grid and mapping; frames back as CPlantBox root systems | C++17, CMake, CPlantBox built |
 | `02d_groimp` | a GroIMP graph written step by step and rebuilt as GroIMP nodes; GroIMP's plugin exporting a project with its geometry | Java 21, Maven (GroIMP's Graph module) |
+| `03_metafspm_and_virtualplantlab` | a coupling session: metafspm's root growth and VirtualPlantLab's carbon model on one plant, over ZeroMQ, recorded | metafspm's environment, Julia 1.12 |
 
 **encoding3d depends on no platform.** Tutorial 1 needs encoding3d only, and encoding3d's CI runs it. The tutorials
 using a platform (metafspm, VirtualPlantLab, CPlantBox, GroIMP) list what they need in their own folder, outside
