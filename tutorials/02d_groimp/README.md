@@ -16,10 +16,17 @@ parts:
    GroIMP manages (`Managed.java` declares them, as GroIMP's XL compiler does for a model's classes). The plant is
    made of its internodes (a `/` edge), each internode followed by the next (`>`) and bearing a leaf (`+`). It grows
    by code standing for an RGG rule: a new internode and leaf on top, every leaf longer.
+   GroIMP's graph module has no geometry: in the GroIMP application, shape nodes (cylinders, …) place the organs in
+   space, and the plugin meshes them (below). So that viewers can draw this plant, each organ keeps its two ends
+   (`x1` … `z2`, declared as the vocabulary's `proximal_end_x` … `distal_end_z`): the internodes stacked upwards, the
+   leaves leaning out to alternate sides.
 2. **A frame per step.** `GroImp.toDataStructure` writes the plant and its organs as two entity sets, the edges as
    `parent` and `edge_type`, the managed fields as columns (`length` and `radius` declared in metres). Six steps make
    a sequence.
 3. **Back into GroIMP.** `GroImp.toGraph` rebuilds each row as a node of its class, its fields set.
+
+Open `outputs/frames/scene.fspm.json` in ParaView with encoding3d's plugin (tutorial 1): the stem and its leaves,
+drawn from their ends, grow step by step.
 
 ## From GroIMP itself: the plugin
 

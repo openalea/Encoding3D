@@ -32,26 +32,49 @@ public final class GroImpTutorial {
         @Override protected Node newInstance() { return new Plant(); }
     }
 
+    // GroIMP's graph module has no geometry: in the GroIMP application, shape nodes (cylinders...) place the organs in
+    // space, and the plugin meshes them. Here each organ keeps its two ends (x1 ... z2), so that viewers draw it.
     public static final class Internode extends Node {
         double length = 0.02;
         float radius = 0.002f;
-        public static final NType $TYPE = Managed.type(Internode.class, "length", "radius");
+        double x1, y1, z1, x2, y2, z2 = 0.02;          // m: its lower and upper ends
+        public static final NType $TYPE = Managed.type(Internode.class, "length", "radius",
+                "x1", "y1", "z1", "x2", "y2", "z2");
         @Override protected NType getNTypeImpl() { return $TYPE; }
         @Override protected Node newInstance() { return new Internode(); }
     }
 
     public static final class Leaf extends Node {
         double length = 0.01;
-        public static final NType $TYPE = Managed.type(Leaf.class, "length");
+        float radius = 0.001f;
+        double x1, y1, z1, x2, y2, z2;                 // m: where it leaves its internode, and its tip
+        double side = 1;                               // which side it leans to: +1 or -1 (not managed)
+        public static final NType $TYPE = Managed.type(Leaf.class, "length", "radius",
+                "x1", "y1", "z1", "x2", "y2", "z2");
+
+        /** Its tip, from its base: leaning 45 degrees to its side. */
+        void place() {
+            x2 = x1 + side * length * Math.sqrt(0.5);
+            y2 = y1;
+            z2 = z1 + length * Math.sqrt(0.5);
+        }
         @Override protected NType getNTypeImpl() { return $TYPE; }
         @Override protected Node newInstance() { return new Leaf(); }
     }
 
     /** The plant grows as an RGG rule would make it: a new internode bearing a leaf on top, every leaf longer. */
     static Internode grow(Internode top, List<Leaf> leaves) {
-        for (Leaf leaf : leaves) leaf.length += 0.02;
+        for (Leaf leaf : leaves) {
+            leaf.length += 0.02;
+            leaf.place();
+        }
         Internode next = new Internode();
+        next.x1 = top.x2; next.y1 = top.y2; next.z1 = top.z2;            // on top of the previous one
+        next.x2 = next.x1; next.y2 = next.y1; next.z2 = next.z1 + next.length;
         Leaf leaf = new Leaf();
+        leaf.x1 = next.x2; leaf.y1 = next.y2; leaf.z1 = next.z2;
+        leaf.side = leaves.size() % 2 == 0 ? 1 : -1;                     // alternate sides
+        leaf.place();
         top.addEdgeBitsTo(next, Graph.SUCCESSOR_EDGE, null);        // GroIMP's '>' edge
         next.addEdgeBitsTo(leaf, Graph.BRANCH_EDGE, null);          // GroIMP's '+' edge
         leaves.add(leaf);
@@ -69,6 +92,11 @@ public final class GroImpTutorial {
         options.variables.put("length", new Variable("m", "length", "extensive", "state"));
         options.variables.put("radius", new Variable("m", "radius", "intensive", "state"));
         options.variables.put("species", new Variable("1", null, "descriptor", "parameter"));
+        String[] ends = {"x1", "y1", "z1", "x2", "y2", "z2"};
+        String[] standardNames = {"proximal_end_x", "proximal_end_y", "proximal_end_z", "distal_end_x", "distal_end_y",
+                                  "distal_end_z"};
+        for (int index = 0; index < ends.length; index++)
+            options.variables.put(ends[index], new Variable("m", standardNames[index], "descriptor", "state"));
         return options;
     }
 
