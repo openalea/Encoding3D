@@ -13,6 +13,9 @@ A VirtualPlantLab graph (PlantGraphs.jl: a `Graph` or a `StaticGraph`) as an enc
 
 PlantGraphs has one scale. Each type's field names, to rebuild nodes with `to_graph`, are kept in
 `extras["virtualplantlab"]` (with `"model": "PlantGraphs"`).
+
+Status: a first proposal for VirtualPlantLab's team to take over, not a part of encoding3d: loaded only when the platform's
+package is, encoding3d's requirements and CI do not depend on it; tested by hand (bindings/julia/README.md).
 """
 module encoding3dPlantGraphsExt
 

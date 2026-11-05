@@ -3,7 +3,8 @@
 #   cmake -S bindings/cpp -B build -DENCODING3D_CPLANTBOX_SOURCE_DIR=/path/to/CPlantBox \
 #         -DENCODING3D_CPLANTBOX_LIBRARY=/path/to/build/src/libCPlantBox.a
 #
-# It is meant to move into CPlantBox once its team agrees (devplan_bindings.md, P4).
+# Status: a first proposal for CPlantBox's team, not a part of encoding3d (whose requirements and CI do not depend on it),
+# built and tested by hand (README.md here); it moves into CPlantBox once its team adopts it.
 set(CPLANTBOX_SOURCE "${ENCODING3D_CPLANTBOX_SOURCE_DIR}/src")
 add_library(CPlantBox::CPlantBox UNKNOWN IMPORTED)
 set_target_properties(CPlantBox::CPlantBox PROPERTIES

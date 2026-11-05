@@ -16,7 +16,11 @@ Coupling sessions (specification §11): the Python package holds the coordinator
 and the Java codecs a participant each. All four pass the coupling conformance sessions over both transports (ZeroMQ:
 pyzmq, ZMQ.jl, libzmq, JeroMQ). metafspm's `RemoteComponent` (`openalea.metafspm.io.coupling`) stands for another
 platform's model in a metafspm model, tested with a VirtualPlantLab model (PlantGraphs). CPlantBox's and GroIMP's logs
-are replayed as participants in their CI jobs.
+are replayed as participants when their adapters are tested by hand.
+
+The platform adapters kept in this repository (CPlantBox's, GroIMP's adapter and plugin, the MTG.jl and VirtualPlantLab
+extensions) are **first proposals for those platforms' teams**: they move into the platforms once adopted. encoding3d's
+requirements and CI do not depend on any platform; each adapter's README says how to build and test it by hand.
 
 Codecs (a language's reading and writing of the format) live in this repository, in `bindings/<language>/`; adapters
 (a platform's model to and from the codec's tables) in the platforms' repositories, or as a codec's optional

@@ -373,7 +373,8 @@ def test_the_conformance_sessions_are_what_their_generator_writes(tmp_path):
 
 
 # Platforms' logs replayed (their index, scene.fspm.json): CPlantBox's (bindings/cpp/cplantbox's tests write
-# anagallis_log/) and GroIMP's (bindings/java/groimp-plugin/test/run_in_groimp.sh writes log/), in their CI jobs
+# anagallis_log/) and GroIMP's (bindings/java/groimp-plugin/test/run_in_groimp.sh writes log/), when those adapters are
+# tested by hand (their README.md): encoding3d's CI depends on no platform
 PLATFORM_LOGS = {"conformance": os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir,
                                              "conformance", "growing_sequence", "scene.fspm.json"),
                  "CPlantBox": os.environ.get("ENCODING3D_CPLANTBOX_LOG"), "GroIMP": os.environ.get("ENCODING3D_GROIMP_LOG")}

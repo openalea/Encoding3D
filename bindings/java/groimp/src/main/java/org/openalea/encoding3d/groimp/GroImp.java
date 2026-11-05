@@ -31,6 +31,9 @@ import de.grogra.reflect.TypeId;
 /**
  * A GroIMP graph as an encoding3d graph, and back.
  *
+ * <p>Status: a first proposal for GroIMP's team to take over, not a part of encoding3d: encoding3d's requirements and CI do not depend on it; it is built and
+ * tested by hand (bindings/java/groimp/README.md), and moves into GroIMP once its team adopts it.
+ *
  * <table>
  * <tr><th>encoding3d</th><th>GroIMP</th></tr>
  * <tr><td>one entity set per scale (rank: the scale, from 1)</td><td>the nodes at that refinement depth below the

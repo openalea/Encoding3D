@@ -43,6 +43,12 @@ conformance sessions.
 
 ## GroIMP
 
+```{note}
+**A proposal for GroIMP.** This adapter is a first proposal for GroIMP's team to take over; it lives here until
+they adopt it, then moves into GroIMP. encoding3d does not depend on it: its requirements and CI never install
+GroIMP. To build and test it by hand, see `bindings/java/groimp/README.md`.
+```
+
 `GroImp.toDataStructure(root, options)` writes the graph below a GroIMP root:
 
 | encoding3d | GroIMP |
@@ -76,8 +82,9 @@ writes the project as an encoding3d frame, and the CLI's `export3d plant.glb` do
 GroIMP's glTF plugin, which it requires, meshes the shapes: cylinders, boxes, spheres, cones, frusta, planes,
 parallelograms, NURBS, meshes and polygons. Its folder (`target/plugin/encoding3d`) is copied into GroIMP's `plugins/`.
 `test/run_in_groimp.sh` installs both plugins in GroIMP 3.0.0, grows GroIMP's `simpleRapeseed` example headless and
-exports it (456,900 vertices, each with its node), then checks the frame; CI runs it. It then writes GroIMP's log, a
-frame after each of four runs (GroIMP has no simulation clock: each frame's time and step are its run count), which
-the CI replays as a participant of a coupling session.
+exports it (456,900 vertices, each with its node), then checks the frame. It then writes GroIMP's log, a frame after
+each of four runs (GroIMP has no simulation clock: each frame's time and step are its run count), which a coupling
+session replays. Like the adapter, the plugin is a proposal for GroIMP, run by hand
+(`bindings/java/groimp-plugin/README.md`), not by encoding3d's CI.
 
 Not done yet: an import filter (frames into a GroIMP project), and units for GroIMP's fields, which have none.

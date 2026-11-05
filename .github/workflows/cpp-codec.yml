@@ -1,7 +1,7 @@
 # The C++ codec (bindings/cpp): its tests on Linux, macOS and Windows; the conformance check other codecs run (its
-# dumps of the conformance files compared with their expected values, the files it writes validated); and CPlantBox's
-# adapter, built on CPlantBox's library (a pinned commit) and tested on CPlantBox plants. OpenAlea's conda CI builds
-# the Python package only.
+# dumps of the conformance files compared with their expected values, the files it writes validated); the coupling
+# conformance sessions. No platform: CPlantBox's adapter (bindings/cpp/cplantbox), a proposal for CPlantBox, is tested
+# by hand (bindings/cpp/cplantbox/README.md). OpenAlea's conda CI builds the Python package only.
 name: C++ codec
 
 on:
@@ -9,9 +9,6 @@ on:
     branches:
       - main
   pull_request:
-
-env:
-  CPLANTBOX_COMMIT: 17e1fab617e72fa5e2773dfee723083bdf515053
 
 jobs:
   test:
@@ -52,30 +49,3 @@ jobs:
           python -m pip install numpy jsonschema pyzmq .
           encoding3d couple-conformance conformance/coupling --participant "$PWD/build/encoding3d_coupling_conformance"
 
-  cplantbox-adapter:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: CPlantBox's library (no Python bindings, no PiafMunch)
-        run: |
-          git clone --quiet https://github.com/Plant-Root-Soil-Interactions-Modelling/CPlantBox.git cplantbox
-          git -C cplantbox checkout --quiet "$CPLANTBOX_COMMIT"
-          cmake -S cplantbox -B cplantbox-build -DCMAKE_BUILD_TYPE=Release -DCPB_BUILD_PYTHON=OFF -DPIAFMUNCH=OFF \
-                -DCPB_BUILD_SHARED=OFF -DCPB_NATIVE_CPU_TUNING=OFF
-          cmake --build cplantbox-build --target CPlantBox -j 4
-      - name: The codec and the adapter
-        run: |
-          cmake -S bindings/cpp -B build -DCMAKE_BUILD_TYPE=Release -DENCODING3D_CPLANTBOX_SOURCE_DIR="$PWD/cplantbox" \
-                -DENCODING3D_CPLANTBOX_LIBRARY="$PWD/cplantbox-build/src/libCPlantBox.a"
-          cmake --build build -j 4
-          ctest --test-dir build --output-on-failure
-      - name: What the adapter wrote is valid encoding3d
-        run: |
-          python -m pip install numpy jsonschema .
-          encoding3d validate build/cplantbox/cplantbox_out/*.glb
-      - name: CPlantBox's log replayed in a coupling session
-        env:
-          ENCODING3D_CPLANTBOX_LOG: build/cplantbox/cplantbox_out/anagallis_log/scene.fspm.json
-        run: |
-          python -m pip install pytest pyzmq
-          pytest -v bindings/python/test/test_coupling.py -k platform_log

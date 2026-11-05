@@ -2,6 +2,9 @@
 // stems' geometry as a mesh, its soil grid and segment-to-cell mapping; and back, a graph (CPlantBox's, or another
 // platform's) as a static CPlantBox root system.
 //
+// Status: a first proposal for CPlantBox's team to take over, not a part of encoding3d: encoding3d's requirements and CI do not depend on it;
+// it is built and tested by hand (bindings/cpp/cplantbox/README.md), and moves into CPlantBox once its team adopts it.
+//
 // | encoding3d                          | CPlantBox                                                                 |
 // |----------------------------------|---------------------------------------------------------------------------|
 // | Plant (rank 1), one row, id 0    | the organism                                                              |

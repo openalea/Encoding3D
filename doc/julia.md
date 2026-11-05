@@ -18,6 +18,12 @@ Pkg.add(url = "https://github.com/openalea/encoding3d", subdir = "bindings/julia
 
 ## An MTG, written and read back
 
+```{note}
+**A proposal for MTG.jl.** This adapter is a first proposal for MTG.jl's team to take over; it lives here until
+they adopt it, then moves to MTG.jl's packages. encoding3d does not depend on it: its requirements and CI never install
+MTG.jl. To build and test it by hand, see `bindings/julia/README.md`.
+```
+
 ```julia
 using encoding3d, MultiScaleTreeGraph
 
@@ -61,6 +67,12 @@ MTG scale) is kept in the data structure's `extras["virtualplantlab"]`, so that 
 A float attribute a node lacks is NaN in its column, so `to_mtg` reads a NaN as no attribute.
 
 ## A VirtualPlantLab graph
+
+```{note}
+**A proposal for VirtualPlantLab.** This adapter is a first proposal for VirtualPlantLab's team to take over; it lives here until
+they adopt it, then moves into VirtualPlantLab. encoding3d does not depend on it: its requirements and CI never install
+VirtualPlantLab. To build and test it by hand, see `bindings/julia/README.md`.
+```
 
 VPL's own graphs (PlantGraphs.jl) have one scale, and their nodes are the model's types (`Internode`, `Leaf`, …).
 With PlantGraphs loaded (Julia 1.12 or later), `from_graph` writes one entity set, `Organ` by default, with:

@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- GroIMP's adapter for encoding3d: a GroIMP graph (de.grogra.graph.impl.Node) as an encoding3d graph, and back. It builds on
      GroIMP's Graph module only (scales from refinement edges, managed fields as variables), so that it can become a
-     GroIMP plugin (devplan_bindings.md, G4).
+     GroIMP plugin (devplan_bindings.md, G4). Status: a first proposal for GroIMP's team, not a part of encoding3d (whose
+     requirements and CI do not depend on it), built and tested by hand (README.md here).
 
        mvn -f bindings/java/pom.xml install && mvn -f bindings/java/groimp/pom.xml verify
      (GroIMP's graph, utilities and xl.core 3.0.0: from GroIMP's package registry)

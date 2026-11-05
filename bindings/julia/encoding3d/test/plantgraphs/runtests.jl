@@ -1,5 +1,5 @@
-# encoding3d.jl's VirtualPlantLab extensions (PlantGraphs, PlantGeomTurtle; Julia 1.12 or later, as PlantGraphs). Their own
-# project, so that the package's tests keep running on Julia 1.10:
+# encoding3d.jl's VirtualPlantLab extensions (PlantGraphs, PlantGeomTurtle; Julia 1.12 or later, as PlantGraphs): a
+# proposal for VirtualPlantLab, tested by hand in its own project, so that encoding3d's tests and CI depend on no platform:
 #
 #     julia --project=bindings/julia/encoding3d/test/plantgraphs -e 'using Pkg; Pkg.develop(path="bindings/julia/encoding3d"); Pkg.instantiate()'
 #     julia --project=bindings/julia/encoding3d/test/plantgraphs bindings/julia/encoding3d/test/plantgraphs/runtests.jl

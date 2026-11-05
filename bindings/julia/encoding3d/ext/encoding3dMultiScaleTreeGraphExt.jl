@@ -16,6 +16,9 @@ A MultiScaleTreeGraph (MTG.jl) as an encoding3d `graph` data structure, and back
 
 MTG.jl's scene node and metadata (`symbols`, `scales`, `description`) are kept in the data structure's
 `extras["virtualplantlab"]` (with `"model": "MultiScaleTreeGraph"`), so that `to_mtg` rebuilds the same MTG.
+
+Status: a first proposal for MTG.jl's (VirtualPlantLab, PlantSimEngine) team to take over, not a part of encoding3d: loaded only when the platform's
+package is, encoding3d's requirements and CI do not depend on it; tested by hand (bindings/julia/README.md).
 """
 module encoding3dMultiScaleTreeGraphExt
 

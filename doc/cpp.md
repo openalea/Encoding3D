@@ -1,8 +1,8 @@
 # Reading and writing in C++, and CPlantBox
 
-`bindings/cpp/` holds the C++ codec (C++17). It reads and writes encoding3d files and passes the conformance check. In
-`bindings/cpp/cplantbox/` is CPlantBox's adapter. Both have tests, run in `.github/workflows/cpp-codec.yml` on
-Linux, macOS and Windows.
+`bindings/cpp/` holds the C++ codec (C++17). It reads and writes encoding3d files and passes the conformance check; its
+tests run in `.github/workflows/cpp-codec.yml` on Linux, macOS and Windows. In `bindings/cpp/cplantbox/` is CPlantBox's
+adapter, a proposal for CPlantBox, tested by hand (below).
 
 Licence: GPL-3.0, as CPlantBox (the rest of encoding3d is CeCILL-C).
 
@@ -55,6 +55,12 @@ is built when CMake finds libzmq (`ENCODING3D_WITH_ZMQ`, on by default; `has_zer
 `encoding3d_coupling_conformance` is its program for the conformance sessions.
 
 ## CPlantBox
+
+```{note}
+**A proposal for CPlantBox.** This adapter is a first proposal for CPlantBox's team to take over; it lives here until
+they adopt it, then moves into CPlantBox. encoding3d does not depend on it: its requirements and CI never install
+CPlantBox. To build and test it by hand, see `bindings/cpp/cplantbox/README.md`.
+```
 
 Build the adapter against CPlantBox's sources and its library:
 

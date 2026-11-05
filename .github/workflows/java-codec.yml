@@ -1,6 +1,6 @@
-# The Java codec (bindings/java): its tests on Linux, macOS and Windows; the conformance check other codecs run; and
-# GroIMP's adapter (bindings/java/groimp), built on GroIMP's Graph module (a pinned commit). OpenAlea's conda CI builds
-# the Python package only.
+# The Java codec (bindings/java): its tests on Linux, macOS and Windows; the conformance check other codecs run; the
+# coupling conformance sessions. No platform: GroIMP's adapter and plugin (bindings/java/groimp, groimp-plugin),
+# proposals for GroIMP, are tested by hand (their README.md). OpenAlea's conda CI builds the Python package only.
 name: Java codec
 
 on:
@@ -8,10 +8,6 @@ on:
     branches:
       - main
   pull_request:
-
-env:
-  GROIMP_DEB_SHA256: b9b35811ff82482dfa676347639e40fe9601c92105f54095361a9a89f7e85dcf
-  GLTF_COMMIT: d093aaebe5197317dfb81fadbe0ef67268bdaf1c
 
 jobs:
   test:
@@ -55,64 +51,3 @@ jobs:
           encoding3d couple-conformance conformance/coupling --participant \
             "java -cp $PWD/bindings/java/target/encoding3d-0.1.0.jar:$PWD/bindings/java/target/dependency/* org.openalea.encoding3d.coupling.ConformanceParticipant"
 
-  groimp-adapter:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: maven
-      - name: The codec and the adapter (GroIMP's modules from its package registry)
-        run: |
-          mvn -B -q -f bindings/java/pom.xml install -DskipTests
-          mvn -B -f bindings/java/groimp/pom.xml verify
-      - name: What the adapter wrote is valid encoding3d
-        run: |
-          python -m pip install numpy jsonschema .
-          encoding3d validate bindings/java/groimp/target/groimp_out/*.glb
-
-  # The plugin in GroIMP itself, headless: GroIMP 3.0.0's release, its glTF plugin (a pinned commit, which meshes the
-  # shapes), an example grown and its 3D view exported as an encoding3d frame
-  groimp-plugin:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: maven
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: GroIMP 3.0.0
-        run: |
-          curl -sSL -o groimp.deb https://download.grogra.de/3_0_0/GroIMP-3.0.0-all.deb
-          echo "$GROIMP_DEB_SHA256  groimp.deb" | sha256sum -c
-          dpkg-deb -x groimp.deb groimp-install
-      - name: GroIMP's glTF plugin
-        run: |
-          git clone --quiet https://gitlab.com/grogra/groimp-plugins/gltf.git gltf
-          git -C gltf checkout --quiet "$GLTF_COMMIT"
-          mvn -B -q -f gltf/pom.xml install -DskipTests -Dmaven.javadoc.skip=true -Dgroimp.core.version=3.0.0
-          mkdir -p gltf-plugin/ext
-          cp gltf/target/gltf.jar gltf/src/main/resources/plugin.xml gltf/src/main/resources/plugin*.properties gltf-plugin/
-          cp gltf/target/lib/ext/*.jar gltf-plugin/ext/
-      - name: The codec, the adapter and the plugin
-        run: |
-          mvn -B -q -f bindings/java/pom.xml install -DskipTests
-          mvn -B -q -f bindings/java/groimp/pom.xml install -DskipTests
-          mvn -B -f bindings/java/groimp-plugin/pom.xml package
-      - name: Grown and exported in GroIMP, checked
-        run: |
-          python -m pip install numpy jsonschema .
-          bash bindings/java/groimp-plugin/test/run_in_groimp.sh groimp-install/usr/share/GroIMP gltf-plugin \
-               bindings/java/groimp-plugin/target/plugin/encoding3d out
-      - name: GroIMP's log replayed in a coupling session
-        env:
-          ENCODING3D_GROIMP_LOG: out/log/scene.fspm.json
-        run: |
-          python -m pip install pytest pyzmq
-          pytest -v bindings/python/test/test_coupling.py -k platform_log

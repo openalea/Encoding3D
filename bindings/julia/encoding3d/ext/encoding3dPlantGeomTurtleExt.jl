@@ -2,6 +2,9 @@
 A VirtualPlantLab graph's geometry (PlantGeomTurtle: each node's `feed!` adds triangles to a turtle's mesh) as a mesh of
 its data structure, each vertex carrying the row of the node that made it: the node itself when it is an entity, else
 (a turtle's movement) its nearest kept ancestor.
+
+Status: a first proposal for VirtualPlantLab's team to take over, not a part of encoding3d: loaded only when the platform's
+package is, encoding3d's requirements and CI do not depend on it; tested by hand (bindings/julia/README.md).
 """
 module encoding3dPlantGeomTurtleExt
 

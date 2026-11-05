@@ -1,9 +1,7 @@
 [deps]
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
-MultiScaleTreeGraph = "dd4a991b-8a45-4075-bede-262ee62d5583"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [compat]
 JSON = "1"
-MultiScaleTreeGraph = "0.16"

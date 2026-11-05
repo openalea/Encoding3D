@@ -47,7 +47,7 @@ jobs:
           sudo apt-get install -y pandoc
           python -m pip install numpy jsonschema pytest sphinx ".[doc]"
       - name: The notebooks run
-        run: python -m pytest --nbmake doc/notebooks
+        run: python -m pytest --nbmake doc/notebooks tutorials/01_encoding3d_alone
       - name: Build the documentation, warnings as errors
         run: python -m sphinx -b html doc doc/_build -W --keep-going
 

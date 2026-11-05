@@ -31,7 +31,7 @@ change there, released as a new version. Everything else implements, checks or d
 | `spec/schema/` | the JSON Schemas of the `FSPM_scene` extension, of a sequence's index and views, and of a coupling session's messages | **yes** |
 | `spec/vocabulary/` | the standard names (units, kinds, definitions, and each platform's names for them), the labels with their Plant Ontology terms, the enumerations | **yes** |
 | `conformance/` | reference files, each a GLB with its expected values as JSON, written by `generate.py`: the specification as test cases for every platform's code (`conformance/README.md`; checked with `encoding3d compare-all` and the action `.github/actions/conformance`); `coupling/`: the coupling sessions a participant runs (`encoding3d couple-conformance`) | follows `spec/` |
-| `bindings/<language>/` | each language's codec and coupling participant, with its own build, tests and release; `bindings/python/`: `openalea.encoding3d`, the reference (codec with lazy reading, validator, display copies, views, the coupling's coordinator, command line), which reads `spec/` and ships it; `bindings/julia/`: encoding3d.jl, the Julia codec, with MultiScaleTreeGraph.jl, VirtualPlantLab and ZeroMQ extensions; `bindings/cpp/`: the C++ codec, with CPlantBox's adapter; `bindings/java/`: the Java codec, with GroIMP's adapter and plugin | no |
+| `bindings/<language>/` | each language's codec and coupling participant, with its own build, tests and release; `bindings/python/`: `openalea.encoding3d`, the reference (codec with lazy reading, validator, display copies, views, the coupling's coordinator, command line), which reads `spec/` and ships it; `bindings/julia/`: encoding3d.jl, the Julia codec, with a ZeroMQ extension and the MultiScaleTreeGraph.jl and VirtualPlantLab extensions (proposals); `bindings/cpp/`: the C++ codec, with CPlantBox's adapter (a proposal); `bindings/java/`: the Java codec, with GroIMP's adapter and plugin (proposals) | no |
 | `paraview/` | the ParaView plugin (`plugin_encoding3d.py`), its how-to, and the script checking it in a `pvpython` | no |
 | `doc/design_note.md` | how the decisions were reached | no |
 | `pyproject.toml`, `conda/` | the Python package's build, at the root next to `spec/`, which it ships | no |
@@ -97,6 +97,11 @@ Two pieces of code make a platform read and write encoding3d:
   and the CI shows which languages follow.
 - **An adapter** between the codec's tables and the platform's own model (e.g. `openalea.metafspm.io.encoding3d` for
   metafspm's DataStructures). It depends on the platform, so it lives in the platform's repository.
+
+**encoding3d depends on no platform.** Its requirements and its CI install none (not even metafspm). The adapters for
+CPlantBox (`bindings/cpp/cplantbox/`), GroIMP (`bindings/java/groimp/`, `bindings/java/groimp-plugin/`), MTG.jl and
+VirtualPlantLab (`bindings/julia/encoding3d/ext/`) are kept here only as **first proposals for those platforms'
+teams**: built and tested by hand (each one's README), they move into the platforms once adopted.
 
 Each codec runs the same conformance check in its own tests. It reads the conformance GLBs and compares what it
 reads with their `*.expected.json`, and it runs `encoding3d validate` on what it writes. The steps are in the

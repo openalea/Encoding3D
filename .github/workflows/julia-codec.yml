@@ -1,7 +1,9 @@
 # The Julia codec (bindings/julia/encoding3d): its tests, on the oldest supported Julia and the latest release, and the
 # conformance check other codecs run (its dumps of the conformance files compared with their expected values, the files
-# it writes validated by encoding3d validate and Khronos' glTF-Validator). OpenAlea's conda CI builds the Python package
-# only.
+# it writes validated by encoding3d validate and Khronos' glTF-Validator); its coupling participant. No platform: the
+# package extensions for VirtualPlantLab (PlantGraphs, PlantGeomTurtle) and MTG.jl, proposals for those platforms, are
+# tested by hand in their own projects (test/plantgraphs, test/multiscaletreegraph; bindings/julia/README.md). OpenAlea's
+# conda CI builds the Python package only.
 name: Julia codec
 
 on:
@@ -36,20 +38,6 @@ jobs:
       - uses: julia-actions/julia-runtest@v1
         with:
           project: bindings/julia/encoding3d
-
-  # VirtualPlantLab's PlantGraphs needs Julia 1.12 or later: its extensions are tested in their own project
-  virtualplantlab:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: julia-actions/setup-julia@v2
-        with:
-          version: "1"
-      - uses: julia-actions/cache@v2
-      - name: PlantGraphs and PlantGeomTurtle extensions
-        run: |
-          julia --project=bindings/julia/encoding3d/test/plantgraphs -e 'using Pkg; Pkg.develop(path="bindings/julia/encoding3d"); Pkg.instantiate()'
-          julia --project=bindings/julia/encoding3d/test/plantgraphs bindings/julia/encoding3d/test/plantgraphs/runtests.jl
 
   conformance:
     runs-on: ubuntu-latest
