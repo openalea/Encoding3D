@@ -31,6 +31,7 @@ For those who run models and want to look at, keep or share their results.
 :maxdepth: 1
 
 encoding3d in five minutes <overview>
+Tutorials <tutorials>
 Viewing and checking files <using>
 Reading and writing in Python <python>
 A notebook: encoding3d in Python <notebooks/encoding3d_in_python>
