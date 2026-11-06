@@ -156,7 +156,10 @@ Output Messages**.
 - `pvbatch paraview/check_in_paraview.py --instances <folder>` is a check by hand of instances: the conformance
   sequence `instances/` opened as a folder and as a `.fspm.zip`, a section selected and its derived field rebuilt
   (compared with `openalea.encoding3d.evaluate`), isolated, shown in a panel, put back, then every derived field
-  evaluated; a screenshot of each step in `<folder>`.
+  evaluated; a screenshot of each step in `<folder>`. Given a run's index after it
+  (`--instances <folder> run/frames/scene.fspm.json`, or its folder or `.fspm.zip`), the same check on that run:
+  its last frame with derived fields, three instances spread over the set selected at their owners' scale, each
+  rebuilt field compared with `evaluate`, isolated and put back.
 - `pvbatch paraview/check_in_paraview.py --design <copy>/frames/scene.fspm.json <folder>` is a check by hand on a
   copy of a run's frames. It draws each configuration, saves the views back, selects at several scales, isolates,
   opens a panel and puts back, and saves a screenshot of each step in `<folder>`.
