@@ -167,8 +167,9 @@ Display copies are optional and flagged as such. Readers never take them for the
 ## Checking a file
 
 ```bash
-encoding3d validate scene.glb                              # one frame
+encoding3d validate scene.glb                              # one frame (and the parts it refers to)
 encoding3d validate outputs/frames/scene.fspm.json         # a sequence: every frame, and the rules between frames
+encoding3d validate run.fspm.zip                           # a sequence packed into one file
 ```
 
 The validator reports **errors** (the file does not follow the specification) and **warnings** (it does, but something
@@ -178,9 +179,22 @@ is likely missing, such as a variable without a declared unit). It checks, among
 - every `complex` and `parent` points to an existing entity, and the parents form no cycle;
 - the units are valid UCUM codes that convert to their standard names' units;
 - the grids and the mappings agree with their entities;
-- the binary tables have the length their types imply.
+- the binary tables have the length their types imply;
+- every shared part a frame refers to (§12: a template, an operator) exists, is valid and hashes to its key, and the
+  instances' templates, owners and operators' shapes agree.
 
 The command exits with 1 when a file has errors, so it can run in a CI.
+
+## Sharing a sequence: one file
+
+```bash
+encoding3d pack outputs/frames run.fspm.zip                # the folder as one archive (deflate; --compression lzma)
+encoding3d unpack run.fspm.zip folder                      # and back
+encoding3d prune outputs/frames                            # the parts no frame uses any more, removed
+```
+
+ParaView, the validator and `encoding3d.read` open the archive as the folder. See
+[Instances, derived fields and archives](instances.md).
 
 ## Looking inside a file
 

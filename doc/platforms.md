@@ -23,6 +23,10 @@ What it has to handle:
   text is UTF-8 with offsets; labels are enums; NaN and infinities use the stand-ins the specification gives.
 - **Meshes:** float32 positions, and one feature ID attribute per scale a mesh represents.
 - **Sequences:** the index `scene.fspm.json`.
+- **Since 0.4, optionally:** instance sets, derived fields and shared parts (§12: a part is a GLB of its own, found by
+  the SHA-256 of its bytes, embedded or in `parts/`), and `.fspm.zip` archives (§8.2: a ZIP of the folder). The Python
+  codec implements them. A codec reading 0.3 only skips the conformance folder `instances/`; it should read a 0.4
+  frame's other content and ignore its instance sets (not yet checked for the C++, Java and Julia codecs).
 
 This is a few hundred lines in any language. Existing libraries help:
 
@@ -49,7 +53,11 @@ The adapter maps the platform's model onto the format's tables:
 
 - its scales onto entity sets, and its topology onto `complex`, `parent` and `edge_type`;
 - its variables onto columns, declared with their units and kinds;
-- its geometry onto meshes, and its soil and mappings onto grids and mapping tables.
+- its geometry onto meshes, and its soil and mappings onto grids and mapping tables;
+- entities drawn many times with one shape (sections, coarse cells, organs of a few shapes) onto instance sets of
+  shared templates, and their inner values, when the model gives them as a linear function of a few values it keeps
+  (a reduced network, a coarse cell's recovery), onto derived fields: see
+  [Instances, derived fields and archives](instances.md), "Writing instances: for platforms".
 
 What the platform needs to rebuild its own model exactly, beyond the shared data model, may go in the data
 structure's `extras` (under the platform's name) and in columns of role `setting`. Other readers keep them without

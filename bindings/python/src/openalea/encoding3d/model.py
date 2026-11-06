@@ -378,7 +378,7 @@ OPERATOR_FORMATS = ("dense", "csr", "solve")
 
 @dataclass(eq=False)
 class Operator(_Part):
-    """A linear operator of derived fields (a shared part, specification §12.3), *shape* (rows, columns), float64:
+    """A linear operator of derived fields (a shared part, specification §12.3), *shape* (rows, columns), float64::
 
         dense    values: the (rows, columns) matrix
         csr      indptr, indices, values: the matrix in compressed sparse rows

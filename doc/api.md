@@ -7,14 +7,16 @@ the vocabulary and units.
 
 ```{eval-rst}
 .. automodule:: openalea.encoding3d.codec
-   :members: read, write, from_bytes, to_bytes, write_sequence, read_sequence, write_index, read_index
+   :members: read, write, from_bytes, to_bytes, write_sequence, read_sequence, write_index, read_index,
+             write_parts, part_bytes, read_part, frame_part_keys
 ```
 
 ## The data model
 
 ```{eval-rst}
 .. automodule:: openalea.encoding3d.model
-   :members: Frame, DataStructure, EntitySet, Relation, Table, Grid, Mesh, Mapping, Variable, Update, LazyColumns, LazyList
+   :members: Frame, DataStructure, EntitySet, Relation, Table, Grid, Mesh, Mapping, Variable, Update, LazyColumns, LazyList,
+             InstanceSet, Template, Operator, DerivedField, Ragged, column_major
 ```
 
 ## Validation
@@ -29,6 +31,23 @@ the vocabulary and units.
 ```{eval-rst}
 .. automodule:: openalea.encoding3d.display
    :members: add_display, remove_display
+```
+
+## Instances, derived fields and shared parts
+
+```{eval-rst}
+.. automodule:: openalea.encoding3d.instances
+   :members: evaluate, placed_meshes, find_instance_set, PlacedMeshes
+
+.. automodule:: openalea.encoding3d.parts
+   :members: Parts, MissingPartError, prune_parts, content_key, part_file
+```
+
+## Archives
+
+```{eval-rst}
+.. automodule:: openalea.encoding3d.archive
+   :members: pack, unpack, read_bytes, exists, split
 ```
 
 ## Views

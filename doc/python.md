@@ -71,6 +71,9 @@ for frame in encoding3d.read_sequence("outputs/frames/scene.fspm.json"):
     ...
 ```
 
+Instances of shared templates, their derived fields (`encoding3d.evaluate`), shared parts and `.fspm.zip`
+archives have their own page: [Instances, derived fields and archives](instances.md).
+
 ## Large frames: reading lazily
 
 `encoding3d.read(path, lazy=True)` maps the file in memory and parses only its JSON: names, declarations, ranks and

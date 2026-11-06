@@ -33,6 +33,7 @@ For those who run models and want to look at, keep or share their results.
 encoding3d in five minutes <overview>
 Tutorials <tutorials>
 Viewing and checking files <using>
+Instances, derived fields and archives <instances>
 Reading and writing in Python <python>
 A notebook: encoding3d in Python <notebooks/encoding3d_in_python>
 Reading and writing in Julia <julia>

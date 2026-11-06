@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased: specification 0.4 (draft), instances, derived fields, shared parts and archives
+
+- Specification 0.4 (§12, all additions: a 0.3 file is a valid 0.4 file): **instance sets** (a data structure's
+  `instanceSets`: one row per instance, its template, transform, owner and own variables; vectors, one array per
+  instance), **linear derived fields** (f = Σ_k w_k · (A_k · v + b_k) on a template's entity set: one or several
+  weighted terms, offsets; operators `dense`, `csr`, or `solve`, a sparse system solved when evaluated), **shared
+  parts** (a template or an operator as a GLB file of its own, `FSPM_scene.part`, keyed by the SHA-256 of its bytes,
+  embedded in a frame, `FSPM_scene.parts`, or at `parts/<key>.glb`, listed in the index's `parts`); §8: the folder's
+  layout; §8.2: a sequence packed into a `.fspm.zip` archive (ZIP64, each member compressed alone: stored, deflate,
+  lzma); §8.1: views' `instances` layers. Platform-neutral: any model's entities of a declared shape and linear
+  recovery.
+- Python: `Template`, `Operator` (`dense`, `sparse`, `solve`, `of_system`), `InstanceSet`, `DerivedField`, `Ragged`,
+  `column_major`; `evaluate(frame, field, instances=)` (one matrix product per operator; scipy when installed, numpy
+  otherwise), `placed_meshes`, `Frame.part`; `write(path, frame, embed_parts=)` writing each part once and returning
+  the frame's keys, `write_parts`, `write_index(parts=)`, `prune_parts`; `pack`, `unpack`; `read`, `read_index`,
+  `read_sequence`, the validator and views reading a `.fspm.zip` like its folder (`run.fspm.zip/frame_000003.glb`);
+  `MissingPartError` naming the key. The validator checks every reference (parts present, valid, hashing to their
+  keys; templates, owners, operators' shapes, offsets). `encoding3d pack`, `unpack`, `prune`; `validate` and `info`
+  on instances and archives. Deflate is the default compression (measured on use case 1's frames: 11.6 % of the size
+  at 79 MB/s, lzma 4.1 % at 17 MB/s).
+- The conformance case `instances/` (a sequence, its parts and their expected values, the evaluated fields, a frame
+  with its parts embedded); the C++, Java and Julia codecs' conformance runs and `compare-all` skip it, as they skip
+  `coupling/`. The conformance files say 0.4 (their expected values unchanged).
+- ParaView: instance sets drawn as their placed templates (their own variables, their owners' and the ids containing
+  them, their templates' constants), `instances` layers, `.fspm.zip` archives opened as folders; **encoding3d Select at
+  scale** rebuilds the derived fields of the instances it selects (Isolate, Show In Panel, Put Back unchanged); the
+  reader's **Evaluate Derived Fields** for all; `check_in_paraview.py --instances`, by hand.
+- Docs: Instances, derived fields and archives (reading, packing, how a platform writes them: a reduced network's
+  eliminated nodes, a coarse cell's linear recovery); tutorial 1's sections 5 (instances) and 6 (an archive).
+
 ## Unreleased: frame views (specification §8.1, draft for 0.3)
 
 - Views, an optional companion of a sequence (`views.json`, `spec/schema/views.schema.json`): named configurations

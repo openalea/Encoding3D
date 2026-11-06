@@ -11,7 +11,8 @@ An exchange format for whole functional-structural plant model (FSPM) scenes, ac
 Each time step is one glTF file, and the variables share one vocabulary. It also runs models of several platforms
 together, step by step (coupling sessions: a coordinator and each platform's participant, over ZeroMQ or a folder).
 
-Status: specification 0.3, draft (0.1 and 0.2 files stay valid): 0.3 adds coupling platforms (§11).
+Status: specification 0.4, draft (0.1, 0.2 and 0.3 files stay valid): 0.3 adds coupling platforms (§11), 0.4
+instances of shared templates, linear derived fields, shared parts and `.fspm.zip` archives (§12, §8.2).
 
 - [The documentation](doc/index.md): for users (viewing, checking, Python) and for platform developers
   (implementing a codec, conformance, changing the format), built with Sphinx (`.readthedocs.yml`; locally:

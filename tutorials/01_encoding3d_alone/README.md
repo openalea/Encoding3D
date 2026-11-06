@@ -15,6 +15,9 @@ In the notebook you
    its variables with their units and standard names, then write it as a frame and check it with the validator;
 2. let it grow for five days and write a frame per day, a sequence, with its index `scene.fspm.json`;
 3. read the sequence back, follow one segment from day to day, and read a frame lazily (only the columns you use);
-4. say how viewers should draw it (`views.json`) and open it in ParaView.
+4. say how viewers should draw it (`views.json`) and open it in ParaView;
+5. give each segment a cross-section drawn from one shared shape (instances of a template), its cells' water
+   potential rebuilt from two values per segment (a derived field), the shape and the weights written once (`parts/`);
+6. pack the sequence into one file to share (`roots.fspm.zip`), read it, open it in ParaView.
 
 Next: tutorial 2 shows the same kind of files written and read by the platforms themselves.

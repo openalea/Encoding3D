@@ -43,7 +43,8 @@ The CI then runs every codec against the new conformance files, and shows which 
 
 ## Status
 
-Version 0.3 is a draft. 0.1 was written with metafspm as the first platform; 0.2 adds what the C++ (CPlantBox), Julia
+Version 0.4 is a draft. 0.1 was written with metafspm as the first platform; 0.2 adds what the C++ (CPlantBox), Julia
 (VirtualPlantLab) and Java (GroIMP) bindings needed (its "Changes from 0.1"); 0.3 adds coupling sessions (§11, "Changes
-from 0.2"), which the other platforms' teams are to review. Until 0.3 is released, the draft may still change in ways
-that make earlier files invalid.
+from 0.2"); 0.4 adds instances of shared templates, linear derived fields, shared parts and archives (§12, §8.2,
+"Changes from 0.3"), so far in the Python codec. The other platforms' teams are to review 0.3 and 0.4. Until they are
+released, the draft may still change in ways that make earlier files invalid.

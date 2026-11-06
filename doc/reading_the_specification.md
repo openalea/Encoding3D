@@ -57,7 +57,7 @@ Here is the JSON part of `conformance/root_system.glb`, abridged:
 ```text
 "extensions": {
   "FSPM_scene": {
-    "version": "0.3", "vocabulary": "0.2",
+    "version": "0.4", "vocabulary": "0.2",
     "frame": {"time": 0.0, "timeUnit": "d", "step": 0},
     "dataStructures": [{
       "id": "root_system", "kind": "graph", "origin": [1, 0, 0, 0, ...],     a 4×4 matrix, column by column

@@ -5,7 +5,7 @@ its explanation (`README.md`), its code, and `run.sh`, which runs it from start 
 
 | Tutorial | What it shows | What it needs |
 |---|---|---|
-| `01_encoding3d_alone` | writing, checking, reading and viewing a growing root system's files, with no platform | Python, `openalea.encoding3d` |
+| `01_encoding3d_alone` | writing, checking, reading and viewing a growing root system's files, with no platform; its sections drawn from one shared shape (instances), and the sequence packed into one file | Python, `openalea.encoding3d` |
 | `02a_metafspm` | a metafspm scene recorded as frames, read by encoding3d alone, logged smaller, rebuilt in metafspm | metafspm's environment |
 | `02b_virtualplantlab` | a VirtualPlantLab plant grown by rules, written with its geometry, rebuilt and grown on; an MTG to and from encoding3d | Julia 1.12, VirtualPlantLab's packages, MTG.jl |
 | `02c_cplantbox` | a CPlantBox plant written day by day with its geometry, soil grid and mapping; frames back as CPlantBox root systems | C++17, CMake, CPlantBox built |
