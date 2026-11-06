@@ -26,6 +26,13 @@ openalea.encoding3d.evaluate, isolated, shown in a panel, put back; "Evaluate De
 screenshot of each step.
 
     pvbatch paraview/check_in_paraview.py --instances screenshots
+
+Given a sequence (a platform's run: its index, its folder or its .fspm.zip archive), the same instances check on
+it: its last frame with an instance set that has derived fields opened (its views.json's layers if it has one), an
+instance picked (a few, spread over the set), selected at its owners' scale, its derived field rebuilt and compared
+with openalea.encoding3d.evaluate, isolated, put back; a screenshot of each.
+
+    pvbatch paraview/check_in_paraview.py --instances screenshots run/frames/scene.fspm.json
 """
 import os
 import sys
@@ -532,8 +539,83 @@ def check_instances() -> None:
         shutil.rmtree(folder)
 
 
+def check_instances_of(index_path: str, picks: int = 3) -> None:
+    """A sequence's instances in ParaView: see this file's docstring."""
+    import numpy as np
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+    from openalea.encoding3d import evaluate, read, read_index
+    found = None
+    for entry in reversed(read_index(index_path)["frames"]):
+        frame = read(entry["path"])
+        for data_structure in frame.data_structures:
+            for instance_set in data_structure.instance_sets:
+                if instance_set.derived and instance_set.count and found is None:
+                    found = (entry, frame, data_structure, instance_set)
+        if found is not None:
+            break
+    assert found is not None, f"no instance set with derived fields in {index_path}"
+    entry, frame, data_structure, instance_set = found
+    field = instance_set.derived[0]
+    array = f"{field.entity_set}.{field.name}"
+    print(f"{entry['file']} (time {entry['time']}): {data_structure.id}/{instance_set.name}, {instance_set.count} "
+          f"instances, {len(instance_set.parts)} parts, derived field {field.name} on {field.entity_set}")
+    view = simple.GetActiveViewOrCreate("RenderView")
+    view.ViewSize = [900, 700]
+    reader = encoding3dreader(FileName=index_path)  # noqa: F821
+    reader.UpdatePipeline(entry["time"])
+    view.ViewTime = entry["time"]
+    data = servermanager.Fetch(reader)
+    names = block_names(reader)
+    block = None
+    for position, name in enumerate(names):
+        leaf = data.GetBlock(position)
+        named = leaf.GetFieldData().GetAbstractArray("encoding3d_instance_set") if leaf is not None else None
+        if named is not None and named.GetValue(0) == instance_set.name:
+            block = name
+    assert block is not None, f"no block of instance set {instance_set.name} in {names}"
+    sections = data.GetBlock(names.index(block))
+    assert sections.GetCellData().GetArray(array) is None                       # on demand
+    print(f"block '{block}': {sections.GetNumberOfCells()} cells")
+    display = simple.Show(reader, view)
+    view.ResetCamera()
+    simple.Render(view)
+    screenshot(view, "run_instances_1_opened")
+    for k, row in enumerate(np.linspace(0, instance_set.count - 1, picks).astype(int).tolist()):
+        pick(reader, block, "encoding3d_instance", float(row))
+        selection = encoding3dSelectatscale(Input=reader, Scale=instance_set.owners)  # noqa: F821
+        selection.UpdatePipeline(entry["time"])
+        grown = servermanager.Fetch(selection)
+        leaf = grown.GetBlock(block_names(selection).index(block))
+        picked = vtk_to_numpy(leaf.GetCellData().GetArray("encoding3d_instance"))
+        assert set(picked.tolist()) == {row}, set(picked.tolist())
+        rows = vtk_to_numpy(leaf.GetCellData().GetArray(f"encoding3d_template_row.{field.entity_set}"))
+        expected = evaluate(frame, field.name, instances=[row], data_structure=data_structure.id,
+                            instance_set=instance_set.name)[0]
+        rebuilt = vtk_to_numpy(leaf.GetCellData().GetArray(array))
+        np.testing.assert_allclose(rebuilt, expected[rows], rtol=1e-12)
+        owner = int(instance_set.columns["owner"][row])
+        print(f"instance {row} (owner {owner}): {rebuilt.size} cells rebuilt, {field.name} in "
+              f"[{rebuilt.min():.6g}, {rebuilt.max():.6g}], equal to evaluate's")
+        simple.Show(selection, view)
+        selection.InvokeCommand("Isolate")
+        assert not visible(reader, view) and visible(selection, view)
+        shown = simple.GetDisplayProperties(selection, view)
+        simple.ColorBy(shown, ("CELLS", array))
+        shown.RescaleTransferFunctionToDataRange(True)
+        view.ResetCamera()
+        screenshot(view, f"run_instances_{k + 2}_isolated_{row}")
+        selection.InvokeCommand("PutBack")
+        assert visible(reader, view)
+        simple.Delete(selection)
+    simple.Delete(reader)
+    print("encoding3d instances check of the run: done" + (f", look at the screenshots in {pictures}" if pictures
+                                                           else ""))
+
+
 if DESIGN:
     check_design(sys.argv[2])
+elif INSTANCES and len(sys.argv) > 3:
+    check_instances_of(sys.argv[3])
 elif INSTANCES:
     check_instances()
 else:
