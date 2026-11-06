@@ -81,6 +81,9 @@ block named **instances sections** (or another name) in their data structure's b
   - **All of them**: tick **Evaluate Derived Fields** in the reader's *Properties*, then **Apply**. Every instance's
     inner values are rebuilt at each time step. Use it for small scenes: it is slower than selecting a few.
 
+  A layer coloured by an inner value (in `views.json`) draws its instances in one colour until then; its selection
+  is coloured by it.
+
 If ParaView says in **View → Output Messages** that a part is missing, the `parts/` folder was not copied with the
 frames: copy the whole `frames/` folder, or send the `.fspm.zip`.
 
