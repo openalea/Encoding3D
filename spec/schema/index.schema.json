@@ -1,8 +1,8 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
- "$id": "https://github.com/openalea/encoding3d/schema/0.3/index.schema.json",
+ "$id": "https://github.com/openalea/encoding3d/schema/0.4/index.schema.json",
  "title": "encoding3d sequence index",
- "description": "scene.fspm.json: the frames of a sequence, one GLB file each, in time order (encoding3d 0.3).",
+ "description": "scene.fspm.json: the frames of a sequence, one GLB file each, in time order, and the shared parts they use (encoding3d 0.4).",
  "type": "object",
  "required": ["fspmIndex", "timeUnit", "frames"],
  "properties": {
@@ -13,6 +13,11 @@
    "properties": {"time": {"type": "number"}, "step": {"type": "integer", "minimum": 0},
                   "file": {"type": "string", "pattern": "\\.glb$"}},
    "additionalProperties": false}},
+  "parts": {
+   "description": "The shared parts the frames use (specification §12.1): each key, the SHA-256 of the part's bytes, and its file, parts/<key>.glb.",
+   "type": "object",
+   "propertyNames": {"pattern": "^[0-9a-f]{64}$"},
+   "additionalProperties": {"type": "string", "pattern": "^parts/[0-9a-f]{64}\\.glb$"}},
   "extras": {}
  },
  "additionalProperties": false

@@ -83,3 +83,21 @@ def view_bytes(document: dict, binary: bytes, index: int) -> bytes:
         raise ValueError("encoding3d files keep every buffer view in the GLB binary chunk")
     start = view.get("byteOffset", 0)
     return binary[start:start + view["byteLength"]]
+
+
+def read_document(path: str) -> dict:
+    """The JSON document of the GLB file *path* (in a folder or an archive), its binary chunk not read."""
+    from openalea.encoding3d import archive
+    inside = archive.split(path)
+    if inside is not None:
+        stream = archive._zip(inside[0]).open(archive._member(inside[1]))
+    else:
+        stream = open(path, "rb")
+    with stream:
+        header = stream.read(20)
+        if len(header) < 20:
+            raise ValueError(f"{path}: not a GLB file: too short")
+        magic, version, _, length, chunk_type = struct.unpack("<IIIII", header)
+        if magic != MAGIC or chunk_type != JSON_CHUNK:
+            raise ValueError(f"{path}: not a GLB file, or its first chunk is not JSON")
+        return json.loads(stream.read(length).decode("utf-8"))

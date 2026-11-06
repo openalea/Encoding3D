@@ -16,8 +16,8 @@ from openalea.encoding3d.dump import frame_to_dict
 
 def main(conformance: str, out: str) -> int:
     for folder, _, files in os.walk(conformance):
-        if os.path.relpath(folder, conformance).split(os.sep)[0] == "coupling":
-            continue                                            # the coupling sessions: their own check
+        if os.path.relpath(folder, conformance).split(os.sep)[0] in ("coupling", "instances"):
+            continue                                            # the coupling sessions, 0.4's instances: their own checks
         for name in sorted(files):
             if not name.endswith(".glb"):
                 continue

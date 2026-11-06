@@ -1,7 +1,7 @@
 """
 Frame views (specification §8.1): views.json, an optional companion of a sequence or a frame, names configurations of
-layers; each layer is a part of a data structure (a mesh, segments or a grid), the entities it selects and how it is
-drawn::
+layers; each layer is a part of a data structure (a mesh, segments, a grid or an instance set's placed templates),
+the entities it selects and how it is drawn::
 
     {"encoding3d_views": 1, "active": "default",
      "configurations": {"default": {"layers": [
@@ -56,18 +56,25 @@ _COMPARISONS = {"<": np.less, "<=": np.less_equal, ">": np.greater, ">=": np.gre
 def views_path(path: str, views: str = None) -> str:
     """The views file of the frame or sequence *path*: *views* when given (relative to *path*'s folder), else the
     views.json next to it; None when that file does not exist."""
+    from openalea.encoding3d import archive
+    if path:
+        path = archive.index_of(path) if os.fspath(path).endswith(archive.ARCHIVE_SUFFIX) else path   # an archive's
     folder = os.path.dirname(os.path.abspath(path)) if path else os.getcwd()
     found = os.path.join(folder, views) if views else os.path.join(folder, VIEWS_FILE)
-    return found if os.path.exists(found) else None
+    return found if archive.exists(found) else None
 
 
 def read_views(path: str) -> dict:
-    with open(path, encoding="utf-8") as file:
-        return json.load(file)
+    """The views of the file *path* (in a folder, or in a .fspm.zip archive)."""
+    from openalea.encoding3d import archive
+    return json.loads(archive.read_bytes(path).decode("utf-8"))
 
 
 def write_views(path: str, views: dict) -> None:
-    """Write *views* to *path* (checked against the schema first)."""
+    """Write *views* to *path* (checked against the schema first); not into an archive (unpack it first)."""
+    from openalea.encoding3d import archive
+    if archive.split(path) is not None:
+        raise ValueError(f"{path}: an archive's views are read only (encoding3d unpack it, then save the views)")
     report = check_views(views)
     if not report.ok:
         raise ValueError(str(report))
@@ -167,12 +174,10 @@ def _structure_errors(views) -> list:
                 errors.append((where, "'name' is a required text"))
             if not isinstance(source, dict) or not isinstance(source.get("data_structure"), str):
                 errors.append((where, "'source' with its 'data_structure' is required"))
-            elif source.get("kind") not in ("mesh", "segments", "grid"):
-                errors.append((f"{where}/source", "'kind' is one of mesh, segments, grid"))
-            elif source["kind"] in ("mesh", "segments") and not isinstance(
-                    source.get("mesh" if source["kind"] == "mesh" else "entity_set"), str):
-                errors.append((f"{where}/source", f"a {source['kind']} layer names its "
-                                                  f"{'mesh' if source['kind'] == 'mesh' else 'entity_set'}"))
+            elif source.get("kind") not in SOURCE_KINDS:
+                errors.append((f"{where}/source", f"'kind' is one of {', '.join(SOURCE_KINDS)}"))
+            elif source["kind"] in NAMED_BY and not isinstance(source.get(NAMED_BY[source["kind"]]), str):
+                errors.append((f"{where}/source", f"a {source['kind']} layer names its {NAMED_BY[source['kind']]}"))
     return errors
 
 
@@ -190,10 +195,53 @@ def segment_columns(entity_set) -> list:
     return found
 
 
-def _sets_of(data_structure, layer: dict, where: str, report) -> tuple:
+SOURCE_KINDS = ("mesh", "segments", "grid", "instances")
+NAMED_BY = {"mesh": "mesh", "segments": "entity_set", "instances": "instance_set"}
+
+
+class _Columns:
+    """The column names a layer may use in a set it cannot read (an instance set's templates)."""
+
+    def __init__(self, columns):
+        self.columns = set(columns)
+
+
+def instance_layer_sets(frame, data_structure, instance_set) -> dict:
+    """{name: a table, or the names of its columns} an instances layer may select and colour by: the instance set
+    (its own columns), its owners' entity set, and its templates' entity sets (their columns and the derived fields
+    on them; None when a template's part is not found)."""
+    sets = {instance_set.name: instance_set}
+    if instance_set.owners is not None:
+        try:
+            sets[instance_set.owners] = data_structure.entity_set(instance_set.owners)
+        except KeyError:
+            pass
+    template_columns = {}
+    for derived in instance_set.derived:
+        template_columns.setdefault(derived.entity_set, set()).add(derived.name)
+    for index in np.unique(np.asarray(instance_set.columns.get("template", []), dtype=np.int64)).tolist():
+        try:
+            template = frame.part(instance_set.parts[index])
+        except (LookupError, ValueError, IndexError):
+            return {**sets, **{name: None for name in template_columns}}
+        for entity_set in getattr(template, "entity_sets", []):
+            template_columns.setdefault(entity_set.name, set()).update(entity_set.columns)
+    sets.update({name: _Columns(columns) for name, columns in template_columns.items() if name not in sets})
+    return sets
+
+
+def _sets_of(data_structure, layer: dict, where: str, report, frame=None) -> tuple:
     """(the entity sets the layer may select and colour by, the name of the set its entities are in), or None."""
     source = layer["source"]
     sets = {entity_set.name: entity_set for entity_set in data_structure.entity_sets}
+    if source["kind"] == "instances":
+        names = [instance_set.name for instance_set in data_structure.instance_sets]
+        if source["instance_set"] not in names:
+            report.error(where, f"no instance set '{source['instance_set']}' in '{data_structure.id}' (instance sets: "
+                                f"{sorted(names)})")
+            return None
+        instance_set = data_structure.instance_set(source["instance_set"])
+        return instance_layer_sets(frame, data_structure, instance_set), instance_set.name
     if source["kind"] == "mesh":
         meshes = {mesh.name: mesh for mesh in data_structure.meshes}
         if source["mesh"] not in meshes:
@@ -224,7 +272,7 @@ def _check_layer(layer: dict, frame, where: str, report) -> None:
         report.error(where, f"no data structure '{source['data_structure']}' in the frame (data structures: "
                             f"{sorted(found)})")
         return
-    usable = _sets_of(data_structure, layer, where, report)
+    usable = _sets_of(data_structure, layer, where, report, frame)
     if usable is None:
         return
     sets, _ = usable
@@ -238,6 +286,12 @@ def _check_layer(layer: dict, frame, where: str, report) -> None:
         if set_name not in sets:
             report.error(f"{where}/{part}", f"'{set_name}' is not an entity set this layer's entities are in "
                                             f"({sorted(sets)})")
+            continue
+        if sets[set_name] is None:                          # a template not found: its columns not known
+            continue
+        if part == "select" and isinstance(sets[set_name], _Columns):
+            report.error(f"{where}/select", f"'{set_name}' is a template's entity set: select instances by their own "
+                                            "set or their owners'")
             continue
         for column in names:
             if column not in sets[set_name].columns:

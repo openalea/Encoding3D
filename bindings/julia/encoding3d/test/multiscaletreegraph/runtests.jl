@@ -15,7 +15,8 @@ const MTG_FILES = joinpath(pkgdir(MultiScaleTreeGraph), "test", "files")
 
 conformance_files() = sort([relpath(joinpath(folder, name), CONFORMANCE)
                             for (folder, _, files) in walkdir(CONFORMANCE) for name in files
-                            if endswith(name, ".glb") && !startswith(relpath(folder, CONFORMANCE), "coupling")])
+                            if endswith(name, ".glb") && !startswith(relpath(folder, CONFORMANCE), "coupling")
+                            && !startswith(relpath(folder, CONFORMANCE), "instances")])   # 0.4: the Python codec's
 
 """The differences between two JSON values, as `encoding3d compare` finds them: objects by key, arrays in order,
 numbers exactly (1 and 1.0 equal)."""

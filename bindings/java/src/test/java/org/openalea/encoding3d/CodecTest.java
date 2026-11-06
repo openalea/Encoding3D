@@ -26,7 +26,9 @@ class CodecTest {
     static Stream<Path> conformanceFiles() throws IOException {
         try (Stream<Path> paths = Files.walk(CONFORMANCE)) {
             return paths.filter(path -> path.toString().endsWith(".glb"))
-                    .filter(path -> !CONFORMANCE.relativize(path).startsWith("coupling")).sorted().toList().stream();
+                    .filter(path -> !CONFORMANCE.relativize(path).startsWith("coupling"))
+                    .filter(path -> !CONFORMANCE.relativize(path).startsWith("instances"))   // 0.4: the Python codec's
+                    .sorted().toList().stream();
         }
     }
 

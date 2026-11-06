@@ -1,8 +1,8 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
- "$id": "https://github.com/openalea/encoding3d/schema/0.3/fspm_scene.schema.json",
+ "$id": "https://github.com/openalea/encoding3d/schema/0.4/fspm_scene.schema.json",
  "title": "FSPM_scene",
- "description": "The FSPM_scene root extension of a glTF 2.0 asset (encoding3d 0.3): one frame of a scene.",
+ "description": "The FSPM_scene root extension of a glTF 2.0 asset (encoding3d 0.4): one frame of a scene, or a shared part (part).",
  "type": "object",
  "required": ["version", "frame", "dataStructures"],
  "properties": {
@@ -27,6 +27,12 @@
    },
    "additionalProperties": false
   },
+  "part": {"$ref": "#/$defs/part"},
+  "parts": {
+   "description": "Shared parts embedded in this frame (specification §12.1): each key and the buffer view holding the part's GLB bytes.",
+   "type": "object", "propertyNames": {"$ref": "#/$defs/key"},
+   "additionalProperties": {"type": "object", "required": ["bufferView"],
+                            "properties": {"bufferView": {"$ref": "#/$defs/index"}}, "additionalProperties": false}},
   "dataStructures": {"type": "array", "items": {"$ref": "#/$defs/dataStructure"}},
   "mappings": {"type": "array", "items": {"$ref": "#/$defs/mapping"}},
   "variables": {
@@ -40,6 +46,48 @@
  "additionalProperties": false,
  "$defs": {
   "identifier": {"type": "string", "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"},
+  "key": {"description": "A shared part's content key: the SHA-256 of its GLB bytes, lower-case hexadecimal.",
+          "type": "string", "pattern": "^[0-9a-f]{64}$"},
+  "sparse": {"type": "object", "required": ["indptr", "indices", "values"],
+             "properties": {"indptr": {"$ref": "#/$defs/index"}, "indices": {"$ref": "#/$defs/index"},
+                            "values": {"$ref": "#/$defs/index"}}},
+  "part": {
+   "description": "This file is a shared part (specification §12.1): a template (its one data structure, its meshes and entity sets) or an operator (its arrays: buffer views of float64 values and int64 indices).",
+   "type": "object", "required": ["kind"],
+   "properties": {
+    "kind": {"enum": ["template", "operator"]},
+    "format": {"enum": ["dense", "csr", "solve"]},
+    "rows": {"type": "integer", "minimum": 0}, "columns": {"type": "integer", "minimum": 0},
+    "values": {"$ref": "#/$defs/index"}, "indptr": {"$ref": "#/$defs/index"}, "indices": {"$ref": "#/$defs/index"},
+    "system": {"$ref": "#/$defs/sparse"}, "rightHandSide": {"$ref": "#/$defs/sparse"}},
+   "additionalProperties": false,
+   "allOf": [
+    {"if": {"properties": {"kind": {"const": "operator"}}}, "then": {"required": ["format", "rows", "columns"]},
+     "else": {"not": {"anyOf": [{"required": ["format"]}, {"required": ["rows"]}, {"required": ["columns"]}]}}},
+    {"if": {"required": ["format"], "properties": {"format": {"const": "dense"}}}, "then": {"required": ["values"]}},
+    {"if": {"required": ["format"], "properties": {"format": {"const": "csr"}}}, "then": {"required": ["indptr", "indices", "values"]}},
+    {"if": {"required": ["format"], "properties": {"format": {"const": "solve"}}}, "then": {"required": ["system", "rightHandSide"]}}]},
+  "instanceSet": {
+   "description": "Instances of shared templates (specification §12.2): their table (template, owner, transform, id, their own variables, each vector's <name>__count, each derived field's <name>__operator and <name>__weight), their vectors' tables, their derived fields.",
+   "type": "object", "required": ["name", "propertyTable", "parts"],
+   "properties": {
+    "name": {"$ref": "#/$defs/identifier"},
+    "propertyTable": {"$ref": "#/$defs/index"},
+    "owners": {"$ref": "#/$defs/identifier"},
+    "parts": {"type": "array", "items": {"$ref": "#/$defs/key"}},
+    "vectors": {"type": "array", "items": {
+     "type": "object", "required": ["name", "propertyTable"],
+     "properties": {"name": {"$ref": "#/$defs/identifier"}, "propertyTable": {"$ref": "#/$defs/index"}},
+     "additionalProperties": false}},
+    "derivedFields": {"type": "array", "items": {
+     "type": "object", "required": ["name", "entitySet", "input", "terms"],
+     "properties": {"name": {"$ref": "#/$defs/identifier"}, "entitySet": {"$ref": "#/$defs/identifier"},
+                    "input": {"$ref": "#/$defs/identifier"}, "terms": {"type": "integer", "minimum": 1},
+                    "offsets": {"type": "array", "items": {"anyOf": [{"$ref": "#/$defs/identifier"}, {"type": "null"}]}},
+                    "description": {"type": "string"},
+                    "variable": {"$ref": "#/$defs/variable"}},
+     "additionalProperties": false}}},
+   "additionalProperties": false},
   "index": {"type": "integer", "minimum": 0},
   "dataStructure": {
    "type": "object", "required": ["id", "kind", "origin", "node", "entitySets"],
@@ -74,7 +122,8 @@
                                     "variable": {"$ref": "#/$defs/identifier"},
                                     "entitySet": {"anyOf": [{"$ref": "#/$defs/identifier"}, {"type": "null"}]}},
                      "additionalProperties": false}}},
-     "additionalProperties": false}}
+     "additionalProperties": false}},
+    "instanceSets": {"type": "array", "items": {"$ref": "#/$defs/instanceSet"}}
    },
    "additionalProperties": false},
   "grid": {

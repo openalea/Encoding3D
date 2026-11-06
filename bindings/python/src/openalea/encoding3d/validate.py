@@ -2,8 +2,9 @@
 The encoding3d validator: the checks a file must pass to follow the specification, beyond being valid glTF (which
 Khronos' glTF-Validator checks)::
 
-    validate_file(path) -> Report        a .glb frame, or a sequence's scene.fspm.json (each frame, and across them)
-    validate_bytes(data) -> Report       a frame's bytes
+    validate_file(path) -> Report        a .glb frame, or a sequence's scene.fspm.json or .fspm.zip (each frame, the
+                                         parts they refer to, and the rules across frames)
+    validate_bytes(data) -> Report       a frame's bytes (its parts checked when embedded, or found in *parts_folder*)
 
 A Report lists its issues: errors (the file does not follow the specification) and warnings (it does, but something
 is likely wrong or incomplete).
@@ -15,11 +16,12 @@ import os
 
 import numpy as np
 
-from openalea.encoding3d import schema as schemas, ucum, vocabulary
+from openalea.encoding3d import archive, schema as schemas, ucum, vocabulary
 from openalea.encoding3d.codec import (DTYPES, EDGE_TYPE_ENUM, EXTENSION, FEATURES, METADATA, Z_UP_TO_Y_UP,
-                                    from_bytes)
+                                    from_bytes, frame_part_keys, read_part)
 from openalea.encoding3d.glb import unpack
-from openalea.encoding3d.model import BASE_SCALES, EDGE_TYPES, NO_ID
+from openalea.encoding3d.model import BASE_SCALES, EDGE_TYPES, NO_ID, Operator, Template
+from openalea.encoding3d.parts import PARTS_FOLDER, MissingPartError, content_key, part_file
 
 
 @dataclass
@@ -73,7 +75,10 @@ def _jsonschema():
     return jsonschema
 
 
-def validate_bytes(data: bytes, name: str = "") -> Report:
+def validate_bytes(data: bytes, name: str = "", parts_folder: str = None, checked_parts: dict = None) -> Report:
+    """A frame's (or a part's) issues. The parts its instance sets use are checked too (once each across the calls
+    sharing *checked_parts*): embedded, or in *parts_folder*/parts (a frame's folder; without one, the parts not
+    embedded are not checked, a warning)."""
     report = Report(name)
     try:
         document, binary = unpack(data)
@@ -83,12 +88,171 @@ def validate_bytes(data: bytes, name: str = "") -> Report:
     if not _check_document(document, binary, report):
         return report
     try:
-        frame = from_bytes(data)
+        frame = from_bytes(data, parts_folder=parts_folder)
     except (KeyError, ValueError, TypeError, IndexError) as error:
         report.error("file", f"cannot be read: {error}")
         return report
     _check_frame(frame, document, report)
+    _check_part_file(data, document, frame, report)
+    _check_instances(frame, report, {} if checked_parts is None else checked_parts)
     return report
+
+
+# ── Shared parts and instances (specification §12) ───────────────────────
+
+def _check_part_file(data: bytes, document: dict, frame, report) -> None:
+    """A part's own rules: a template holds one data structure and no instances; an operator, no data structure and
+    arrays of its shape; embedded parts keyed by their hash."""
+    scene = document["extensions"][EXTENSION]
+    for key, item in scene.get("parts", {}).items():
+        if content_key(bytes(frame.parts.embedded[key])) != key:
+            report.error(f"parts/{key}", "the embedded part's bytes do not hash to its key")
+    described = scene.get("part")
+    if described is None:
+        return
+    if scene.get("parts"):
+        report.error("part", "a part embeds no other parts")
+    if any(data_structure.instance_sets for data_structure in frame.data_structures):
+        report.error("part", "a part holds no instance sets")
+    if described["kind"] == "template":
+        if len(frame.data_structures) != 1:
+            report.error("part", f"a template holds one data structure, not {len(frame.data_structures)}")
+        elif not frame.data_structures[0].meshes:
+            report.warning("part", "a template without meshes draws nothing")
+        return
+    if frame.data_structures:
+        report.error("part", "an operator holds no data structure")
+    try:
+        read_part(data)
+    except (KeyError, ValueError, TypeError, IndexError) as error:
+        report.error("part", f"the operator cannot be read: {error}")
+
+
+def _resolved_part(frame, key: str, where: str, report, checked: dict):
+    """The part *key* of *frame*, checked once (its file valid, its bytes hashing to its key); None when it is
+    missing or invalid (reported once), or not checked (no folder)."""
+    if key in checked:
+        return checked[key]
+    checked[key] = None
+    if key not in frame.parts.embedded and frame.parts.folder is None:
+        report.warning(where, f"part {key} not checked: the frame's folder is not known")
+        return None
+    try:
+        data = frame.parts.bytes(key)
+    except MissingPartError as error:
+        report.error(where, str(error))
+        return None
+    if content_key(data) != key:
+        report.error(where, f"part {key}: its bytes do not hash to its key")
+        return None
+    sub = validate_bytes(data, f"part {key}")
+    report.extend(sub, prefix=f"part {key[:12]}: ")
+    if not sub.ok:
+        return None
+    document = unpack(data)[0]
+    if "part" not in document["extensions"][EXTENSION]:
+        report.error(where, f"part {key}: not a part (no {EXTENSION}.part)")
+        return None
+    checked[key] = read_part(data, key=key)
+    return checked[key]
+
+
+def _check_instances(frame, report, checked: dict) -> None:
+    for data_structure in frame.data_structures:
+        sets = {entity_set.name: entity_set for entity_set in data_structure.entity_sets}
+        names = [instance_set.name for instance_set in data_structure.instance_sets]
+        if len(set(names)) != len(names):
+            report.error(data_structure.id, "two instance sets have the same name")
+        for instance_set in data_structure.instance_sets:
+            _check_instance_set(frame, data_structure, sets, instance_set, report, checked)
+
+
+def _check_instance_set(frame, data_structure, sets: dict, instance_set, report, checked: dict) -> None:
+    where = f"{data_structure.id}/instances {instance_set.name}"
+    columns, count = instance_set.columns, instance_set.count
+    parts = [_resolved_part(frame, key, where, report, checked) for key in instance_set.parts]
+    unknown = [number for number, key in enumerate(instance_set.parts) if key not in checked or checked[key] is None]
+
+    def used(indices, kind, what):
+        """Whether *indices* (into the parts, NO_ID: none) are in range and parts of *kind* (those resolved)."""
+        indices = np.asarray(indices, dtype=np.int64)
+        present = indices[indices != NO_ID] if what != "template" else indices
+        if present.size and (present.min() < 0 or present.max() >= len(parts)):
+            report.error(f"{where}/{what}", f"indices outside the set's {len(parts)} parts")
+            return False
+        for index in np.unique(present).tolist():
+            if parts[index] is not None and not isinstance(parts[index], kind):
+                report.error(f"{where}/{what}", f"part {index} is not {'a template' if kind is Template else 'an operator'}")
+                return False
+        return True
+
+    if "template" not in columns:
+        report.error(where, "no 'template' column")
+        return
+    templates = np.asarray(columns["template"])
+    if templates.dtype != np.int64:
+        report.error(f"{where}/template", f"indices are int64, not {templates.dtype}")
+    templates_ok = used(templates, Template, "template")
+    if instance_set.owners is not None:
+        if instance_set.owners not in sets:
+            report.error(where, f"owners '{instance_set.owners}' is not an entity set of '{data_structure.id}'")
+        elif "owner" not in columns:
+            report.error(where, f"no 'owner' column (the ids in '{instance_set.owners}' of the instances' owners)")
+        elif frame.update is None:
+            _check_references(f"{where}/owner", columns["owner"], set(sets[instance_set.owners].ids().tolist()), report,
+                              allow_none=False)
+    elif "owner" in columns:
+        report.error(where, "an 'owner' column needs the set's 'owners' (the entity set its ids are in)")
+    if "transform" in columns and not np.isfinite(columns["transform"]).all():
+        report.error(f"{where}/transform", "transforms are finite")
+    if "id" in columns:
+        ids = np.asarray(columns["id"])
+        if (ids < 0).any() or np.unique(ids).size != ids.size:
+            report.error(f"{where}/id", "instance ids are non-negative and unique")
+    _check_variables(where, instance_set, vocabulary.standard_names(), vocabulary.enums(), report)
+    for derived in instance_set.derived:
+        field_where = f"{where}/derived {derived.name}"
+        if derived.name in columns:
+            report.error(field_where, "a derived field has the name of a column of its instance set")
+        for name in [derived.input] + [offset for offset in derived.offsets if offset is not None]:
+            if name not in instance_set.vectors:
+                report.error(field_where, f"no vector '{name}' in the instance set ({sorted(instance_set.vectors)})")
+        if not np.isfinite(derived.weights).all():
+            report.error(f"{field_where}/weight", "weights are finite")
+        if not used(derived.operators, Operator, f"derived {derived.name}/operator") or not templates_ok or                 derived.input not in instance_set.vectors or unknown:
+            continue
+        try:
+            ucum.dimension(derived.variable.unit)
+        except ucum.UnitError as error:
+            report.error(field_where, f"unit: {error}")
+        rows_of = {}
+        for index in np.unique(templates).tolist():
+            try:
+                rows_of[index] = parts[index].entity_set(derived.entity_set).count
+            except KeyError:
+                report.error(field_where, f"template {index} has no entity set '{derived.entity_set}'")
+        if len(rows_of) != np.unique(templates).size:
+            continue
+        rows = np.array([rows_of[int(index)] for index in templates], dtype=np.int64)
+        inputs = instance_set.vectors[derived.input].counts
+        for term in range(derived.terms):
+            operators = derived.operators[:, term]
+            active = operators != NO_ID
+            shapes = np.array([parts[int(index)].shape if index != NO_ID else (0, 0) for index in operators],
+                              dtype=np.int64).reshape(-1, 2)
+            wrong = active & ((shapes[:, 0] != rows) | (shapes[:, 1] != inputs))
+            if wrong.any():
+                first = int(np.flatnonzero(wrong)[0])
+                report.error(field_where, f"{int(wrong.sum())} instance(s) whose operator's shape is not (their "
+                                          f"template's '{derived.entity_set}' rows, their '{derived.input}' values), e.g. "
+                                          f"instance {first}: {tuple(shapes[first])}, ({rows[first]}, {inputs[first]}) "
+                                          "expected")
+            offset = derived.offsets[term]
+            if offset is not None and offset in instance_set.vectors:
+                lengths = instance_set.vectors[offset].counts
+                if ((lengths != 0) & ((lengths != rows) | ~active)).any():
+                    report.error(field_where, f"offsets '{offset}' of term {term}: of length 0, or the template's "
+                                              f"'{derived.entity_set}' rows for an instance with that term")
 
 
 def _check_document(document: dict, binary: bytes, report: Report) -> bool:
@@ -496,18 +660,18 @@ def _check_meshes(data_structure, document: dict, report) -> None:
 # ── Files and sequences ──────────────────────────────────────────────────
 
 def validate_file(path: str) -> Report:
-    """Validate a .glb frame, or a sequence's index (each frame, and the rules across frames)."""
-    if path.endswith(".json"):
-        return validate_sequence(path)
-    with open(path, "rb") as file:
-        return validate_bytes(file.read(), name=path)
+    """Validate a .glb frame (and the parts it refers to, embedded or in parts/ next to it), or a sequence: its
+    index, its folder or its .fspm.zip archive (each frame, each part once, and the rules across frames)."""
+    path = os.fspath(path)
+    if path.endswith(".json") or path.endswith(archive.ARCHIVE_SUFFIX) or os.path.isdir(path):
+        return validate_sequence(archive.index_of(path))
+    return validate_bytes(archive.read_bytes(path), name=path, parts_folder=os.path.dirname(os.path.abspath(path)))
 
 
 def validate_sequence(index_path: str) -> Report:
     report = Report(index_path)
     try:
-        with open(index_path, encoding="utf-8") as file:
-            index = json.load(file)
+        index = json.loads(archive.read_bytes(index_path).decode("utf-8"))
     except (OSError, ValueError) as error:
         report.error("index", f"cannot be read: {error}")
         return report
@@ -519,19 +683,25 @@ def validate_sequence(index_path: str) -> Report:
     times = [entry["time"] for entry in index["frames"]]
     if any(later < earlier for earlier, later in zip(times, times[1:])):
         report.error("index/frames", "frames are in time order")
-    seen, gone = {}, {}
+    seen, gone, checked_parts, referenced = {}, {}, {}, set()
+    listed = index.get("parts", {})
+    for key, file_name in listed.items():
+        if file_name != part_file(key):
+            report.error(f"index/parts/{key}", f"listed as '{file_name}': a part's file is {part_file(key)}")
+        elif not archive.exists(os.path.join(directory, file_name)):
+            report.error(f"index/parts/{key}", f"{file_name} does not exist")
     for number, entry in enumerate(index["frames"]):
         path = os.path.join(directory, entry["file"])
-        if not os.path.exists(path):
+        if not archive.exists(path):
             report.error(f"frames/{number}", f"{entry['file']} does not exist")
             continue
-        with open(path, "rb") as file:
-            data = file.read()
-        frame_report = validate_bytes(data, entry["file"])
+        data = archive.read_bytes(path)
+        frame_report = validate_bytes(data, entry["file"], parts_folder=directory, checked_parts=checked_parts)
         report.extend(frame_report, prefix=f"{entry['file']}: ")
         if not frame_report.ok:
             continue
-        frame = from_bytes(data)
+        frame = from_bytes(data, parts_folder=directory)
+        referenced |= set(frame_part_keys(path)) - set(frame.parts.embedded)
         if frame.time != entry["time"] or frame.step != entry["step"]:
             report.error(entry["file"], "time or step differs from the index's")
         if frame.time_unit != index["timeUnit"]:
@@ -549,4 +719,14 @@ def validate_sequence(index_path: str) -> Report:
                                  f"{sorted(reused)[:5]}")
                 gone[key] = gone.get(key, set()) | (seen.get(key, set()) - current)
                 seen[key] = current
+    if listed:
+        for key in sorted(referenced - set(listed)):
+            report.warning("index/parts", f"part {key}, which frames use, is not listed")
+        for key in sorted(set(listed) - referenced):
+            report.warning("index/parts", f"part {key} is listed but no frame uses it (encoding3d prune removes it)")
+    stray = [name for name in archive.listing(os.path.join(directory, PARTS_FOLDER))
+             if name.endswith(".glb") and name[:-4] not in referenced and name[:-4] not in listed]
+    if stray:
+        report.warning(PARTS_FOLDER, f"{len(stray)} part file(s) no frame uses, e.g. {stray[:2]} (encoding3d prune "
+                                     "removes them)")
     return report

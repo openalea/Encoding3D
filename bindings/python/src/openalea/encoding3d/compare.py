@@ -61,11 +61,16 @@ def compare_files(actual_path: str, expected_path: str) -> list:
     return compare(load(actual_path), load(expected_path))
 
 
+SKIPPED = ("coupling", "instances")      # the coupling sessions, and 0.4's instances (their own checks: their README)
+
+
 def compare_all(dumps: str, conformance: str) -> dict:
-    """{expected file (relative): its differences} for every *.expected.json under *conformance*, against the dump at
-    the same relative path under *dumps* (a missing dump is a difference)."""
+    """{expected file (relative): its differences} for every *.expected.json under *conformance* (but its folders
+    SKIPPED), against the dump at the same relative path under *dumps* (a missing dump is a difference)."""
     results = {}
     for folder, _, files in sorted(os.walk(conformance)):
+        if os.path.relpath(folder, conformance).split(os.sep)[0] in SKIPPED:
+            continue
         for name in sorted(files):
             if not name.endswith(".expected.json"):
                 continue

@@ -19,7 +19,8 @@ def test_committed_files_are_generated(relative):
         assert file.read() == FILES[relative], f"{relative}: run python conformance/generate.py"
 
 
-@pytest.mark.parametrize("relative", sorted(name for name in FILES if name.endswith(".glb")))
+@pytest.mark.parametrize("relative", sorted(name for name in FILES if name.endswith(".glb")
+                                             and not name.startswith(("instances/parts/", "instances/embedded"))))
 def test_expected_values(relative):
     with open(os.path.join(CONFORMANCE, relative), "rb") as file:
         frame = from_bytes(file.read())

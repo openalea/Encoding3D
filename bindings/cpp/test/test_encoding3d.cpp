@@ -43,7 +43,8 @@ std::vector<filesystem::path> conformance_files(const filesystem::path &conforma
     std::vector<filesystem::path> files;
     for (const auto &entry : filesystem::recursive_directory_iterator(conformance))
         if (entry.is_regular_file() && entry.path().extension() == ".glb" &&
-            entry.path().string().find("coupling") == std::string::npos)    // the coupling sessions: their own check
+            entry.path().string().find("coupling") == std::string::npos &&   // the coupling sessions: their own check
+            entry.path().string().find("instances") == std::string::npos)    // 0.4's instances: the Python codec's
             files.push_back(entry.path());
     std::sort(files.begin(), files.end());
     return files;

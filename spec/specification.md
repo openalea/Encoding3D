@@ -1,16 +1,18 @@
-# encoding3d 0.3 specification
+# encoding3d 0.4 specification
 
-Status: draft (2026-11-03). 0.3 adds coupling sessions and partial frames to 0.2 (see "Changes from 0.2" at the end); a 0.1 or 0.2 file is a valid 0.3 file. The key words MUST, SHOULD and MAY are to be read as in RFC 2119 (https://www.rfc-editor.org/rfc/rfc2119).
+Status: draft (2026-11-06). 0.4 adds instances of shared templates, linear derived fields, shared parts and sequence
+archives to 0.3 (see "Changes from 0.3" at the end); a 0.1, 0.2 or 0.3 file is a valid 0.4 file. The key words MUST, SHOULD and MAY are to be read as in RFC 2119 (https://www.rfc-editor.org/rfc/rfc2119).
 
 encoding3d is an exchange format for whole functional-structural plant model scenes: multiscale plant graphs, their
 variables and parameters, their geometry, and the environment's grids, at successive time steps. A **frame** (one
-time step) is one glTF 2.0 binary file (GLB). A **sequence** of frames is a folder of GLB files with an index.
+time step) is one glTF 2.0 binary file (GLB). A **sequence** of frames is a folder of GLB files with an index, or that
+folder packed into one archive.
 
 The language-neutral files of this version are part of the specification:
 
 | File | Content |
 |---|---|
-| `spec/schema/fspm_scene.schema.json` | JSON Schema of the `FSPM_scene` extension (§3) |
+| `spec/schema/fspm_scene.schema.json` | JSON Schema of the `FSPM_scene` extension (§3), and of a shared part's (§12) |
 | `spec/schema/index.schema.json` | JSON Schema of a sequence's index (§8) |
 | `spec/schema/views.schema.json` | JSON Schema of a sequence's optional views, `views.json` (§8.1) |
 | `spec/vocabulary/standard_names.csv` | the standard names, their canonical units and kinds, and each platform's names for them (§6) |
@@ -65,6 +67,11 @@ extensions: `EXT_structural_metadata` for tables
   voxels.
 - A **mesh** is a set of triangles. Each vertex carries the row of its entity in one or several entity sets.
 - A **variable** is a column with a declaration: its unit, standard name, kind and role (§5).
+- An **instance set** draws many entities with one shared **template** each: a mesh and its own entity sets, stored
+  once, placed by each instance's transform. Each instance has its own variables, and its **derived fields**, fields
+  on the template's entities rebuilt by linear operators from the instance's values (§12).
+- A **shared part** is a template or an operator, stored once in its own file and referred to by its content key from
+  any frame (§12.1).
 
 A frame holding only data structures with parameters, and no geometry, is a **parameter set**.
 
@@ -72,7 +79,8 @@ A frame holding only data structures with parameters, and no geometry, is a **pa
 
 A frame MUST be a GLB file (glTF 2.0 binary):
 
-1. All buffer views MUST be in the GLB's binary chunk. No external `.bin` files and no data URIs are allowed in 0.3.
+1. All buffer views MUST be in the GLB's binary chunk. No external `.bin` files and no data URIs are allowed in 0.4.
+   A frame refers to a shared part by its key through `FSPM_scene` (§12), never through a glTF buffer.
 2. Every buffer view holding table values MUST start at a multiple of 8 bytes. The JSON chunk MUST be padded with
    spaces and the binary chunk with zeros to 8 bytes, as `EXT_structural_metadata` requires. The buffer's
    `byteLength` SHOULD be the binary chunk's padded length (glTF-Validator warns of more than 3 bytes of padding
@@ -93,7 +101,7 @@ The glTF root's `extensions.FSPM_scene` MUST follow `fspm_scene.schema.json`:
 
 ```text
 {
- "version": "0.3",
+ "version": "0.4",
  "vocabulary": "0.2",
  "frame": {"time": 1.0, "timeUnit": "d", "step": 24},
  "writer": {"platform": "...", "model": "..."},
@@ -108,10 +116,16 @@ The glTF root's `extensions.FSPM_scene` MUST follow `fspm_scene.schema.json`:
    "grid": {"kind": "regular", "shape": [..], "origin": [..], "spacing": [..], "axes": [..], "periodic": [..],
             "zUp": false, "cells": "Voxel"},
    "meshes": [{"name": "roots", "mesh": 0,
-               "display": [{"attribute": "_WATER_POTENTIAL", "variable": "water_potential", "entitySet": "SubOrgan"}]}]
+               "display": [{"attribute": "_WATER_POTENTIAL", "variable": "water_potential", "entitySet": "SubOrgan"}]}],
+   "instanceSets": [{"name": "sections", "propertyTable": 5, "owners": "SubOrgan", "parts": ["<key>", ...],
+                     "vectors": [{"name": "ends", "propertyTable": 6}],
+                     "derivedFields": [{"name": "water_potential", "entitySet": "Cell", "input": "ends", "terms": 2,
+                                        "variable": {"unit": "MPa", "role": "derived"}}]}]
  }],
  "mappings": [{"name": "roots_in_soil", "source": {"dataStructure": "plants", "entitySet": "SubOrgan"},
                "target": {"dataStructure": "soil", "entitySet": "Voxel"}, "method": "overlap", "propertyTable": 4}],
+ "parts": {"<key>": {"bufferView": 12}},
+ "part": {"kind": "operator", "format": "dense", "rows": 6, "columns": 2, "values": 0},
  "variables": {"<class id>": {"<column>": {"unit": "m", "standardName": "length", "kind": "extensive",
                                             "role": "state", "minimum": 0, "references": [], "doi": [],
                                             "format": "date"}}}
@@ -133,6 +147,8 @@ The glTF root's `extensions.FSPM_scene` MUST follow `fspm_scene.schema.json`:
   `mapping__<name>`). Readers MUST find tables through the `propertyTable` indices, not through class names.
 - **Update.** A frame with an `update` object is a partial frame, a coupling session's message (§11.1); a frame
   written as a time step has none.
+- **Instances and parts.** A data structure's `instanceSets`, the frame's embedded `parts` and a part file's `part` are
+  defined in §12.
 
 ## 4. Tables
 
@@ -148,7 +164,8 @@ A column is one property of the table's class:
 | text | `STRING` |
 | labels, edge types and relation labels | `ENUM` (§4.2) |
 
-- Variable-length arrays and the other glTF metadata types are not part of 0.3.
+- Variable-length arrays and the other glTF metadata types are not part of 0.4 (one array per instance of its own
+  length is an instance set's vector, §12.2).
 - **NaN.** NaN and infinities are forbidden in property tables. A float column with missing values (NaN) declares
   `noData`: the most negative finite value of its type, −1.7976931348623157e308 for FLOAT64 or
   −3.4028234663852886e38 for FLOAT32, stored where the value is NaN. Readers MUST read `noData` back as NaN. A
@@ -303,9 +320,19 @@ two platforms.
 A sequence is a folder holding one GLB per frame and an index, `scene.fspm.json`, following `index.schema.json`:
 
 ```text
-{"fspmIndex": "0.3", "timeUnit": "d",
- "frames": [{"time": 0.0, "step": 0, "file": "frame_000000.glb"}, ...]}
+{"fspmIndex": "0.4", "timeUnit": "d",
+ "frames": [{"time": 0.0, "step": 0, "file": "frame_000000.glb"}, ...],
+ "parts": {"<key>": "parts/<key>.glb", ...}}
 ```
+
+The folder's layout:
+
+| File | Content |
+|---|---|
+| `scene.fspm.json` | the index |
+| `views.json` | the views (§8.1), optional |
+| `frame_*.glb` | the frames (any names the index gives) |
+| `parts/<key>.glb` | the shared parts the frames use (§12.1), one file each |
 
 - **Frames.** Frames are listed in time order. Each file's `frame.time`, `frame.step` and `timeUnit` MUST equal the
   index's.
@@ -315,7 +342,8 @@ A sequence is a folder holding one GLB per frame and an index, `scene.fspm.json`
   given again) keeps, across a sequence, a map from its entities to the ids it writes.
 - **Ids are not positions.** Ids may be sparse (e.g. offsets keeping them stable as a plant grows). Readers SHOULD
   NOT size arrays by the largest id.
-- **Packing.** Packing a sequence into one GLB is not part of 0.3.
+- **Parts.** The index's `parts` SHOULD list every part its frames use, each at `parts/<key>.glb`. A writer writes a
+  part only when its key is new, and removes the parts no remaining frame uses when it removes frames.
 
 ### 8.1 Views
 
@@ -335,12 +363,15 @@ valid without it. It is platform-independent; any viewer may apply it.
 
 - **Configurations.** Named lists of layers; `active` names the one shown first (else the first).
 - **A layer** draws one part of a data structure: `source.kind` `mesh` (with the mesh's `name`), `segments` (an entity
-  set with segment ends, `entity_set`) or `grid` (the grid's cells). Its name is unique in its configuration.
+  set with segment ends, `entity_set`), `grid` (the grid's cells) or `instances` (an instance set's placed templates,
+  `instance_set`, §12). Its name is unique in its configuration.
 - **Selection.** `select` keeps the entities whose row in `select.entity_set` holds every condition of `where`: a
   value, a list of values (labels and other text by name), or a comparison (`">=0"`, `"!=2"`); a missing value never
   holds. For a mesh, the entity set is any the mesh represents (a triangle is kept when its feature row in that set
-  is); for segments and grids, the source's own set.
-- **Drawing.** `color_by` names a variable of an entity set the layer's entities are in (as `select`), or is null
+  is); for segments and grids, the source's own set; for instances, the instance set or its `owners` (an instance is
+  kept when its row, or its owner's, is).
+- **Drawing.** `color_by` names a variable of an entity set the layer's entities are in (as `select`; for instances,
+  also a template's entity set, its columns and the derived fields on it), or is null
   (then `solid_color`, RGB in [0, 1]); `colormap` is a colour map's name (ParaView's preset names), `range` `"auto"`
   or `[min, max]`, `log` a log scale; `opacity`, `visible` (when opened), `representation`; `tube` (segments only)
   draws them as tubes of radius the `radius` column times `scale`.
@@ -349,6 +380,19 @@ valid without it. It is platform-independent; any viewer may apply it.
 - Every name a layer gives (data structure, mesh, entity sets, columns) SHOULD be in the frames it goes with;
   the Python reference implementation checks them (`openalea.encoding3d.views.check_views(views, frame)`). In a frame
   that lacks one (e.g. a mesh drawn from a later frame on), a viewer draws the layer empty.
+
+### 8.2 Archives
+
+A sequence MAY be packed into one file, a **`.fspm.zip`** archive: a ZIP archive (ZIP64 when it needs to be) of the
+folder's layout, its members at the same relative paths (`scene.fspm.json`, `views.json`, the frames, `parts/<key>.glb`).
+
+- Each member is an unchanged file of the folder, compressed alone: `stored`, `deflate` or `lzma` (ZIP's methods 0, 8
+  and 14), so that a reader reads one frame without the others. Writers SHOULD use deflate, which every ZIP reader
+  has; a member holds no other archive.
+- A reader opens an archive as it opens the folder. A file inside one is named `<archive>.fspm.zip/<member>`, e.g.
+  `run.fspm.zip/frame_000003.glb`.
+- An archive is for sharing and keeping a sequence once written. A sequence being written (a run) is a folder, which
+  survives a crash and grows frame by frame; a single GLB holding a sequence is not part of 0.4.
 
 ## 9. Conformance
 
@@ -365,13 +409,19 @@ sequence:
 | `parameter_set` | a `table` data structure with parameters per plant and in the scalars, references and DOIs; an infinite value |
 | `missing_values` | integer, text and boolean columns with missing values; a date column; `unknown` edge types and a `sibling_order` column; a `mixed` entity set; a labels map; bearer relations between two pairs of sets |
 | `growing_sequence/` | three frames of a growing root system and their index |
+| `instances/` | a sequence of two frames whose root segments are drawn by sections, instances of two templates: transforms, owners, an instance variable, vectors, a derived field of one term (dense, sparse solved) or two weighted terms with an offset; its parts (`parts/`, their expected values in `expected/<key>.json`), each frame's evaluated field (`frame_*.evaluated.json`), and the last frame with its parts embedded (`embedded.glb`) |
 
-An implementation conforms to 0.3 when two things hold:
+An implementation conforms to 0.4 when two things hold:
 
 - **Reading:** what it reads from every conformance GLB equals the expected JSON. Floats are compared exactly; NaN and
   missing values are null in the JSON, +∞ and −∞ the strings `"Infinity"` and `"-Infinity"`; positions are the
   FLOAT32 values.
 - **Writing:** what it writes passes `encoding3d validate` with no error, and Khronos' glTF-Validator with no error.
+
+An implementation reading instances (§12) conforms when it reads `instances/` as expected, each part as its
+`expected/<key>.json`, and evaluates each frame's derived fields to its `frame_*.evaluated.json` within a relative
+1e-12 (a solved operator's values depend on the solver's rounding). A codec that reads 0.3 only skips `instances/`, as
+it skips `coupling/`.
 
 A codec's participant (§11) conforms when it runs every **coupling session** of `conformance/coupling/` as expected,
 over both transports. A session's folder holds the coordinator's settings (`session.json`), a peer (a sequence the
@@ -389,7 +439,7 @@ declaration, writes what it reads from each turn to `OUT/turn_<step>.json` (in t
 
 ## 10. Keeping what one does not read
 
-A reader that writes a file back SHOULD keep the content it does not interpret, as RSML requires. In 0.3 this covers
+A reader that writes a file back SHOULD keep the content it does not interpret, as RSML requires. In 0.4 this covers
 the glTF root's other extensions and `extras`, when they hold no buffer views.
 
 ## 11. Coupling
@@ -537,6 +587,122 @@ Both transports carry the same messages.
   - Its ids are renumbered within its range.
   - Between two recorded times, its values are those of the last frame at or before the session's time (`hold`), or
     interpolated linearly for links stating `"interpolation": "linear"`.
+
+## 12. Instances, derived fields and shared parts
+
+Many entities of a scene often have the same geometry and the same internal structure: the sections of a plant's
+root segments, the cells of a tissue at a coarse scale, the leaves of a canopy drawn by a few shapes. A frame then
+stores that geometry once, as a **template**, and one record per entity drawing it, an **instance**. When an
+entity's internal field (e.g. the values on a section's cells) is a linear function of a few values the platform
+keeps (e.g. those on its boundary), the frame stores the function once, as an **operator**, and the few values per
+instance: a reader rebuilds the field of the instances it shows. Templates and operators are **shared parts**, stored
+once for a whole sequence. Nothing here depends on the model: any platform whose entities have a declared shape and,
+for derived fields, a declared linear recovery, writes them the same way.
+
+### 12.1 Shared parts
+
+- **A part is a GLB file** following every rule of §2, whose `FSPM_scene` has a `part` object; its `frame` is
+  `{"time": 0, "timeUnit": "d", "step": 0}` and it has no `writer`. Its kind is `template` or `operator`:
+  - a **template** holds one data structure, `template` (kind `table`, or `graph` with ranks): its entity sets (the
+    template's own entities, e.g. a section's cells, with ids of their own and their constant variables) and its
+    meshes, in the template's coordinates. A template is a valid frame, so any reader opens one alone.
+  - an **operator** holds no data structure; `part` gives its `format`, `rows` and `columns`, and the buffer views of
+    its arrays (little-endian; FLOAT64 values, INT64 indices):
+
+    | `format` | Arrays | The operator A |
+    |---|---|---|
+    | `dense` | `values`: rows × columns, row by row | the matrix |
+    | `csr` | `indptr` (rows + 1), `indices`, `values`: compressed sparse rows | the matrix |
+    | `solve` | `system` (rows × rows) and `rightHandSide` (rows × columns), each `{indptr, indices, values}` | S⁻¹ R, S the system (invertible), R the right-hand side |
+
+    A writer stores a large operator whose matrix would be dense (e.g. the inverse of a sparse system) as `solve`; the
+    reader then solves S x = R v, once per evaluation.
+- **Content key.** A part's key is the SHA-256 of its file's bytes, in lower-case hexadecimal (64 characters). A writer
+  computes it from the bytes it writes, so the same part always has the same key and is written once; a reader MAY
+  check it, the validator does.
+- **Where a part is.** A frame refers to a part by its key only. A reader looks for it, in this order:
+  1. in the frame: `FSPM_scene.parts` maps a key to a buffer view of the frame holding the part's bytes (a
+     self-contained frame);
+  2. at `parts/<key>.glb` in the frame's folder (a sequence's folder, an archive, or the folder of a frame written
+     alone).
+
+  A reader that needs a part it does not find MUST report an error naming its key. A reader that does not read
+  instances needs no part.
+
+### 12.2 Instance sets
+
+A data structure's `instanceSets` lists its instance sets. Each one has:
+
+- `name`: an identifier, unique among the data structure's instance sets;
+- `parts`: the keys of the parts its instances use; the instance table's indices point into this list;
+- `owners` (optional): the entity set of the data structure whose entities the instances draw;
+- `propertyTable`: the **instance table**, one row per instance;
+- `vectors` (optional): its vectors (below), each `{name, propertyTable}`;
+- `derivedFields` (optional): its derived fields (§12.3).
+
+The instance table's reserved columns:
+
+| Column | Type | Meaning |
+|---|---|---|
+| `template` | INT64, required | the index in `parts` of the instance's template |
+| `owner` | INT64 | the id, in `owners`, of the entity the instance draws; required with `owners` |
+| `transform` | FLOAT64 vector of 16, optional | the column-major 4×4 matrix placing the template's coordinates in the data structure's (identity when absent) |
+| `id` | INT64, optional | the instance's id: non-negative, unique in the set, kept across frames like entity ids |
+| `<vector>__count` | INT64 | the length of the instance's vector `<vector>` |
+| `<field>__operator` | INT64 (a vector of K for K terms ≥ 2) | for each term of the derived field `<field>`, the index in `parts` of its operator, −1 for none |
+| `<field>__weight` | FLOAT64 (a vector of K for K terms ≥ 2) | each term's weight |
+
+Its other columns are the instances' own variables, declared as any variable (§5).
+
+- **Vectors.** A vector is one array of numbers per instance, of the instance's own length (e.g. the values a derived
+  field applies to). Its table has one column, `values` (FLOAT64): the instances' vectors one after the other, in the
+  instance table's order. `<vector>__count` gives each one's length; they sum to the table's row count.
+- **Drawing.** An instance is drawn as every mesh of its template, its positions moved by its transform, then by the
+  data structure's origin. Each triangle has its row in the template's entity sets (the template mesh's feature IDs),
+  the instance's row in the instance table, and through `owner` the entity it draws and that entity's containing ones.
+- **Readers that do not evaluate derived fields** still read the instance table (its own variables, owners and
+  transforms), the vectors, and the templates (their own constant variables) as tables.
+
+### 12.3 Derived fields
+
+A derived field is a field on one entity set of the templates, rebuilt for each instance from its vectors. Its entry:
+
+- `name`: an identifier, not a column of the instance table;
+- `entitySet`: the templates' entity set it is on (every template its instances use has it);
+- `input`: the vector its operators apply to;
+- `terms`: K, its number of terms;
+- `offsets` (optional): K names of vectors, or null: each term's offset;
+- `variable`: its declaration (§5), usually of role `derived`.
+
+For the instance i, with v its `input` vector, the field is
+
+  f = Σ_k w_k · (A_k · v + b_k),
+
+over its terms k whose operator index is not −1: A_k the operator at that index of `parts`, w_k the term's weight, and
+b_k the instance's vector `offsets[k]` (none when null, or of length 0). Then A_k has as many rows as the instance's
+template has entities in `entitySet` and as many columns as v has values, and b_k has as many values as rows. f is on
+those entities, in their rows' order. An instance without any term has no value (NaN).
+
+- **Several terms** blend operators, e.g. the interpolation between the operators of two templates' classes, with no
+  other primitive.
+- **An offset linear in the instance's own values** (e.g. a source term) is better folded into the operator: v then
+  holds those values too, and the operator one more column per value, so the frame holds no vector of the template's
+  size per instance.
+- A platform declares a derived field when its model gives the entity's inner values as a linear function of the values
+  it keeps: a reduced network's eliminated nodes from its kept ones (x_I = −A_II⁻¹ A_IB x_B, stored as a `solve` or a
+  dense operator, the sources as an offset), a coarse cell's sub-cells by a linear recovery from its own values, a
+  shape's vertices by blending a few modes.
+
+## Changes from 0.3
+
+All additions; a 0.3 file is a valid 0.4 file.
+
+- §12: instance sets (`instanceSets`: a template, a transform, an owner and variables per instance; vectors), linear
+  derived fields (Σ_k w_k · (A_k · v + b_k), operators dense, sparse, or a sparse system solved when evaluated), shared
+  parts (templates and operators as GLB files of their own, `FSPM_scene.part`, keyed by the SHA-256 of their bytes,
+  embedded in a frame or at `parts/<key>.glb`); the conformance case `instances/`.
+- §8: the folder's layout, the index's `parts`; §8.2: a sequence packed into a `.fspm.zip` archive.
+- §8.1: views' `instances` layers.
 
 ## Changes from 0.2
 

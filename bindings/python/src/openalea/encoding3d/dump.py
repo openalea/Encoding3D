@@ -5,12 +5,13 @@ compare what it reads with them::
 
     frame_to_dict(frame) -> dict        NaN and missing values as null, ±∞ as "Infinity" / "-Infinity"; floats as
                                         the shortest decimal giving the same double
+    part_to_dict(part) -> dict          a shared part: a template's data structure, an operator's arrays
 """
 import math
 
 import numpy as np
 
-from openalea.encoding3d.model import Frame, Table
+from openalea.encoding3d.model import Frame, Operator, Ragged, Table, Template
 
 
 def _value(value):
@@ -93,6 +94,8 @@ def frame_to_dict(frame: Frame) -> dict:
                 **({"display": {name: _column(np.asarray(values, dtype=np.float32).astype(np.float64))
                                 for name, values in mesh.display.items()}} if mesh.display else {})}
                 for mesh in data_structure.meshes]
+        if data_structure.instance_sets:
+            entry["instance_sets"] = [_instance_set(instance_set) for instance_set in data_structure.instance_sets]
         data_structures.append(entry)
     out = {"time": frame.time, "time_unit": frame.time_unit, "step": frame.step,
            "data_structures": data_structures,
@@ -103,3 +106,47 @@ def frame_to_dict(frame: Frame) -> dict:
                          "removed": [{"data_structure": key[0], "entity_set": key[1], "ids": ids.tolist()}
                                      for key, ids in sorted(frame.update.removed.items())]}
     return out
+
+
+def _instance_set(instance_set) -> dict:
+    """An instance set: its table (its own columns), its parts' keys, owners, vectors (values and counts) and
+    derived fields (operators, weights, offsets)."""
+    def key(reference):
+        return reference if isinstance(reference, str) else reference.key
+
+    entry = dict(_table(instance_set), parts=[key(reference) for reference in instance_set.parts])
+    if instance_set.owners is not None:
+        entry["owners"] = instance_set.owners
+    if instance_set.vectors:
+        entry["vectors"] = {name: {"values": _column(vector.values), "counts": vector.counts.tolist()}
+                            for name, vector in ((name, vector if isinstance(vector, Ragged) else Ragged.of(vector))
+                                                 for name, vector in instance_set.vectors.items())}
+    if instance_set.derived:
+        entry["derived_fields"] = [{
+            "name": derived.name, "entity_set": derived.entity_set, "input": derived.input,
+            "operators": derived.operators.tolist(), "weights": _column(derived.weights),
+            "offsets": list(derived.offsets), "unit": derived.variable.unit, "role": derived.variable.role,
+            **({"standard_name": derived.variable.standard_name} if derived.variable.standard_name else {})}
+            for derived in instance_set.derived]
+    return entry
+
+
+def part_to_dict(part) -> dict:
+    """A shared part as plain JSON: a template's data structure (as frame_to_dict's), or an operator's format,
+    shape and arrays (a solve operator's system and right-hand side)."""
+    if isinstance(part, Template):
+        return {"kind": "template",
+                "data_structure": frame_to_dict(Frame(data_structures=[part.data_structure()]))["data_structures"][0]}
+    if not isinstance(part, Operator):
+        raise TypeError(f"not a part: {type(part)}")
+    entry = {"kind": "operator", "format": part.format, "shape": list(part.shape)}
+
+    def sparse(triple):
+        return {"indptr": triple[0].tolist(), "indices": triple[1].tolist(), "values": _column(triple[2])}
+    if part.format == "dense":
+        entry["values"] = _column(part.values)
+    elif part.format == "csr":
+        entry.update(sparse((part.indptr, part.indices, part.values)))
+    else:
+        entry["system"], entry["right_hand_side"] = sparse(part.system), sparse(part.right_hand_side)
+    return entry

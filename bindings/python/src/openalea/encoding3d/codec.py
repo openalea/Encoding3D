@@ -6,6 +6,11 @@ Reading and writing encoding3d frames as GLB files, and sequences of frames with
     write_sequence(directory, frames)    one .glb per frame and the index scene.fspm.json
     read_index(path) -> dict             the index: its frames' times, steps and files
 
+Shared parts (specification §12: the templates and operators of instance sets) are written once each, under
+parts/<key>.glb next to the frames (*key*: the SHA-256 of the part's bytes), or embedded in the frame
+(write(path, frame, embed_parts=True)); part_bytes(part) and read_part(data) encode and decode one. A path inside a
+.fspm.zip archive ("run.fspm.zip/frame_000003.glb", openalea.encoding3d.archive) is read as the folder's file.
+
 Tables are EXT_structural_metadata property tables (one class per table), meshes carry EXT_mesh_features feature
 IDs, and the FSPM_scene root extension holds what these two cannot: data structures, entity sets and their ranks,
 relations, grids, mappings, the frame's time, and the variables' units, standard names, kinds and roles.
@@ -17,11 +22,12 @@ import re
 
 import numpy as np
 
-from openalea.encoding3d import SPECIFICATION_VERSION
+from openalea.encoding3d import SPECIFICATION_VERSION, archive
 from openalea.encoding3d.glb import BufferBuilder, pack, unpack, view_bytes
-from openalea.encoding3d.model import (DataStructure, EDGE_TYPES, ENUM_COLUMNS, EntitySet, Frame, Grid, ID_COLUMNS,
-                           LazyColumns, LazyList, Mapping, Mesh, NO_ID, Relation, Table, Update, Variable,
-                           _as_column)
+from openalea.encoding3d.model import (DataStructure, DerivedField, EDGE_TYPES, ENUM_COLUMNS, EntitySet, Frame, Grid,
+                           ID_COLUMNS, InstanceSet, LazyColumns, LazyList, Mapping, Mesh, NO_ID, Operator, Ragged,
+                           Relation, Table, Template, Update, Variable, _as_column)
+from openalea.encoding3d.parts import PARTS_FOLDER, Parts, content_key, part_file
 
 EXTENSION = "FSPM_scene"
 METADATA = "EXT_structural_metadata"
@@ -51,9 +57,18 @@ INFINITY_FLOAT = {dtype: {"positive": float(np.finfo(dtype).max),
 
 # ── Writing ──────────────────────────────────────────────────────────────
 
-def to_bytes(frame: Frame) -> bytes:
-    """The GLB file of *frame*."""
+def to_bytes(frame: Frame, embed_parts: bool = False) -> bytes:
+    """The GLB file of *frame*; *embed_parts*: the parts its instance sets use in it (one self-contained file), else
+    referred to by key (parts/<key>.glb, written by write)."""
+    return _encode(frame, embed_parts=embed_parts)[0]
+
+
+def _encode(frame: Frame, embed_parts: bool = False, part=None) -> tuple:
+    """(the GLB bytes of *frame*, {key: the part, or its key for a part read from a file} of the parts its instance
+    sets use). *part*: the frame is a part's file, its FSPM_scene.part this entry (a function of the buffers for an
+    operator's arrays)."""
     buffers = BufferBuilder()
+    used_parts = {}
     schema = {"id": "fspm_scene", "classes": {}, "enums": {
         EDGE_TYPE_ENUM: {"valueType": "UINT8", "values": [{"name": name, "value": value}
                                                          for value, name in enumerate(EDGE_TYPES)]}}}
@@ -120,6 +135,9 @@ def to_bytes(frame: Frame) -> bytes:
                                               "entitySet": mesh.display_sources.get(name)}
                                              for name in mesh.display]
                 entry["meshes"].append(mesh_entry)
+        if data_structure.instance_sets:
+            entry["instanceSets"] = [_instance_set_entry(instance_set, data_structure, add_table, used_parts)
+                                     for instance_set in data_structure.instance_sets]
         data_structures.append(entry)
 
     mappings = []
@@ -150,6 +168,11 @@ def to_bytes(frame: Frame) -> bytes:
         scene["writer"] = dict(frame.writer)
     if update is not None:
         scene["update"] = update
+    if part is not None:
+        scene["part"] = part(buffers) if callable(part) else dict(part)
+    if embed_parts and used_parts:
+        scene["parts"] = {key: {"bufferView": buffers.add(_part_data(reference, frame))}
+                          for key, reference in sorted(used_parts.items())}
     scene["dataStructures"] = data_structures
     if mappings:
         scene["mappings"] = mappings
@@ -171,13 +194,133 @@ def to_bytes(frame: Frame) -> bytes:
         binary += b"\0" * (-len(binary) % 8)
         document["buffers"] = [{"byteLength": len(binary)}]
         document["bufferViews"] = buffers.views
-    return pack(document, binary)
+    return pack(document, binary), used_parts
 
 
-def write(path: str, frame: Frame) -> None:
-    """Write *frame* to the GLB file *path*."""
+def write(path: str, frame: Frame, embed_parts: bool = False) -> list:
+    """Write *frame* to the GLB file *path*; the keys of the parts its instance sets use. The parts go to
+    parts/<key>.glb next to it, each written once (a file already there is its content: its name is its hash); with
+    *embed_parts*, into the frame instead (one self-contained file)."""
+    data, used_parts = _encode(frame, embed_parts=embed_parts)
+    if not embed_parts:
+        write_parts(os.path.dirname(os.path.abspath(path)), used_parts, frame)
     with open(path, "wb") as file:
-        file.write(to_bytes(frame))
+        file.write(data)
+    return sorted(used_parts)
+
+
+def write_parts(folder: str, used_parts: dict, frame: Frame = None) -> list:
+    """Write each part of *used_parts* ({key: part, or key}) not yet in *folder*/parts; the keys written. A part
+    given by its key (read from a file) is copied from where *frame* was read."""
+    written = []
+    for key, reference in sorted(used_parts.items()):
+        target = os.path.join(folder, PARTS_FOLDER, f"{key}.glb")
+        if os.path.exists(target):
+            continue
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        temporary = f"{target}.{os.getpid()}.part"
+        with open(temporary, "wb") as file:
+            file.write(_part_data(reference, frame))
+        os.replace(temporary, target)                   # a reader never sees half a part
+        written.append(key)
+    return written
+
+
+def _part_data(reference, frame: Frame = None) -> bytes:
+    if isinstance(reference, str):
+        if frame is None or frame.parts is None:
+            from openalea.encoding3d.parts import MissingPartError
+            raise MissingPartError(reference, ["the frame was not read from a file"])
+        return frame.parts.bytes(reference)
+    return part_bytes(reference)
+
+
+def _key_of(reference) -> str:
+    if isinstance(reference, str):
+        return reference
+    if not isinstance(reference, (Template, Operator)):
+        raise TypeError(f"an instance set's parts are Templates, Operators or their keys, not {type(reference)}")
+    return reference.key
+
+
+def part_bytes(part) -> bytes:
+    """The GLB file of a shared part: a Template (a frame of one data structure, "template", its meshes and entity
+    sets) or an Operator (a frame of no data structure, the operator's arrays in its binary chunk); FSPM_scene.part
+    says which (specification §12.1)."""
+    if isinstance(part, Template):
+        return _encode(Frame(data_structures=[part.data_structure()]), part={"kind": "template"})[0]
+    if not isinstance(part, Operator):
+        raise TypeError(f"a part is a Template or an Operator, not {type(part)}")
+
+    def entry(buffers):
+        described = {"kind": "operator", "format": part.format, "rows": part.shape[0], "columns": part.shape[1]}
+
+        def sparse(triple):
+            return {"indptr": buffers.add(triple[0].astype(np.int64)),
+                    "indices": buffers.add(triple[1].astype(np.int64)),
+                    "values": buffers.add(triple[2].astype(np.float64))}
+        if part.format == "dense":
+            described["values"] = buffers.add(np.ascontiguousarray(part.values, dtype=np.float64))
+        elif part.format == "csr":
+            described.update(sparse((part.indptr, part.indices, part.values)))
+        else:
+            described["system"], described["rightHandSide"] = sparse(part.system), sparse(part.right_hand_side)
+        return described
+    return _encode(Frame(), part=entry)[0]
+
+
+def _instance_set_entry(instance_set: InstanceSet, data_structure: DataStructure, add_table, used_parts: dict) -> dict:
+    """The FSPM_scene entry of an instance set (specification §12.2), its tables added: the instance table (its
+    columns, each vector's <name>__count, each derived field's <name>__operator and <name>__weight) and one table per
+    vector (its values, the instances' one after the other)."""
+    _check_identifier(instance_set.name, "instance set name")
+    where = f"instance set '{instance_set.name}' of '{data_structure.id}'"
+    count = instance_set.count
+    keys = [_key_of(reference) for reference in instance_set.parts]
+    for key, reference in zip(keys, instance_set.parts):
+        used_parts.setdefault(key, reference)
+    if "template" not in instance_set.columns:
+        raise ValueError(f"{where}: no 'template' column (each instance's index in its parts)")
+    columns = dict(instance_set.columns)
+    entry = {"name": instance_set.name, "parts": keys}
+    if instance_set.owners is not None:
+        entry["owners"] = instance_set.owners
+    vectors = []
+    for name, ragged in instance_set.vectors.items():
+        _check_identifier(name, f"vector of {where}")
+        if not isinstance(ragged, Ragged):
+            ragged = Ragged.of(ragged)
+        if len(ragged) != count:
+            raise ValueError(f"{where}: vector '{name}' has {len(ragged)} instances, the set {count}")
+        columns[f"{name}__count"] = ragged.counts
+        vectors.append({"name": name, "propertyTable": add_table(Table(name, columns={"values": ragged.values}),
+                                                                 f"{data_structure.id}__{instance_set.name}__{name}")})
+    derived_fields = []
+    for derived in instance_set.derived:
+        _check_identifier(derived.name, f"derived field of {where}")
+        if derived.operators.shape[0] != count:
+            raise ValueError(f"{where}: derived field '{derived.name}' has {derived.operators.shape[0]} rows of "
+                             f"operators, the set {count} instances")
+        if derived.input not in instance_set.vectors:
+            raise ValueError(f"{where}: derived field '{derived.name}' applies to vector '{derived.input}', which "
+                             f"the set does not have ({sorted(instance_set.vectors)})")
+        single = derived.terms == 1
+        columns[f"{derived.name}__operator"] = derived.operators[:, 0] if single else derived.operators
+        columns[f"{derived.name}__weight"] = derived.weights[:, 0] if single else derived.weights
+        item = {"name": derived.name, "entitySet": derived.entity_set, "input": derived.input,
+                "terms": derived.terms, "variable": _declaration_json(derived.variable)}
+        if any(offset is not None for offset in derived.offsets):
+            item["offsets"] = list(derived.offsets)
+        if derived.variable.description:
+            item["description"] = derived.variable.description
+        derived_fields.append(item)
+    entry["propertyTable"] = add_table(Table(instance_set.name, columns=columns, variables=instance_set.variables),
+                                       f"{data_structure.id}__{instance_set.name}")
+    if vectors:
+        entry["vectors"] = vectors
+    if derived_fields:
+        entry["derivedFields"] = derived_fields
+    return entry
 
 
 def _check_identifier(name: str, what: str) -> None:
@@ -381,13 +524,13 @@ def _encode_mesh(mesh: Mesh, data_structure: DataStructure, entry: dict, buffers
 
 # ── Reading ──────────────────────────────────────────────────────────────
 
-def from_bytes(data: bytes) -> Frame:
-    """The Frame of a GLB file's bytes."""
+def from_bytes(data: bytes, parts_folder: str = None) -> Frame:
+    """The Frame of a GLB file's bytes; *parts_folder*: the folder its parts/ are in (the file's folder)."""
     document, binary = unpack(data)
-    return _frame_of(document, binary, lazy=False)
+    return _frame_of(document, binary, lazy=False, parts_folder=parts_folder)
 
 
-def _frame_of(document: dict, binary, lazy: bool) -> Frame:
+def _frame_of(document: dict, binary, lazy: bool, parts_folder: str = None) -> Frame:
     extensions = document.get("extensions", {})
     if EXTENSION not in extensions:
         raise ValueError(f"not an encoding3d file: no {EXTENSION} extension")
@@ -427,6 +570,8 @@ def _frame_of(document: dict, binary, lazy: bool) -> Frame:
                    _decode_mesh(document, binary, mesh_entry, tables, data_structure))
                   for mesh_entry in entry.get("meshes", [])]
         data_structure.meshes = LazyList(meshes) if lazy else [mesh() for mesh in meshes]
+        data_structure.instance_sets = [_decode_instance_set(document, binary, metadata, variables, item)
+                                        for item in entry.get("instanceSets", [])]
         frame.data_structures.append(data_structure)
     for entry in scene.get("mappings", []):
         frame.mappings.append(table(entry["propertyTable"], Mapping,
@@ -438,6 +583,8 @@ def _frame_of(document: dict, binary, lazy: bool) -> Frame:
         frame.update = Update(participant=update["participant"], removed={
             (item["dataStructure"], item["entitySet"]): np.asarray(table(item["propertyTable"], Table).columns["id"])
             for item in update.get("removed", [])})
+    frame.parts = Parts({key: view_bytes(document, binary, item["bufferView"])
+                         for key, item in scene.get("parts", {}).items()}, parts_folder)
     unknown_extensions = {name: value for name, value in extensions.items()
                           if name not in (METADATA, EXTENSION, FEATURES)}
     if unknown_extensions:
@@ -448,19 +595,96 @@ def _frame_of(document: dict, binary, lazy: bool) -> Frame:
 
 
 def read(path: str, lazy: bool = False) -> Frame:
-    """The Frame of the GLB file *path*. *lazy*: the file is mapped in memory and only its JSON parsed; each column
-    (LazyColumns) and each mesh (LazyList) is decoded when first read, so that a reader using a few columns of a large
-    frame decodes only those. A lazy frame holds the file open until frame.close() (or the end of a with block)."""
+    """The Frame of the GLB file *path* (in a folder, or in a .fspm.zip archive: "run.fspm.zip/frame_000003.glb").
+    *lazy*: the file is mapped in memory and only its JSON parsed; each column (LazyColumns) and each mesh (LazyList)
+    is decoded when first read, so that a reader using a few columns of a large frame decodes only those. A lazy
+    frame holds the file open until frame.close() (or the end of a with block). Its parts are found by key
+    (frame.part): embedded, or in parts/ next to it."""
+    folder = os.path.dirname(os.path.abspath(path))
+    if archive.split(path) is not None:                 # in an archive: its member's bytes (decoded lazily if asked)
+        data = archive.read_bytes(path)
+        document, binary = unpack(memoryview(data) if lazy else data)
+        frame = _frame_of(document, binary, lazy=lazy, parts_folder=folder)
+        frame.path = path
+        return frame
     if not lazy:
         with open(path, "rb") as file:
-            return from_bytes(file.read())
+            frame = from_bytes(file.read(), parts_folder=folder)
+        frame.path = path
+        return frame
     import mmap
     with open(path, "rb") as file:
         mapped = mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ)
     document, binary = unpack(memoryview(mapped))
-    frame = _frame_of(document, binary, lazy=True)
+    frame = _frame_of(document, binary, lazy=True, parts_folder=folder)
     frame._source = (mapped, binary)
+    frame.path = path
     return frame
+
+
+def read_part(data: bytes, key: str = None):
+    """The Template or Operator of a part's GLB bytes (specification §12.1); *key*, when given, checked against the
+    bytes' hash."""
+    actual = content_key(bytes(data))
+    if key is not None and key != actual:
+        raise ValueError(f"part {key}: its bytes hash to {actual} (the file is not the part its name says)")
+    document, binary = unpack(data)
+    scene = document.get("extensions", {}).get(EXTENSION, {})
+    described = scene.get("part")
+    if described is None:
+        raise ValueError(f"part {key or actual}: not a part (no {EXTENSION}.part)")
+    if described.get("kind") == "template":
+        frame = _frame_of(document, binary, lazy=False)
+        if len(frame.data_structures) != 1:
+            raise ValueError(f"part {key or actual}: a template holds one data structure")
+        held = frame.data_structures[0]
+        part = Template(entity_sets=held.entity_sets, meshes=held.meshes, relations=held.relations, kind=held.kind,
+                        labels=held.labels, extras=held.extras)
+    elif described.get("kind") == "operator":
+        def array(index, dtype):
+            return np.frombuffer(view_bytes(document, binary, index), dtype=np.dtype(dtype).newbyteorder("<")) \
+                .astype(dtype)
+
+        def sparse(item):
+            return array(item["indptr"], np.int64), array(item["indices"], np.int64), array(item["values"], np.float64)
+        shape = (described["rows"], described["columns"])
+        if described["format"] == "dense":
+            part = Operator("dense", shape, values=array(described["values"], np.float64))
+        elif described["format"] == "csr":
+            indptr, indices, values = sparse(described)
+            part = Operator("csr", shape, values=values, indptr=indptr, indices=indices)
+        else:
+            part = Operator("solve", shape, system=sparse(described["system"]),
+                            right_hand_side=sparse(described["rightHandSide"]))
+    else:
+        raise ValueError(f"part {key or actual}: kind '{described.get('kind')}' is not template or operator")
+    part._key = actual
+    return part
+
+
+def _decode_instance_set(document: dict, binary, metadata: dict, variables: dict, item: dict) -> InstanceSet:
+    """An instance set (specification §12.2): its own columns, its vectors (Ragged) and derived fields; its parts by
+    key (Frame.part finds them)."""
+    def table(index):
+        description = metadata["propertyTables"][index]
+        return _decode_table(document, binary, description, metadata["schema"], variables)
+
+    columns, declarations = table(item["propertyTable"])
+    vectors = {}
+    for vector in item.get("vectors", []):
+        values = table(vector["propertyTable"])[0]["values"]
+        vectors[vector["name"]] = Ragged(values, columns.pop(f"{vector['name']}__count"))
+    derived = []
+    for field_entry in item.get("derivedFields", []):
+        name = field_entry["name"]
+        variable = _variable_of(field_entry.get("variable", {}), field_entry.get("description"))
+        derived.append(DerivedField(name=name, entity_set=field_entry["entitySet"], input=field_entry["input"],
+                                    operators=columns.pop(f"{name}__operator"),
+                                    weights=columns.pop(f"{name}__weight"),
+                                    offsets=tuple(field_entry.get("offsets", ())), variable=variable))
+    return InstanceSet(name=item["name"], columns=columns,
+                       variables={name: value for name, value in declarations.items() if name in columns},
+                       owners=item.get("owners"), parts=list(item.get("parts", [])), vectors=vectors, derived=derived)
 
 
 def _decode_table(document: dict, binary: bytes, description: dict, schema: dict, variables: dict,
@@ -493,14 +717,16 @@ def _decode_declarations(schema: dict, class_id: str, description: dict, variabl
         prop = properties[name]
         declared = variables.get(class_id, {}).get(name)
         if declared is not None or "description" in prop:
-            declared = declared or {}
-            declarations[name] = Variable(
-                unit=declared.get("unit", "1"), standard_name=declared.get("standardName"),
-                kind=declared.get("kind"), role=declared.get("role", "state"), description=prop.get("description"),
-                minimum=declared.get("minimum"), maximum=declared.get("maximum"),
-                references=tuple(declared.get("references", ())), doi=tuple(declared.get("doi", ())),
-                format=declared.get("format"))
+            declarations[name] = _variable_of(declared or {}, prop.get("description"))
     return declarations
+
+
+def _variable_of(declared: dict, description: str = None) -> Variable:
+    return Variable(unit=declared.get("unit", "1"), standard_name=declared.get("standardName"),
+                    kind=declared.get("kind"), role=declared.get("role", "state"), description=description,
+                    minimum=declared.get("minimum"), maximum=declared.get("maximum"),
+                    references=tuple(declared.get("references", ())), doi=tuple(declared.get("doi", ())),
+                    format=declared.get("format"))
 
 
 def _decode_column(document: dict, binary, schema: dict, class_id: str, name: str, stored: dict, count: int):
@@ -593,34 +819,58 @@ def _decode_mesh(document: dict, binary: bytes, mesh_entry: dict, tables: dict,
 
 # ── Sequences ────────────────────────────────────────────────────────────
 
-def write_sequence(directory: str, frames, name: str = "frame") -> str:
-    """Write *frames* to *directory*, one GLB each (name_000000.glb, ...), and their index; the index's path."""
+def write_sequence(directory: str, frames, name: str = "frame", embed_parts: bool = False) -> str:
+    """Write *frames* to *directory*, one GLB each (name_000000.glb, ...), the parts they use once each (parts/), and
+    their index; the index's path."""
     os.makedirs(directory, exist_ok=True)
-    entries, time_units = [], set()
+    entries, time_units, keys = [], set(), set()
     for number, frame in enumerate(frames):
         file_name = f"{name}_{number:06d}.glb"
-        write(os.path.join(directory, file_name), frame)
+        if not embed_parts:
+            keys |= set(write(os.path.join(directory, file_name), frame))
+        else:
+            write(os.path.join(directory, file_name), frame, embed_parts=True)
         entries.append({"time": float(frame.time), "step": int(frame.step), "file": file_name})
         time_units.add(frame.time_unit)
     if len(time_units) > 1:
         raise ValueError(f"the frames' times are in several units: {sorted(time_units)}")
     path = os.path.join(directory, INDEX_FILE)
-    write_index(path, entries, time_unit=time_units.pop() if time_units else "d")
+    write_index(path, entries, time_unit=time_units.pop() if time_units else "d", parts=sorted(keys))
     return path
 
 
-def write_index(path: str, entries: list, time_unit: str = "d") -> None:
-    """Write the index of a sequence: *entries*, one {time, step, file} per frame, in time order."""
-    with open(path, "w", encoding="utf-8", newline="\n") as file:
-        json.dump({"fspmIndex": SPECIFICATION_VERSION, "timeUnit": time_unit, "frames": list(entries)}, file,
-                  indent=1)
+def write_index(path: str, entries: list, time_unit: str = "d", parts=()) -> None:
+    """Write the index of a sequence: *entries*, one {time, step, file} per frame, in time order; *parts*: the keys
+    of the parts its frames use (listed as parts/<key>.glb)."""
+    index = {"fspmIndex": SPECIFICATION_VERSION, "timeUnit": time_unit, "frames": list(entries)}
+    if parts:
+        index["parts"] = {key: part_file(key) for key in sorted(parts)}
+    _write_json(path, index)
+
+
+def _write_json(path: str, value: dict) -> None:
+    temporary = f"{path}.{os.getpid()}.part"
+    with open(temporary, "w", encoding="utf-8", newline="\n") as file:
+        json.dump(value, file, indent=1)
         file.write("\n")
+    os.replace(temporary, path)                         # a reader never sees half an index
+
+
+def rewrite_index_parts(path: str, parts) -> None:
+    """The index *path* listing *parts* (keys) as its parts, its frames unchanged."""
+    with open(path, encoding="utf-8") as file:
+        index = json.load(file)
+    index.pop("parts", None)
+    if parts:
+        index["parts"] = {key: part_file(key) for key in sorted(parts)}
+    _write_json(path, index)
 
 
 def read_index(path: str) -> dict:
-    """The index of a sequence (its frames' times, steps and files, the files' paths made absolute)."""
-    with open(path, encoding="utf-8") as file:
-        index = json.load(file)
+    """The index of a sequence (its frames' times, steps and files, the files' paths made absolute): *path* its
+    scene.fspm.json, its folder, or a .fspm.zip archive."""
+    path = archive.index_of(path)
+    index = json.loads(archive.read_bytes(path).decode("utf-8"))
     directory = os.path.dirname(os.path.abspath(path))
     for entry in index.get("frames", []):
         entry["path"] = os.path.join(directory, entry["file"])
@@ -628,6 +878,14 @@ def read_index(path: str) -> dict:
 
 
 def read_sequence(path: str):
-    """The frames of the sequence whose index is *path*, one after the other."""
+    """The frames of the sequence whose index is *path* (or its folder, or its archive), one after the other."""
     for entry in read_index(path)["frames"]:
         yield read(entry["path"])
+
+
+def frame_part_keys(path: str) -> list:
+    """The keys of the parts the frame *path* refers to (its instance sets'), from its JSON alone."""
+    from openalea.encoding3d.glb import read_document
+    scene = read_document(path).get("extensions", {}).get(EXTENSION, {})
+    return sorted({key for entry in scene.get("dataStructures", []) for instance_set in entry.get("instanceSets", [])
+                   for key in instance_set.get("parts", [])})

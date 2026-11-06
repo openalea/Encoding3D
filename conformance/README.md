@@ -14,6 +14,24 @@ numbers, the same bytes on every run; the CI checks that the committed files are
 | `parameter_set` | a `table` data structure: parameters per plant and in the scalars, references, an infinite value |
 | `missing_values` | integer, text, boolean and float columns with missing values; a date column (`format`); `unknown` edge types and a `sibling_order` column; a `mixed` entity set; a labels map; a parent in another axis; bearer relations between two pairs of sets |
 | `growing_sequence/` | three frames of a growing root system, ids kept, and their index |
+| `instances/` | 0.4: a sequence whose root segments are drawn by sections, instances of shared templates, with a derived field (below) |
+
+## Instances (0.4)
+
+`instances/` (specification §12) is a sequence of two frames (`frame_00000n.glb`, `scene.fspm.json`, its parts in
+`parts/<key>.glb`). Its root segments are drawn by sections: instances of two templates (a square and a hexagon of
+cells), placed by their transforms, owned by the segments, with an instance variable (`age`), two vectors (`ends`,
+`sources`) and the derived field `water_potential` on the templates' cells: one dense term, two weighted terms (a
+dense and a sparse operator), or one term solved (`solve`) with an offset. The expected values:
+
+- `frame_00000n.expected.json`: the frame as read, the instance sets dumped by `frame_to_dict` (`instance_sets`: the
+  table, the parts' keys, the vectors' values and counts, the derived fields' operators, weights and offsets);
+- `expected/<key>.json`: each part as read (`openalea.encoding3d.dump.part_to_dict`);
+- `frame_00000n.evaluated.json`: each instance's derived field, compared within a relative 1e-12;
+- `embedded.glb`: the second frame with its parts embedded, read as `frame_000001.expected.json`.
+
+Codecs reading 0.3 only skip this folder (their conformance runs and `encoding3d compare-all` leave it out), as they
+skip `coupling/`.
 
 ## Coupling sessions
 

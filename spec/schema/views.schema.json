@@ -1,8 +1,8 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
- "$id": "https://github.com/openalea/encoding3d/schema/0.3/views.schema.json",
+ "$id": "https://github.com/openalea/encoding3d/schema/0.4/views.schema.json",
  "title": "encoding3d frame views",
- "description": "views.json, an optional companion of a sequence (next to its scene.fspm.json) or of a frame: named configurations of layers, each layer a part of a data structure (a mesh, segments or a grid), the entities it selects and how it is drawn (encoding3d 0.3, §8.1).",
+ "description": "views.json, an optional companion of a sequence (next to its scene.fspm.json) or of a frame: named configurations of layers, each layer a part of a data structure (a mesh, segments, a grid or an instance set), the entities it selects and how it is drawn (encoding3d 0.4, §8.1).",
  "type": "object",
  "required": ["encoding3d_views", "configurations"],
  "properties": {
@@ -51,13 +51,15 @@
   "source": {
    "type": "object", "required": ["data_structure", "kind"],
    "properties": {"data_structure": {"type": "string", "minLength": 1},
-                  "kind": {"enum": ["mesh", "segments", "grid"]},
+                  "kind": {"enum": ["mesh", "segments", "grid", "instances"]},
                   "mesh": {"type": "string", "minLength": 1},
-                  "entity_set": {"type": "string", "minLength": 1}},
+                  "entity_set": {"type": "string", "minLength": 1},
+                  "instance_set": {"type": "string", "minLength": 1}},
    "additionalProperties": false,
    "allOf": [
     {"if": {"properties": {"kind": {"const": "mesh"}}}, "then": {"required": ["mesh"]}},
-    {"if": {"properties": {"kind": {"const": "segments"}}}, "then": {"required": ["entity_set"]}}]},
+    {"if": {"properties": {"kind": {"const": "segments"}}}, "then": {"required": ["entity_set"]}},
+    {"if": {"properties": {"kind": {"const": "instances"}}}, "then": {"required": ["instance_set"]}}]},
   "condition": {
    "description": "A value, a list of values (labels and other text by name), or a comparison such as \">=0\" or \"!=2\".",
    "oneOf": [{"type": ["number", "boolean"]},

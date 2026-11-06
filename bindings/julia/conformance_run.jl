@@ -11,6 +11,7 @@ function main(conformance::AbstractString, out::AbstractString)
         for name in sort(files)
             endswith(name, ".glb") || continue
             startswith(relpath(folder, conformance), "coupling") && continue       # the coupling sessions
+            startswith(relpath(folder, conformance), "instances") && continue      # 0.4: the Python codec's
             relative = relpath(joinpath(folder, name), conformance)
             frame = read_frame(joinpath(conformance, relative))
             dump = joinpath(out, "dumps", relative[1:end-length(".glb")] * ".json")

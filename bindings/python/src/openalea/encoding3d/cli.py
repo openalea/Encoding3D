@@ -1,8 +1,13 @@
 """
 The encoding3d command line::
 
-    encoding3d validate FILE...                    check .glb frames or sequences (scene.fspm.json); exit 1 on errors
+    encoding3d validate FILE...                    check .glb frames or sequences (scene.fspm.json, a folder, a .fspm.zip),
+                                                and every part they refer to; exit 1 on errors
     encoding3d info FILE                           what a frame holds
+    encoding3d pack FOLDER OUT.fspm.zip [--compression deflate|lzma|stored] [--level N]
+                                                a sequence as one ZIP64 archive, each file compressed alone
+    encoding3d unpack ARCHIVE.fspm.zip FOLDER     the archive back as a folder
+    encoding3d prune INDEX                         remove the parts no frame of the sequence uses
     encoding3d display FILE NAME... [-o OUT]       add display copies of variables (in place, or to OUT)
     encoding3d display FILE --remove [-o OUT]      remove them
     encoding3d compare ACTUAL EXPECTED             a codec's JSON dump (or a .glb) against expected values; exit 1 if they
@@ -20,6 +25,7 @@ The encoding3d command line::
                                                 read, or the session's record, differs from the expected values
 """
 import argparse
+import os
 import sys
 
 from openalea.encoding3d import read, write
@@ -52,6 +58,12 @@ def _info(arguments) -> int:
         for mesh in data_structure.meshes:
             print(f"    mesh {mesh.name}: {len(mesh.positions)} vertices, entity sets {', '.join(mesh.feature_rows)}"
                   f"{', display ' + ', '.join(mesh.display) if mesh.display else ''}")
+        for instance_set in data_structure.instance_sets:
+            owners = f" of {instance_set.owners}" if instance_set.owners else ""
+            print(f"    instances {instance_set.name}{owners}: {instance_set.count} instances, {len(instance_set.parts)} "
+                  f"parts, variables {', '.join(n for n in instance_set.columns if n not in instance_set.reserved) or '-'}"
+                  f"{', vectors ' + ', '.join(instance_set.vectors) if instance_set.vectors else ''}"
+                  f"{', derived ' + ', '.join(d.name for d in instance_set.derived) if instance_set.derived else ''}")
     for mapping in frame.mappings:
         print(f"  mapping {mapping.name}: {mapping.source[0]}/{mapping.source[1]} -> "
               f"{mapping.target[0]}/{mapping.target[1]}, {mapping.count} pairs")
@@ -68,6 +80,27 @@ def _display(arguments) -> int:
             return 2
         add_display(frame, arguments.names, entity_set=arguments.entity_set)
     write(arguments.output or arguments.file, frame)
+    return 0
+
+
+def _pack(arguments) -> int:
+    from openalea.encoding3d.archive import pack
+    path = pack(arguments.folder, arguments.output, compression=arguments.compression, level=arguments.level)
+    print(f"{path}: {os.path.getsize(path)} bytes ({arguments.compression})")
+    return 0
+
+
+def _unpack(arguments) -> int:
+    from openalea.encoding3d.archive import unpack
+    print(unpack(arguments.archive, arguments.folder))
+    return 0
+
+
+def _prune(arguments) -> int:
+    from openalea.encoding3d.archive import index_of
+    from openalea.encoding3d.parts import prune_parts
+    removed = prune_parts(index_of(arguments.index))
+    print(f"{len(removed)} part(s) removed" + "".join(f"\n  {key}" for key in removed))
     return 0
 
 
@@ -152,12 +185,27 @@ def _couple_conformance(arguments) -> int:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="encoding3d", description="encoding3d files: validate, inspect, display; couple platforms")
     commands = parser.add_subparsers(dest="command", required=True)
-    validate = commands.add_parser("validate", help="check frames (.glb) or sequences (scene.fspm.json)")
+    validate = commands.add_parser("validate", help="check frames (.glb) or sequences (scene.fspm.json, a folder, "
+                                                       "a .fspm.zip) and their parts")
     validate.add_argument("files", nargs="+")
     validate.set_defaults(run=_validate)
     info = commands.add_parser("info", help="what a frame holds")
     info.add_argument("file")
     info.set_defaults(run=_info)
+    packing = commands.add_parser("pack", help="a sequence as one .fspm.zip archive (ZIP64, each file compressed "
+                                               "alone)")
+    packing.add_argument("folder", help="the sequence's folder (or its scene.fspm.json)")
+    packing.add_argument("output", help="the archive, x.fspm.zip")
+    packing.add_argument("--compression", choices=["deflate", "lzma", "stored"], default="deflate")
+    packing.add_argument("--level", type=int, default=None, help="deflate's level, 0-9")
+    packing.set_defaults(run=_pack)
+    unpacking = commands.add_parser("unpack", help="a .fspm.zip archive back as a folder")
+    unpacking.add_argument("archive")
+    unpacking.add_argument("folder")
+    unpacking.set_defaults(run=_unpack)
+    prune = commands.add_parser("prune", help="remove the parts no frame of a sequence uses")
+    prune.add_argument("index", help="the sequence's scene.fspm.json (or its folder)")
+    prune.set_defaults(run=_prune)
     display = commands.add_parser("display", help="add or remove display copies of variables")
     display.add_argument("file")
     display.add_argument("names", nargs="*")

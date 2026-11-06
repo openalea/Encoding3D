@@ -26,7 +26,9 @@ public final class ConformanceRun {
         List<Path> files;
         try (Stream<Path> paths = Files.walk(conformance)) {
             files = paths.filter(path -> path.toString().endsWith(".glb"))
-                    .filter(path -> !conformance.relativize(path).startsWith("coupling")).sorted().toList();   // sessions
+                    .filter(path -> !conformance.relativize(path).startsWith("coupling"))      // sessions
+                    .filter(path -> !conformance.relativize(path).startsWith("instances"))     // 0.4: the Python codec's
+                    .sorted().toList();
         }
         for (Path file : files) {
             Path relative = conformance.relativize(file);
