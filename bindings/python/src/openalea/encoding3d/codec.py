@@ -64,8 +64,8 @@ def to_bytes(frame: Frame, embed_parts: bool = False) -> bytes:
 
 
 def _encode(frame: Frame, embed_parts: bool = False, part=None) -> tuple:
-    """(the GLB bytes of *frame*, {key: the part, or its key for a part read from a file} of the parts its instance
-    sets use). *part*: the frame is a part's file, its FSPM_scene.part this entry (a function of the buffers for an
+    """(the GLB bytes of *frame*, {key: the part, its bytes when encoded by this call, or its key for a part read from
+    a file} of the parts its instance sets use). *part*: the frame is a part's file, its FSPM_scene.part this entry (a function of the buffers for an
     operator's arrays)."""
     buffers = BufferBuilder()
     used_parts = {}
@@ -227,6 +227,8 @@ def write_parts(folder: str, used_parts: dict, frame: Frame = None) -> list:
 
 
 def _part_data(reference, frame: Frame = None) -> bytes:
+    if isinstance(reference, (bytes, bytearray, memoryview)):
+        return bytes(reference)
     if isinstance(reference, str):
         if frame is None or frame.parts is None:
             from openalea.encoding3d.parts import MissingPartError
@@ -276,9 +278,15 @@ def _instance_set_entry(instance_set: InstanceSet, data_structure: DataStructure
     _check_identifier(instance_set.name, "instance set name")
     where = f"instance set '{instance_set.name}' of '{data_structure.id}'"
     count = instance_set.count
-    keys = [_key_of(reference) for reference in instance_set.parts]
-    for key, reference in zip(keys, instance_set.parts):
+    keys = []
+    for reference in instance_set.parts:
+        if isinstance(reference, (Template, Operator)) and getattr(reference, "_key", None) is None:
+            data = part_bytes(reference)                 # its key taken now: its bytes kept for this write
+            reference._key = content_key(data)
+            used_parts.setdefault(reference._key, data)
+        key = _key_of(reference)
         used_parts.setdefault(key, reference)
+        keys.append(key)
     if "template" not in instance_set.columns:
         raise ValueError(f"{where}: no 'template' column (each instance's index in its parts)")
     columns = dict(instance_set.columns)
