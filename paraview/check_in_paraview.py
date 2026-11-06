@@ -17,6 +17,15 @@ look at (colours, opacities, tubes, hidden layers, isolation). Run it on a copy 
 back as it was, but the check writes it meanwhile.
 
     pvbatch paraview/check_in_paraview.py --design copy/frames/scene.fspm.json screenshots
+
+An instances check, by hand: the conformance sequence instances/ (specification §12: root segments drawn by sections,
+instances of shared templates, with a derived field) copied with a views.json, opened as a folder and as a .fspm.zip
+archive; the sections drawn as placed templates with their own fields, a section picked and selected at the scale of
+its segment (the filter "encoding3d Select at scale"), its derived field rebuilt and compared with
+openalea.encoding3d.evaluate, isolated, shown in a panel, put back; "Evaluate Derived Fields" on the reader; a
+screenshot of each step.
+
+    pvbatch paraview/check_in_paraview.py --instances screenshots
 """
 import os
 import sys
@@ -25,8 +34,10 @@ from paraview import servermanager, simple
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DESIGN = len(sys.argv) > 1 and sys.argv[1] == "--design"
-conformance = sys.argv[1] if not DESIGN else None
-pictures = sys.argv[2 + DESIGN] if len(sys.argv) > 2 + DESIGN else None
+INSTANCES = len(sys.argv) > 1 and sys.argv[1] == "--instances"
+conformance = sys.argv[1] if not (DESIGN or INSTANCES) else None
+pictures = (sys.argv[2] if len(sys.argv) > 2 else None) if INSTANCES else \
+    (sys.argv[2 + DESIGN] if len(sys.argv) > 2 + DESIGN else None)
 # (not "output": a Programmable Filter removes that name from the main module once it has run)
 
 simple.LoadPlugin(os.path.join(HERE, "plugin_encoding3d.py"), ns=globals())
@@ -239,6 +250,8 @@ def check_conformance() -> None:
 # ── The design check, by hand ────────────────────────────────────────────────
 
 def screenshot(view, name: str) -> None:
+    if pictures is None:
+        return
     os.makedirs(pictures, exist_ok=True)
     path = os.path.join(pictures, f"{name}.png")
     simple.SaveScreenshot(path, view, ImageResolution=[900, 700])
@@ -246,6 +259,8 @@ def screenshot(view, name: str) -> None:
 
 
 def layout_screenshot(layout, name: str) -> None:
+    if pictures is None:
+        return
     os.makedirs(pictures, exist_ok=True)
     path = os.path.join(pictures, f"{name}.png")
     simple.SaveScreenshot(path, layout, ImageResolution=[1600, 700])
@@ -432,8 +447,95 @@ def check_design(index_path: str) -> None:
     print("encoding3d design check: done, look at the screenshots in", pictures)
 
 
+def check_instances() -> None:
+    """Instances in ParaView (specification §12): see this file's docstring."""
+    import json
+    import shutil
+    import tempfile
+    import numpy as np
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+    from openalea.encoding3d import evaluate, pack, read
+    source = os.path.join(HERE, os.pardir, "conformance", "instances")
+    folder = tempfile.mkdtemp(prefix="encoding3d_instances_")
+    try:
+        frames = os.path.join(folder, "frames")
+        shutil.copytree(source, frames, ignore=shutil.ignore_patterns("expected", "*.json", "embedded.glb"))
+        shutil.copy(os.path.join(source, "scene.fspm.json"), frames)
+        layers = [{"name": "roots", "source": {"data_structure": "root_system", "kind": "segments",
+                                               "entity_set": "SubOrgan"},
+                   "color_by": {"entity_set": "SubOrgan", "variable": "water_potential"}, "opacity": 0.4,
+                   "tube": {"radius": "radius", "scale": 1}},
+                  {"name": "sections", "source": {"data_structure": "root_system", "kind": "instances",
+                                                  "instance_set": "sections"},
+                   "color_by": {"entity_set": "Cell", "variable": "area"}}]
+        with open(os.path.join(frames, "views.json"), "w", encoding="utf-8") as file:
+            json.dump({"encoding3d_views": 1, "configurations": {"default": {"layers": layers}}}, file)
+        archive = pack(frames, os.path.join(folder, "run.fspm.zip"))
+        view = simple.GetActiveViewOrCreate("RenderView")
+        view.ViewSize = [900, 700]
+        for name, path in (("folder", os.path.join(frames, "scene.fspm.json")), ("archive", archive)):
+            reader = encoding3dreader(FileName=path)  # noqa: F821
+            reader.UpdatePipeline()
+            assert block_names(reader) == ["roots", "sections"], block_names(reader)
+            assert list(reader.TimestepValues) == [0., 1.], list(reader.TimestepValues)
+            data = servermanager.Fetch(reader)
+            sections = data.GetBlock(1)
+            found = {sections.GetCellData().GetArrayName(n) for n in range(sections.GetCellData().GetNumberOfArrays())}
+            assert {"Cell.area", "sections.age", "SubOrgan.id", "Axis.id", "encoding3d_instance"} <= found, found
+            assert "Cell.water_potential" not in found                # on demand
+            display = simple.Show(reader, view)
+            side_view(view)
+            simple.Render(view)
+            screenshot(view, f"instances_{name}_1_opened")
+            pick(reader, "sections", "encoding3d_instance", 2.)
+            selection = encoding3dSelectatscale(Input=reader, Scale="SubOrgan")  # noqa: F821
+            selection.UpdatePipeline()
+            grown = servermanager.Fetch(selection)
+            block = grown.GetBlock(block_names(selection).index("sections"))
+            assert set(vtk_to_numpy(block.GetCellData().GetArray("encoding3d_instance")).tolist()) == {2}
+            frame_file = block.GetFieldData().GetAbstractArray("encoding3d_frame").GetValue(0)
+            expected = evaluate(read(frame_file), "water_potential", instances=[2])[0]
+            rebuilt = vtk_to_numpy(block.GetCellData().GetArray("Cell.water_potential"))
+            np.testing.assert_allclose(rebuilt, expected, rtol=1e-12)
+            print(name, "derived field rebuilt for the selected section:", rebuilt.tolist())
+            assert grown.GetBlock(block_names(selection).index("roots")).GetNumberOfCells() == 1
+            simple.Show(selection, view)
+            selection.InvokeCommand("Isolate")
+            assert not visible(reader, view) and visible(selection, view)
+            selection_display = simple.GetDisplayProperties(selection, view)
+            simple.ColorBy(selection_display, ("CELLS", "Cell.water_potential"))
+            view.ResetCamera()
+            screenshot(view, f"instances_{name}_2_isolated_section")
+            selection.InvokeCommand("PutBack")
+            assert visible(reader, view)
+            selection.InvokeCommand("ShowInPanel")
+            layout = simple.GetLayout(view)
+            layout.SetSize(1600, 700)
+            layout_screenshot(layout, f"instances_{name}_3_panel")
+            selection.InvokeCommand("PutBack")
+            assert len(simple.GetViews()) == 1, simple.GetViews()
+            simple.SetActiveView(view)
+            simple.Delete(selection)
+            reader.EvaluateDerivedFields = 1                          # every instance's derived fields
+            reader.UpdatePipeline()
+            sections = servermanager.Fetch(reader).GetBlock(1)
+            assert sections.GetCellData().GetArray("Cell.water_potential") is not None
+            simple.Hide(reader, view)
+            shown = simple.Show(reader, view)
+            simple.ColorBy(shown, ("CELLS", "Cell.water_potential"))
+            shown.RescaleTransferFunctionToDataRange(True)
+            side_view(view)
+            screenshot(view, f"instances_{name}_4_every_derived_field")
+            simple.Delete(reader)
+        print("encoding3d instances check: done" + (f", look at the screenshots in {pictures}" if pictures else ""))
+    finally:
+        shutil.rmtree(folder)
+
+
 if DESIGN:
     check_design(sys.argv[2])
+elif INSTANCES:
+    check_instances()
 else:
     check_conformance()
 print("encoding3d reader: ok")

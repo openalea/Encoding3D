@@ -225,9 +225,17 @@ def _reader_views(reader) -> tuple:
     return path, name, layers
 
 
+def _modified(path: str) -> float:
+    """When the views file *path* last changed (one inside a .fspm.zip archive: the archive's)."""
+    _views()
+    from openalea.encoding3d import archive
+    inside = archive.split(path)
+    return os.path.getmtime(inside[0] if inside is not None else path)
+
+
 def _signature(reader) -> str:
     path, name, _ = _reader_views(reader)
-    return json.dumps([path, name, os.path.getmtime(path) if path else None])
+    return json.dumps([path, name, _modified(path) if path else None])
 
 
 def _cell_arrays(source, port: int = 0) -> set:

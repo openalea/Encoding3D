@@ -281,3 +281,87 @@ def test_select_at_scale_grows_picked_cells_in_every_layer():
     filter_algorithm.Update()
     assert reader.frame_upstream(filter_algorithm) is data
     assert reader.frame_upstream(producer) is None
+
+
+# ── Instances (specification §12) ────────────────────────────────────────
+
+INSTANCES = os.path.join(CONFORMANCE, "instances")
+
+
+def instance_block(output, name="instances sections"):
+    inner = output.GetBlock(0)
+    names = [inner.GetMetaData(number).Get(inner.NAME()) for number in range(inner.GetNumberOfBlocks())]
+    return inner.GetBlock(names.index(name))
+
+
+def test_instances_are_placed_templates_with_their_own_fields():
+    from openalea.encoding3d import evaluate, read
+    frame = read(os.path.join(INSTANCES, "frame_000001.glb"))
+    block = instance_block(reader.frame_to_vtk(frame))
+    assert block.GetNumberOfCells() == 4 + 4 + 6 + 6
+    instance = cell_array(block, reader.INSTANCE_ROW)
+    np.testing.assert_array_equal(instance, np.repeat([0, 1, 2, 3], [4, 4, 6, 6]))
+    np.testing.assert_array_equal(cell_array(block, "sections.age"), [1., 1., 1., 1., .5, .5, .5, .5] + [0.] * 6
+                                  + [-.5] * 6)
+    owners = frame.data_structures[0].instance_set("sections").columns["owner"]
+    np.testing.assert_array_equal(cell_array(block, "SubOrgan.id"), owners[instance])
+    assert set(cell_array(block, "Axis.id")) == {100.} and set(cell_array(block, "Plant.id")) == {1000.}
+    np.testing.assert_array_equal(cell_array(block, "Cell.area")[:4], np.full(4, 0.5))
+    assert "Cell.water_potential" not in arrays_of(block)              # derived fields: on demand
+    evaluated = instance_block(reader.frame_to_vtk(frame, derived=True))
+    expected = np.concatenate(evaluate(frame, "water_potential"))
+    np.testing.assert_allclose(cell_array(evaluated, "Cell.water_potential"), expected, rtol=1e-12)
+    assert vtk_to_numpy(block.GetPoints().GetData()).shape == (3 * 20, 3)
+
+
+def arrays_of(data_set) -> set:
+    cell_data = data_set.GetCellData()
+    return {cell_data.GetArrayName(number) for number in range(cell_data.GetNumberOfArrays())}
+
+
+def test_select_at_scale_rebuilds_the_selected_instances_derived_fields():
+    from openalea.encoding3d import evaluate, read
+    path = os.path.join(INSTANCES, "frame_000001.glb")
+    frame = read(path)
+    data = reader.frame_to_vtk(frame)
+    owners = frame.data_structures[0].instance_set("sections").columns["owner"]
+    picked = [("root_system", {"SubOrgan.id": np.array([float(owners[2])]), "Axis.id": np.array([100.]),
+                               "Plant.id": np.array([1000.])})]
+    grown = reader.grow_selection(data, picked, "SubOrgan")
+    block = instance_block(grown)
+    assert set(cell_array(block, reader.INSTANCE_ROW)) == {2}
+    reader.rebuild_derived(grown)
+    np.testing.assert_allclose(cell_array(block, "Cell.water_potential"), evaluate(frame, "water_potential",
+                                                                                   instances=[2])[0], rtol=1e-12)
+
+
+def test_an_archive_opens_as_its_folder(tmp_path):
+    from openalea.encoding3d import pack
+    archive = pack(INSTANCES, str(tmp_path / "run.fspm.zip"))
+    source = reader.Source(archive)
+    assert source.times == [0., 1.]
+    block = instance_block(reader.frame_to_vtk(source.frame_at(1.), derived=True))
+    assert block.GetNumberOfCells() == 20 and "Cell.water_potential" in arrays_of(block)
+
+
+def test_an_instances_layer():
+    from openalea.encoding3d import read
+    frame = read(os.path.join(INSTANCES, "frame_000001.glb"))
+    views = {"encoding3d_views": 1, "configurations": {"default": {"layers": [
+        {"name": "sections", "source": {"data_structure": "root_system", "kind": "instances", "instance_set": "sections"},
+         "select": {"entity_set": "sections", "where": {"age": ">0"}},
+         "color_by": {"entity_set": "Cell", "variable": "water_potential"}},
+        {"name": "old", "source": {"data_structure": "root_system", "kind": "instances", "instance_set": "sections"},
+         "select": {"entity_set": "SubOrgan", "where": {"water_potential": ">-0.105"}},
+         "color_by": {"entity_set": "sections", "variable": "age"}}]}}}
+    from openalea.encoding3d.views import check_views
+    assert check_views(views, frame).ok, str(check_views(views, frame))
+    output = reader.frame_to_vtk(frame, views=views, derived=True)
+    sections, old = output.GetBlock(0), output.GetBlock(1)
+    assert set(cell_array(sections, reader.INSTANCE_ROW)) == {0, 1}
+    assert sections.GetCellData().GetScalars().GetName() == "Cell.water_potential"
+    assert set(cell_array(old, reader.INSTANCE_ROW)) == {0}
+    wrong = {"encoding3d_views": 1, "configurations": {"default": {"layers": [
+        {"name": "x", "source": {"data_structure": "root_system", "kind": "instances", "instance_set": "sections"},
+         "color_by": {"entity_set": "Cell", "variable": "nothing"}}]}}}
+    assert not check_views(wrong, frame).ok

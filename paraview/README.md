@@ -24,7 +24,8 @@ sits in. Do not move the file out of that folder. A link to it, placed anywhere,
 ## 2. Open a run's frames
 
 1. **File → Open...**, go to the run's `outputs/.../frames/` folder, and choose `scene.fspm.json` (all the frames, as
-   time steps) or a single `frame_XXXXXX.glb`.
+   time steps) or a single `frame_XXXXXX.glb`. A sequence packed into one file, `run.fspm.zip` (made by
+   `encoding3d pack`), opens the same way: choose the `.fspm.zip` file itself.
 2. If ParaView asks which reader to use, choose **encoding3d reader**.
 3. Click **Apply** in the *Properties* panel.
 
@@ -64,6 +65,25 @@ to give a layer its own.
 Without a `views.json`, the reader shows one block per data structure (each plant population, the soil), with every
 variable as a colouring choice. Colour them like any ParaView item.
 
+## 3b. Instances: sections and other shapes drawn from a template
+
+Some frames draw many entities with one shape each, stored once: the sections of the root segments, the cells of a
+tissue drawn at a coarse scale (specification §12, "instances"). They appear as a layer, or without a `views.json` as a
+block named **instances sections** (or another name) in their data structure's block.
+
+- Each instance is drawn where it belongs, with its own variables (for example `sections.age`), those of the entity it
+  draws (for example `SubOrgan.radius`) and the template's own values (for example `Cell.label_code`, `Cell.area`).
+- Its **inner values** (for example the water potential on each cell of a section, `Cell.water_potential`) are not
+  in the file: they are rebuilt from a few values of the instance when you ask for them. Two ways:
+  - **Select it** (section 6 below): pick a section, apply **encoding3d Select at scale** at `SubOrgan` (or a plant,
+    an axis). The selection holds the inner values of every instance it contains, ready to colour by. Its buttons
+    **Isolate**, **Show In Panel** and **Put Back** work as for any selection.
+  - **All of them**: tick **Evaluate Derived Fields** in the reader's *Properties*, then **Apply**. Every instance's
+    inner values are rebuilt at each time step. Use it for small scenes: it is slower than selecting a few.
+
+If ParaView says in **View → Output Messages** that a part is missing, the `parts/` folder was not copied with the
+frames: copy the whole `frames/` folder, or send the `.fspm.zip`.
+
 ## 4. Switch configurations
 
 A `views.json` can hold several configurations, for example "default" or "roots and sections". On the reader's item,
@@ -71,7 +91,8 @@ in the *Properties* panel:
 
 - **Configuration**: a drop-down of the configurations in the file (empty: the file's active one). Choose one, then
   click **Apply**. The layers are drawn again as that configuration says.
-- **Views**: another views file to use (empty: the `views.json` next to the opened file).
+- **Views**: another views file to use (empty: the `views.json` next to the opened file, or the one inside the
+  `.fspm.zip`).
 
 ## 5. Save your changes into `views.json`
 
@@ -83,7 +104,8 @@ After you change layers in the MultiBlock Inspector, select the reader's item. I
   **Save Views**. The new configuration becomes the file's active one, so it opens next time, and the
   **Configuration** drop-down shows it.
 
-A colour map's preset name is not read back from ParaView, so a saved layer keeps its `colormap`.
+A colour map's preset name is not read back from ParaView, so a saved layer keeps its `colormap`. The views inside
+a `.fspm.zip` cannot be saved: unpack it first (`encoding3d unpack run.fspm.zip folder`).
 
 ## 6. Select a plant, an axis, an organ, a segment
 
@@ -128,6 +150,10 @@ Output Messages**.
 
 - `pvpython paraview/check_in_paraview.py conformance` checks the plugin on the conformance files (the Python tests
   run it when `ENCODING3D_PVPYTHON` names a `pvpython`).
+- `pvbatch paraview/check_in_paraview.py --instances <folder>` is a check by hand of instances: the conformance
+  sequence `instances/` opened as a folder and as a `.fspm.zip`, a section selected and its derived field rebuilt
+  (compared with `openalea.encoding3d.evaluate`), isolated, shown in a panel, put back, then every derived field
+  evaluated; a screenshot of each step in `<folder>`.
 - `pvbatch paraview/check_in_paraview.py --design <copy>/frames/scene.fspm.json <folder>` is a check by hand on a
   copy of a run's frames. It draws each configuration, saves the views back, selects at several scales, isolates,
   opens a panel and puts back, and saves a screenshot of each step in `<folder>`.
@@ -140,3 +166,7 @@ Output Messages**.
   draws them again when the configuration or the views file changes. The block properties come from
   `openalea.encoding3d.views.block_displays`, and `displays_from_blocks` reads them back. Both are tested without
   ParaView.
+- Instances: the reader draws each instance set with `openalea.encoding3d.instances.placed_meshes`; each cell has its
+  instance's row (`encoding3d_instance`) and its rows in the template's entity sets (`encoding3d_template_row.<set>`),
+  each block its frame's file (field data `encoding3d_frame`). The filter's `rebuild_derived` evaluates the derived
+  fields of the instances its output holds (`openalea.encoding3d.evaluate`, one matrix product per operator).
