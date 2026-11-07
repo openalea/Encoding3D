@@ -38,19 +38,51 @@ def test_compare_all(tmp_path):
                 target = dumps / (relative[:-len(".expected.json")] + ".json")
                 target.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy(os.path.join(folder, name), target)
-    results = compare_all(str(dumps), CONFORMANCE)
+    results = compare_all(str(dumps), CONFORMANCE, instances=False)
     assert len(results) == 10 and not any(results.values())
-    assert main(["compare-all", str(dumps), CONFORMANCE]) == 0
+    assert main(["compare-all", str(dumps), CONFORMANCE, "--skip-instances"]) == 0
+    assert main(["compare-all", str(dumps), CONFORMANCE]) == 1             # no dumps of the instances
     with open(dumps / "root_system.json") as file:
         dump = json.load(file)
     dump["step"] = 1
     with open(dumps / "root_system.json", "w") as file:
         json.dump(dump, file)
     (dumps / "wheat_shoot.json").unlink()
-    results = compare_all(str(dumps), CONFORMANCE)
+    results = compare_all(str(dumps), CONFORMANCE, instances=False)
     assert results["root_system.expected.json"] == ["$.step: 1, 0 expected"]
     assert results["wheat_shoot.expected.json"] == ["no dump wheat_shoot.json"]
-    assert main(["compare-all", str(dumps), CONFORMANCE]) == 1
+    assert main(["compare-all", str(dumps), CONFORMANCE, "--skip-instances"]) == 1
+
+
+def test_compare_all_the_instances_and_archives(tmp_path):
+    """The Python codec's conformance run gives every dump the instances and archives checks ask for; evaluated
+    values within the relative tolerance only."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "conformance_run", os.path.join(os.path.dirname(CONFORMANCE), "bindings", "python", "conformance_run.py"))
+    run = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(run)
+    assert run.main(CONFORMANCE, str(tmp_path)) == 0
+    dumps = str(tmp_path / "dumps")
+    results = compare_all(dumps, CONFORMANCE)
+    assert not any(results.values()), {name: found for name, found in results.items() if found}
+    checked = [name for name in results if name.startswith(("instances/", "archives/"))]
+    assert len(checked) == 2 * 2 + 2 + 5 + 4 * 2 * 2              # frames, embedded, parts, 4 archives' frames
+    path = tmp_path / "dumps" / "instances" / "frame_000000.evaluated.json"
+    with open(path) as file:
+        values = json.load(file)
+    field = next(iter(values))
+    values[field][0][0] *= 1 + 1e-13
+    with open(path, "w") as file:
+        json.dump(values, file)
+    assert not compare_all(dumps, CONFORMANCE)["instances/frame_000000.evaluated.json"]
+    values[field][0][0] *= 1 + 1e-10
+    with open(path, "w") as file:
+        json.dump(values, file)
+    assert compare_all(dumps, CONFORMANCE)["instances/frame_000000.evaluated.json"]
+    written = [os.path.join(folder, file) for folder, _, files in os.walk(tmp_path / "written") for file in files
+               if file.endswith((".glb", ".fspm.zip"))]
+    assert main(["validate"] + written) == 0
 
 
 def test_compare_a_glb_with_its_expected_values():

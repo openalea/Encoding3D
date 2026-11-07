@@ -26,12 +26,12 @@ jobs:
           python conformance/generate.py
           git diff --exit-code -- conformance
       - name: encoding3d validator
-        run: encoding3d validate conformance/*.glb conformance/growing_sequence/scene.fspm.json
+        run: encoding3d validate conformance/*.glb conformance/growing_sequence/scene.fspm.json conformance/instances/scene.fspm.json conformance/instances/embedded.glb conformance/archives/*.fspm.zip
       - name: Khronos glTF-Validator
         run: |
           curl -sSL -o validator.tar.xz "https://github.com/KhronosGroup/glTF-Validator/releases/download/${GLTF_VALIDATOR}/gltf_validator-${GLTF_VALIDATOR}-linux64.tar.xz"
           tar xf validator.tar.xz gltf_validator
-          for file in conformance/*.glb conformance/growing_sequence/*.glb; do
+          for file in conformance/*.glb conformance/growing_sequence/*.glb conformance/instances/*.glb conformance/instances/parts/*.glb; do
             ./gltf_validator "$file" || exit 1
           done
 

@@ -12,8 +12,10 @@ The encoding3d command line::
     encoding3d display FILE --remove [-o OUT]      remove them
     encoding3d compare ACTUAL EXPECTED             a codec's JSON dump (or a .glb) against expected values; exit 1 if they
                                                 differ
-    encoding3d compare-all DUMPS CONFORMANCE       every conformance file's expected values against the dump at the same
-                                                path (x.expected.json: DUMPS/x.json); exit 1 if any differ
+    encoding3d compare-all DUMPS CONFORMANCE [--skip-instances]
+                                                every conformance file's expected values against the dump at the same
+                                                path (x.expected.json: DUMPS/x.json), the instances and archives as
+                                                conformance/README.md says; exit 1 if any differ
     encoding3d couple --steps N --interval DT [--participant NAME=COMMAND]... [--expect NAME]...
                    [--replay NAME=INDEX]... [--links LINKS.json] [--stages A,B;C] [--endpoint E] [--record DIR]
                                                 run a coupling session (specification §11): launch the participants'
@@ -121,7 +123,7 @@ def _compare(arguments) -> int:
 
 def _compare_all(arguments) -> int:
     from openalea.encoding3d.compare import compare_all
-    results = compare_all(arguments.dumps, arguments.conformance)
+    results = compare_all(arguments.dumps, arguments.conformance, instances=not arguments.skip_instances)
     for name, differences in results.items():
         _print_differences(name, differences)
     failed = sum(1 for differences in results.values() if differences)
@@ -221,6 +223,8 @@ def main(argv=None) -> int:
                                                           "values")
     compare_all.add_argument("dumps", help="the folder of the codec's dumps (x.json for x.expected.json)")
     compare_all.add_argument("conformance", help="encoding3d's conformance folder")
+    compare_all.add_argument("--skip-instances", action="store_true",
+                             help="leave out the instances (0.4) and their archives, for a codec reading 0.3 only")
     compare_all.set_defaults(run=_compare_all)
     couple = commands.add_parser("couple", help="run a coupling session between platforms")
     couple.add_argument("--steps", type=int, required=True)

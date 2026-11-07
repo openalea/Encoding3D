@@ -15,6 +15,10 @@ FILES = generate.files()
 
 @pytest.mark.parametrize("relative", sorted(FILES))
 def test_committed_files_are_generated(relative):
+    if relative.endswith(".fspm.zip"):                  # an archive: the same members, methods and bytes once read
+        assert generate.same_archive(os.path.join(CONFORMANCE, relative), FILES[relative]), \
+            f"{relative}: run python conformance/generate.py"
+        return
     with open(os.path.join(CONFORMANCE, relative), "rb") as file:
         assert file.read() == FILES[relative], f"{relative}: run python conformance/generate.py"
 
@@ -29,7 +33,8 @@ def test_expected_values(relative):
     assert json.loads(json.dumps(frame_to_dict(frame))) == expected
 
 
-@pytest.mark.parametrize("relative", sorted(name for name in FILES if name.endswith((".glb", "scene.fspm.json"))))
+@pytest.mark.parametrize("relative", sorted(name for name in FILES
+                                             if name.endswith((".glb", "scene.fspm.json", ".fspm.zip"))))
 def test_valid(relative):
     report = validate_file(os.path.join(CONFORMANCE, relative))
     assert report.ok and not report.warnings, str(report)

@@ -6,11 +6,16 @@ JSON; a writer passes when the validator accepts what it writes for the same sce
     python conformance/generate.py          (re)writes the files next to this script
 
 The scenes are built from fixed numbers only, so the files are the same byte for byte on every run (a test checks
-it).
+it); the archives (archives/*.fspm.zip) hold the same members once read, and are rewritten only when those change (a
+compressor of another version may compress the same bytes otherwise).
 """
+import io
 import json
 import os
+import struct
 import sys
+import zipfile
+import zlib
 
 import numpy as np
 
@@ -425,6 +430,70 @@ def _evaluated(frame) -> dict:
             for derived in instance_set.derived}
 
 
+ARCHIVE_COMPRESSIONS = {"stored": zipfile.ZIP_STORED, "deflate": zipfile.ZIP_DEFLATED, "lzma": zipfile.ZIP_LZMA}
+_ZIP_DATE_TIME = (1980, 1, 1, 0, 0, 0)
+
+
+def archives_files(instances: dict) -> dict:
+    """The instances sequence packed into .fspm.zip archives (specification §8.2): one per compression (ZIP's methods
+    stored, deflate and lzma), and one written with every ZIP64 record (stored), as a sequence of any size would be:
+    archives/instances_<compression>.fspm.zip and archives/instances_zip64.fspm.zip. Their members are the sequence's
+    files, unchanged: the index, the frames, the parts."""
+    prefix = "instances/"
+    members = ["scene.fspm.json"] + sorted(name[len(prefix):] for name in instances
+                                           if name.startswith(prefix + "frame_") and name.endswith(".glb")) \
+        + sorted(name[len(prefix):] for name in instances if name.startswith(prefix + "parts/"))
+    contents = [(member, instances[prefix + member]) for member in members]
+    out = {f"archives/instances_{name}.fspm.zip": _zip(contents, method)
+           for name, method in ARCHIVE_COMPRESSIONS.items()}
+    out["archives/instances_zip64.fspm.zip"] = _zip64(contents)
+    return out
+
+
+def _zip(contents: list, method: int) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", allowZip64=True) as archive:
+        for member, data in contents:
+            archive.writestr(zipfile.ZipInfo(member, date_time=_ZIP_DATE_TIME), data, compress_type=method)
+    return buffer.getvalue()
+
+
+def _zip64(contents: list) -> bytes:
+    """A ZIP archive of stored members whose every size and offset is in ZIP64 records (the local and central headers'
+    ZIP64 extra fields, the ZIP64 end of central directory and its locator), as a writer of a sequence over 4 GB or
+    65,535 members writes them."""
+    version, date, full = 45, 0x0021, 0xFFFFFFFF                  # ZIP64's version; 1980-01-01; "in the ZIP64 field"
+    local, central = bytearray(), bytearray()
+    for member, data in contents:
+        name = member.encode("ascii")
+        crc = zlib.crc32(data)
+        offset = len(local)
+        local += struct.pack("<IHHHHHIIIHH", 0x04034B50, version, 0, 0, 0, date, crc, full, full, len(name), 20)
+        local += name + struct.pack("<HHQQ", 0x0001, 16, len(data), len(data)) + data
+        central += struct.pack("<IHHHHHHIIIHHHHHII", 0x02014B50, version, version, 0, 0, 0, date, crc, full, full,
+                               len(name), 28, 0, 0, 0, 0, full)
+        central += name + struct.pack("<HHQQQ", 0x0001, 24, len(data), len(data), offset)
+    end = len(local) + len(central)
+    record = struct.pack("<IQHHIIQQQQ", 0x06064B50, 44, version, version, 0, 0, len(contents), len(contents),
+                         len(central), len(local))
+    locator = struct.pack("<IIQI", 0x07064B50, 0, end, 1)
+    final = struct.pack("<IHHHHIIH", 0x06054B50, 0, 0, 0xFFFF, 0xFFFF, full, full, 0)
+    return bytes(local + central + record + locator + final)
+
+
+def same_archive(path: str, data: bytes) -> bool:
+    """Whether the archive at *path* holds the members of *data*, with the same methods and bytes once read: a
+    compressor of another version may compress the same bytes otherwise, so an archive is rewritten only when what it
+    holds changes."""
+    if not os.path.exists(path):
+        return False
+    with zipfile.ZipFile(path) as existing, zipfile.ZipFile(io.BytesIO(data)) as written:
+        if [(info.filename, info.compress_type) for info in existing.infolist()] != \
+                [(info.filename, info.compress_type) for info in written.infolist()]:
+            return False
+        return all(existing.read(name) == written.read(name) for name in written.namelist())
+
+
 SCENES = {"root_system": root_system, "wheat_shoot": wheat_shoot, "section_cells": section_cells,
           "soil_and_roots": soil_and_roots, "adaptive_soil": adaptive_soil, "parameter_set": parameter_set,
           "missing_values": missing_values}
@@ -444,7 +513,9 @@ def files() -> dict:
         out[f"growing_sequence/frame_{number:06d}.expected.json"] = _json(frame_to_dict(frame))
         entries.append({"time": frame.time, "step": frame.step, "file": file_name})
     out["growing_sequence/scene.fspm.json"] = _index(entries)
-    out.update(instances_files())
+    instances = instances_files()
+    out.update(instances)
+    out.update(archives_files(instances))
     return out
 
 
@@ -464,6 +535,9 @@ def _index(entries, parts=()) -> bytes:
 def main() -> int:
     for relative, data in files().items():
         path = os.path.join(DIRECTORY, relative)
+        if relative.endswith(".fspm.zip") and same_archive(path, data):
+            print(relative, "unchanged")
+            continue
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "wb") as file:
             file.write(data)

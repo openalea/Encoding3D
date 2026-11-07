@@ -15,6 +15,7 @@ numbers, the same bytes on every run; the CI checks that the committed files are
 | `missing_values` | integer, text, boolean and float columns with missing values; a date column (`format`); `unknown` edge types and a `sibling_order` column; a `mixed` entity set; a labels map; a parent in another axis; bearer relations between two pairs of sets |
 | `growing_sequence/` | three frames of a growing root system, ids kept, and their index |
 | `instances/` | 0.4: a sequence whose root segments are drawn by sections, instances of shared templates, with a derived field (below) |
+| `archives/` | 0.4: the `instances/` sequence packed into `.fspm.zip` archives, stored, deflate, lzma, and with every ZIP64 record (below) |
 
 ## Instances (0.4)
 
@@ -30,8 +31,30 @@ dense and a sparse operator), or one term solved (`solve`) with an offset. The e
 - `frame_00000n.evaluated.json`: each instance's derived field, compared within a relative 1e-12;
 - `embedded.glb`: the second frame with its parts embedded, read as `frame_000001.expected.json`.
 
-Codecs reading 0.3 only skip this folder (their conformance runs and `encoding3d compare-all` leave it out), as they
-skip `coupling/`.
+`archives/` holds the same sequence (its index, frames and parts, unchanged) packed into `.fspm.zip` archives
+(specification §8.2): `instances_stored`, `instances_deflate` and `instances_lzma` (ZIP's methods 0, 8 and 14, as
+Python's `zipfile` writes them), and `instances_zip64` (stored, every size and offset in ZIP64 records: the local and
+central headers' ZIP64 extra fields, the ZIP64 end of central directory and its locator, as a sequence over 4 GB or
+65,535 files has them). A reader reads each frame from `instances_x.fspm.zip/frame_00000n.glb`, its parts from the
+archive, as from the folder. An archive's compressed bytes depend on the compressor's version, so `generate.py`
+rewrites an archive only when its members (their names, methods and bytes once read) change.
+
+What a codec reading instances dumps, besides the frames' dumps (`DUMPS/instances/frame_00000n.json`, against
+`frame_00000n.expected.json`):
+
+| Dump | Against |
+|---|---|
+| `instances/frame_00000n.evaluated.json`: each derived field evaluated, `{"<data structure>/<instance set>/<field>": [values per instance]}` | `frame_00000n.evaluated.json`, within a relative 1e-12 |
+| `instances/embedded.json`, `instances/embedded.evaluated.json` | the last frame's `.expected.json` and `.evaluated.json` |
+| `instances/parts/<key>.json`: the part `parts/<key>.glb` read | `expected/<key>.json` |
+| `archives/<name>/frame_00000n.json` and `.evaluated.json`: each frame of `archives/<name>.fspm.zip` | `instances/frame_00000n.expected.json` and `.evaluated.json` |
+
+What it writes: the instances' frames again with their parts (`WRITTEN/instances/`, with an index listing them),
+`embedded.glb` with its parts embedded, and, when it packs, that sequence as `WRITTEN/archives/instances.fspm.zip`;
+`encoding3d validate` checks every `.glb` and `.fspm.zip`, the parts each frame refers to included.
+
+Codecs reading 0.3 only skip both folders (`encoding3d compare-all --skip-instances`, the action's `instances: "false"`),
+as they skip `coupling/`.
 
 ## Coupling sessions
 
@@ -85,7 +108,8 @@ participant runs them with `encoding3d couple-conformance conformance/coupling -
 
    ```bash
    encoding3d compare-all DUMPS conformance          # reading: every dump equals its expected values
-   encoding3d validate WRITTEN/*.glb                 # writing: valid encoding3d (and Khronos' glTF-Validator: valid glTF)
+   encoding3d validate WRITTEN/*.glb ...             # writing: valid encoding3d (and Khronos' glTF-Validator: valid glTF),
+                                                     # every .glb and .fspm.zip under WRITTEN
    ```
 
 In GitHub Actions, the composite action `.github/actions/conformance` runs both. The Python codec's own run is
