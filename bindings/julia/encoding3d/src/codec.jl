@@ -28,11 +28,16 @@ json_object(pairs...) = OrderedDict{String,Any}(pairs...)
 # ── Writing ──────────────────────────────────────────────────────────────
 
 """
-    to_bytes(frame) -> Vector{UInt8}
+    to_bytes(frame; embed_parts=false) -> Vector{UInt8}
 
-The GLB file of `frame`.
+The GLB file of `frame`; `embed_parts`: the parts its instance sets use in it (one self-contained file), else referred
+to by key only (`write_frame` writes them to parts/).
 """
-function to_bytes(frame::Frame)
+to_bytes(frame::Frame; embed_parts::Bool = false) = encode_frame(frame; embed_parts)
+
+# The GLB file of `frame`; `part_entry`, when given: the frame is a part's file, its FSPM_scene.part
+# `part_entry(buffers)`.
+function encode_frame(frame::Frame; embed_parts::Bool = false, part_entry = nothing)
     buffers = BufferBuilder()
     schema = json_object("id" => "fspm_scene", "classes" => json_object(), "enums" => json_object(
         EDGE_TYPE_ENUM => json_object("valueType" => "UINT8",
@@ -101,6 +106,10 @@ function to_bytes(frame::Frame)
                 push!(entry["meshes"], mesh_entry)
             end
         end
+        if !isempty(data_structure.instance_sets)
+            entry["instanceSets"] = [encode_instance_set(instance_set, data_structure, add_table)
+                                     for instance_set in data_structure.instance_sets]
+        end
         push!(data_structures, entry)
     end
 
@@ -133,9 +142,15 @@ function to_bytes(frame::Frame)
     frame.vocabulary_version === nothing || (scene["vocabulary"] = frame.vocabulary_version)
     isempty(frame.writer) || (scene["writer"] = frame.writer)
     update === nothing || (scene["update"] = update)
+    part_entry === nothing || (scene["part"] = part_entry(buffers))
     scene["dataStructures"] = data_structures
     isempty(mappings) || (scene["mappings"] = mappings)
     isempty(variables) || (scene["variables"] = variables)
+    keys_used = frame_part_keys(frame)
+    if embed_parts && !isempty(keys_used)
+        scene["parts"] = json_object(key => json_object("bufferView" => add!(buffers, frame_part_bytes(frame, key)))
+                                     for key in keys_used)
+    end
 
     other_extensions = get(frame.unknown, "extensions", json_object())
     extensions = json_object(METADATA => json_object("schema" => schema, "propertyTables" => tables),
@@ -158,11 +173,80 @@ function to_bytes(frame::Frame)
 end
 
 """
-    write_frame(path, frame)
+    write_frame(path, frame; embed_parts=false) -> Vector{String}
 
-Write `frame` to the GLB file `path`.
+Write `frame` to the GLB file `path`, and each part its instance sets use to parts/<key>.glb next to it, when not
+there yet (`embed_parts`: into the frame instead); the keys of those parts, sorted.
 """
-write_frame(path::AbstractString, frame::Frame) = (write(path, to_bytes(frame)); path)
+function write_frame(path::AbstractString, frame::Frame; embed_parts::Bool = false)
+    write(path, to_bytes(frame; embed_parts))
+    keys_used = frame_part_keys(frame)
+    embed_parts && return keys_used
+    folder = joinpath(dirname(abspath(path)), PARTS_FOLDER)
+    for key in keys_used
+        target = joinpath(folder, "$key.glb")
+        isfile(target) && continue                         # its name is its hash: its content
+        mkpath(folder)
+        temporary = "$target.part"
+        write(temporary, frame_part_bytes(frame, key))
+        mv(temporary, target; force = true)                # a reader never sees half a part
+    end
+    return keys_used
+end
+
+"""The keys of the parts the instance sets of a frame use, sorted."""
+frame_part_keys(frame::Frame) =
+    sort(unique(String[key for data_structure in frame.data_structures
+                       for instance_set in data_structure.instance_sets for key in instance_set.parts]))
+
+# The FSPM_scene entry of an instance set (specification §12.2), its tables added: the instance table (its columns,
+# each vector's <name>__count, each derived field's <name>__operator and <name>__weight) and one table per vector (its
+# values, the instances' one after the other).
+function encode_instance_set(instance_set::InstanceSet, data_structure::DataStructure, add_table)
+    check_identifier(instance_set.name, "instance set name")
+    where_ = "instance set '$(instance_set.name)' of '$(data_structure.id)'"
+    haskey(instance_set.columns, "template") ||
+        throw(ArgumentError("$where_: no 'template' column (each instance's index in its parts)"))
+    count = row_count(instance_set)
+    columns = Columns(instance_set.columns)
+    entry = json_object("name" => instance_set.name, "parts" => instance_set.parts)
+    instance_set.owners === nothing || (entry["owners"] = instance_set.owners)
+    vectors = Any[]
+    for (name, ragged) in instance_set.vectors
+        check_identifier(name, "vector of $where_")
+        offsets(ragged)                                     # its counts checked against its values
+        length(ragged) == count ||
+            throw(ArgumentError("$where_: vector '$name' has $(length(ragged)) instances, the set $count"))
+        columns["$(name)__count"] = ragged.counts
+        values = Table(name; columns = Columns("values" => ragged.values))
+        push!(vectors, json_object("name" => name, "propertyTable" =>
+                                   add_table(values, "$(data_structure.id)__$(instance_set.name)__$name")))
+    end
+    derived_fields = Any[]
+    for derived in instance_set.derived
+        check_identifier(derived.name, "derived field of $where_")
+        size(derived.operators, 1) == count ||
+            throw(ArgumentError("$where_: derived field '$(derived.name)' has $(size(derived.operators, 1)) rows of " *
+                                "operators, the set $count instances"))
+        haskey(instance_set.vectors, derived.input) ||
+            throw(ArgumentError("$where_: derived field '$(derived.name)' applies to vector '$(derived.input)', " *
+                                "which the set does not have"))
+        single = terms(derived) == 1
+        columns["$(derived.name)__operator"] = single ? derived.operators[:, 1] : derived.operators
+        columns["$(derived.name)__weight"] = single ? derived.weights[:, 1] : derived.weights
+        item = json_object("name" => derived.name, "entitySet" => derived.entity_set, "input" => derived.input,
+                           "terms" => terms(derived), "variable" => declaration_json(derived.variable))
+        any(offset -> offset !== nothing, derived.offsets) && (item["offsets"] = derived.offsets)
+        derived.variable.description === nothing || (item["description"] = derived.variable.description)
+        push!(derived_fields, item)
+    end
+    table = InstanceSet(instance_set.name, columns, instance_set.variables, instance_set.owners, instance_set.parts,
+                        OrderedDict{String,Ragged}(), DerivedField[])
+    entry["propertyTable"] = add_table(table, "$(data_structure.id)__$(instance_set.name)")
+    isempty(vectors) || (entry["vectors"] = vectors)
+    isempty(derived_fields) || (entry["derivedFields"] = derived_fields)
+    return entry
+end
 
 check_identifier(name, what) = (name isa AbstractString && occursin(IDENTIFIER, name)) ||
     throw(ArgumentError("$what '$name' must be an identifier (letters, digits, '_'; not starting with a digit)"))
@@ -374,11 +458,11 @@ end
 # ── Reading ──────────────────────────────────────────────────────────────
 
 """
-    from_bytes(data) -> Frame
+    from_bytes(data; parts_folder=nothing) -> Frame
 
-The frame of a GLB file's bytes.
+The frame of a GLB file's bytes; `parts_folder`: the folder its parts/ are in (the file's folder).
 """
-function from_bytes(data::AbstractVector{UInt8})
+function from_bytes(data::AbstractVector{UInt8}; parts_folder::Union{Nothing,AbstractString} = nothing)
     document, binary = unpack(data)
     extensions = get(document, "extensions", json_object())
     haskey(extensions, EXTENSION) || throw(ArgumentError("not an encoding3d file: no $EXTENSION extension"))
@@ -426,6 +510,9 @@ function from_bytes(data::AbstractVector{UInt8})
         for mesh_entry in get(entry, "meshes", Any[])
             push!(data_structure.meshes, decode_mesh(document, binary, mesh_entry, tables))
         end
+        for item in get(entry, "instanceSets", Any[])
+            push!(data_structure.instance_sets, decode_instance_set(item, table))
+        end
         push!(frame.data_structures, data_structure)
     end
     for entry in get(scene, "mappings", Any[])
@@ -444,15 +531,56 @@ function from_bytes(data::AbstractVector{UInt8})
                                    if !(name in (METADATA, EXTENSION, FEATURES)))
     isempty(other_extensions) || (frame.unknown["extensions"] = other_extensions)
     haskey(document, "extras") && (frame.unknown["extras"] = document["extras"])
+    for (key, item) in get(scene, "parts", json_object())          # embedded parts: a self-contained frame
+        frame.part_bytes[String(key)] = Vector{UInt8}(view_bytes(document, binary, item["bufferView"]))
+    end
+    frame.parts_folder = parts_folder === nothing ? nothing : String(parts_folder)
     return frame
 end
 
 """
     read_frame(path) -> Frame
 
-The frame of the GLB file `path`.
+The frame of the GLB file `path`, in a folder or in an archive ("run.fspm.zip/frame_000003.glb"); its parts are found
+next to it.
 """
-read_frame(path::AbstractString) = from_bytes(read(path))
+read_frame(path::AbstractString) = from_bytes(read_file_bytes(path); parts_folder = dirname(abspath(path)))
+
+# An instance set (specification §12.2): its own columns, its vectors and derived fields; its parts by key.
+function decode_instance_set(item, table)
+    instance_set = table(item["propertyTable"], (name, columns, declarations) ->
+                         InstanceSet(String(item["name"]), columns, declarations, get(item, "owners", nothing),
+                                     String.(get(item, "parts", String[])), OrderedDict{String,Ragged}(),
+                                     DerivedField[]))
+    where_ = "instance set '$(instance_set.name)'"
+    function take_column(name)
+        haskey(instance_set.columns, name) || throw(ArgumentError("$where_: no column '$name'"))
+        delete!(instance_set.variables, name)
+        return pop!(instance_set.columns, name)
+    end
+    for vector in get(item, "vectors", Any[])
+        values = table(vector["propertyTable"], Table).columns["values"]
+        instance_set.vectors[String(vector["name"])] =
+            Ragged(Vector{Float64}(values), Vector{Int64}(take_column("$(vector["name"])__count")))
+    end
+    for entry in get(item, "derivedFields", Any[])
+        name, term_count = String(entry["name"]), get(entry, "terms", 1)
+        operators, weights = take_column("$(name)__operator"), take_column("$(name)__weight")
+        declared = get(entry, "variable", json_object())
+        variable = Variable(unit = get(declared, "unit", "1"), standard_name = get(declared, "standardName", nothing),
+                            kind = get(declared, "kind", nothing), role = get(declared, "role", "state"),
+                            description = get(entry, "description", nothing),
+                            minimum = get(declared, "minimum", nothing), maximum = get(declared, "maximum", nothing),
+                            references = String.(get(declared, "references", String[])),
+                            doi = String.(get(declared, "doi", String[])), format = get(declared, "format", nothing))
+        offsets = get(entry, "offsets", fill(nothing, term_count))
+        size(operators, 2) == term_count == length(offsets) ||
+            throw(ArgumentError("$where_: derived field '$name' has not $term_count operators and offsets per instance"))
+        push!(instance_set.derived, DerivedField(name; entity_set = entry["entitySet"], input = entry["input"],
+                                                 operators, weights, offsets, variable))
+    end
+    return instance_set
+end
 
 function decode_table(document, binary, description, schema, variables)
     class_id = description["class"]

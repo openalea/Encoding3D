@@ -79,6 +79,9 @@ function frame_to_dict(frame::Frame)
                 item
             end
         end
+        if !isempty(data_structure.instance_sets)
+            entry["instance_sets"] = [instance_set_dict(instance_set) for instance_set in data_structure.instance_sets]
+        end
         push!(data_structures, entry)
     end
     mappings = [merge!(table_dict(mapping), json_object("source" => collect(mapping.source),
@@ -93,6 +96,53 @@ function frame_to_dict(frame::Frame)
                              for (key, ids) in sort(collect(frame.update.removed); by = first)])
     end
     return out
+end
+
+# An instance set: its table (its own columns), its parts' keys, owners, vectors (values and counts) and derived fields
+# (operators and weights, N×K, offsets).
+function instance_set_dict(instance_set::InstanceSet)
+    entry = table_dict(instance_set)
+    entry["parts"] = instance_set.parts
+    instance_set.owners === nothing || (entry["owners"] = instance_set.owners)
+    if !isempty(instance_set.vectors)
+        entry["vectors"] = json_object(name => json_object("values" => json_column(ragged.values),
+                                                           "counts" => ragged.counts)
+                                       for (name, ragged) in instance_set.vectors)
+    end
+    if !isempty(instance_set.derived)
+        entry["derived_fields"] = map(instance_set.derived) do derived
+            item = json_object("name" => derived.name, "entity_set" => derived.entity_set, "input" => derived.input,
+                               "operators" => json_column(derived.operators), "weights" => json_column(derived.weights),
+                               "offsets" => derived.offsets, "unit" => derived.variable.unit,
+                               "role" => derived.variable.role)
+            derived.variable.standard_name === nothing || (item["standard_name"] = derived.variable.standard_name)
+            item
+        end
+    end
+    return entry
+end
+
+sparse_dict(matrix::CompressedRows) =
+    json_object("indptr" => matrix.indptr, "indices" => matrix.indices, "values" => json_column(matrix.values))
+
+"""
+    part_to_dict(part) -> OrderedDict
+
+A shared part as plain JSON values, in the layout of the conformance files' expected values: a template's data
+structure (as `frame_to_dict`'s), an operator's arrays.
+"""
+part_to_dict(part::Template) = json_object("kind" => "template", "data_structure" =>
+                                           frame_to_dict(Frame(data_structures = [part.data_structure]))["data_structures"][1])
+function part_to_dict(part::Operator)
+    entry = json_object("kind" => "operator", "format" => part.format, "shape" => [part.rows, part.columns])
+    if part.format == "dense"
+        entry["values"] = json_column(part.values)
+    elseif part.format == "csr"
+        merge!(entry, sparse_dict(part.sparse))
+    else
+        entry["system"], entry["right_hand_side"] = sparse_dict(part.system), sparse_dict(part.right_hand_side)
+    end
+    return entry
 end
 
 """

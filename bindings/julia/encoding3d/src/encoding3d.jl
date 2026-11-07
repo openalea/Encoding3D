@@ -8,7 +8,12 @@ binary (GLB) file per time step. The specification is `spec/specification.md` in
     read_frame(path) -> Frame             write_frame(path, frame)
     from_bytes(data) -> Frame             to_bytes(frame) -> Vector{UInt8}
     read_index(path), read_sequence(path) write_sequence(directory, frames)
-    frame_to_dict(frame), write_dump(path, frame)     the layout of the conformance files' expected values
+    add_part!(frame, part) -> key         a shared part (Template, Operator) its instance sets refer to by key
+    frame_part(frame, key) -> part        found embedded, else at parts/<key>.glb next to the frame
+    evaluate(frame, field)                a derived field rebuilt for each instance (specification §12.3)
+    pack_archive(folder, path)            a sequence as one .fspm.zip archive; any path above may be
+                                          "x.fspm.zip/frame_000003.glb", a file inside one (specification §8.2)
+    frame_to_dict(frame), part_to_dict(part), write_dump(path, frame)     the layout of the conformance files' expected values
 
 With MultiScaleTreeGraph loaded, `from_mtg` and `to_mtg` convert an MTG to and from a data structure. With
 VirtualPlantLab's PlantGraphs loaded, `from_graph` and `to_graph` convert its graphs; with PlantGeomTurtle too,
@@ -21,14 +26,22 @@ module encoding3d
 
 using Dates
 using JSON
+using LinearAlgebra
+using Mmap
 using OrderedCollections: OrderedDict
+using SHA
+using SparseArrays
+using XZ_jll
+using ZipArchives
 
 """The version of the specification this package reads and writes."""
-const SPECIFICATION_VERSION = "0.3"
+const SPECIFICATION_VERSION = "0.4"
 
 include("glb.jl")
 include("model.jl")
 include("codec.jl")
+include("parts.jl")
+include("archive.jl")
 include("sequence.jl")
 include("dump.jl")
 include("values.jl")
@@ -37,6 +50,10 @@ include("coupling.jl")
 export Frame, DataStructure, EntitySet, Relation, Table, Mapping, Grid, Mesh, Variable, NO_ID, EDGE_TYPES
 export read_frame, write_frame, from_bytes, to_bytes, read_index, read_sequence, write_sequence, write_index
 export frame_to_dict, write_dump, row_count, variable_names, entity_ids, entity_set, data_structure
+export InstanceSet, Ragged, DerivedField, Template, Operator, CompressedRows, MissingPartError, instance_set, terms,
+       dense_operator, sparse_operator, solve_operator, content_key, part_to_bytes, read_part, add_part!,
+       frame_part_bytes, frame_part, frame_part_keys, evaluate, part_to_dict, read_file_bytes, file_exists,
+       pack_archive, ARCHIVE_SUFFIX
 export from_mtg, to_mtg, from_graph, to_graph, add_geometry!
 export Update, Declaration, EntitySetSpec, VariableSpec, MappingSpec, Link, declaration_from_json, Participant, Turn, next_turn, turns,
        send_update, fail

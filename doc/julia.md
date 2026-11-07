@@ -133,6 +133,29 @@ write_sequence("frames", frames)               # one GLB per frame, and scene.fs
 A column is a `Vector` (numbers, `Bool`, `String`) or a `Matrix` (one row per entity: a fixed-size vector per
 entity). NaN and infinities are written with the specification's stand-ins and read back as they were.
 
+## Instances, derived fields and archives
+
+encoding3d.jl reads and writes 0.4's instance sets (specification §12, [Instances](instances.md)): an `InstanceSet` is
+a table of one row per instance (`template`, `owner`, `transform`, `id` and its own variables), its `vectors`
+(`Ragged`) and `derived` fields (`DerivedField`); its `parts` are keys, found through the frame (embedded, else
+`parts/<key>.glb` next to it).
+
+```julia
+frame = read_frame("run.fspm.zip/frame_000003.glb")          # a folder's file, or an archive's
+sections = instance_set(data_structure(frame, "RootPopulation"), "sections")
+potentials = evaluate(frame, "water_potential")              # one vector per instance
+part = frame_part(frame, sections.parts[1])                  # a Template or an Operator
+
+written = Frame()                                            # writing: parts added by content
+key = add_part!(written, dense_operator([1.0 0.0; 0.75 0.25; 0.5 0.5; 0.25 0.75]))
+# ... an InstanceSet whose parts hold key, in a data structure of written
+write_frame("frames/frame_000000.glb", written)              # and frames/parts/<key>.glb, once
+pack_archive("frames", "run.fspm.zip")                       # deflate; compression = "stored"
+```
+
+Archives are read stored, deflate (ZipArchives.jl) or lzma (liblzma's raw LZMA1 decoder, through XZ_jll), and packed
+stored or deflate. A `solve` operator is factorised once per evaluation (sparse LU).
+
 ## Coupling with other platforms
 
 encoding3d.jl takes part in coupling sessions run by encoding3d's coordinator ([Coupling platforms](coupling.md)):
@@ -147,7 +170,8 @@ transport needs nothing more; ZeroMQ needs `using ZMQ` (the `encoding3dZMQExt` e
 ```bash
 julia --project=bindings/julia/encoding3d -e 'using Pkg; Pkg.test()'
 julia --project=bindings/julia/encoding3d bindings/julia/conformance_run.jl conformance out
-encoding3d compare-all out/dumps conformance && encoding3d validate out/written/*.glb
+encoding3d compare-all out/dumps conformance          # the instances and archives included
+find out/written -name "*.glb" -o -name "*.fspm.zip" | xargs encoding3d validate
 ```
 
 The workflow `.github/workflows/julia-codec.yml` runs both, on Julia 1.10 and the latest release.

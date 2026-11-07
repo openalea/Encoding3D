@@ -8,7 +8,33 @@ const CONFORMANCE = normpath(joinpath(@__DIR__, "..", "..", "..", "..", "conform
 conformance_files() = sort([relpath(joinpath(folder, name), CONFORMANCE)
                             for (folder, _, files) in walkdir(CONFORMANCE) for name in files
                             if endswith(name, ".glb") && !startswith(relpath(folder, CONFORMANCE), "coupling")
-                            && !startswith(relpath(folder, CONFORMANCE), "instances")])   # 0.4: the Python codec's
+                            && !startswith(relpath(folder, CONFORMANCE), "instances")])   # the instances: below
+
+"""Whether two evaluated fields agree within a relative 1e-12 (a solved operator's values depend on the rounding)."""
+function close_values(actual, expected)
+    expected isa AbstractDict && return actual isa AbstractDict && length(actual) == length(expected) &&
+                                        all(haskey(actual, key) && close_values(actual[key], value)
+                                            for (key, value) in expected)
+    expected isa AbstractVector && return actual isa AbstractVector && length(actual) == length(expected) &&
+                                          all(close_values(left, right) for (left, right) in zip(actual, expected))
+    expected isa Number && return actual isa Number && abs(actual - expected) <= 1e-12 * abs(expected)
+    return isequal(actual, expected)
+end
+
+evaluated_json(frame) = JSON.parse(JSON.json(Dict(
+    "$(data_structure.id)/$(instance_set.name)/$(derived.name)" =>
+        [[isnan(value) ? nothing : value for value in values]
+         for values in evaluate(frame, derived.name; data_structure = data_structure.id, instance_set = instance_set.name)]
+    for data_structure in frame.data_structures for instance_set in data_structure.instance_sets
+    for derived in instance_set.derived)))
+
+"""A template of `cells` cells (a fan of triangles), its entity set Cell with an area per cell."""
+function fan(cells)
+    positions = reduce(vcat, [[0.0 0.0 0.0; cos(2π * cell / cells) sin(2π * cell / cells) 0.0;
+                               cos(2π * (cell + 1) / cells) sin(2π * (cell + 1) / cells) 0.0] for cell in 0:cells-1])
+    return Template(entity_sets = [EntitySet("Cell"; columns = encoding3d.Columns("area" => fill(0.5, cells)))],
+                    meshes = [Mesh("section"; positions, feature_rows = Dict("Cell" => repeat(0:cells-1; inner = 3)))])
+end
 
 """The differences between two JSON values, as `encoding3d compare` finds them: objects by key, arrays in order,
 numbers exactly (1 and 1.0 equal)."""
@@ -134,6 +160,89 @@ expected_of(relative) = JSON.parse(read(joinpath(CONFORMANCE, relative[1:end-4] 
               [0.0, 1.0, 2.0]
         read_back = read_index(joinpath(CONFORMANCE, "growing_sequence", "scene.fspm.json"))
         @test all(isfile(entry["path"]) for entry in read_back["frames"])
+    end
+
+    @testset "Instances: the conformance case read and evaluated, from its folder and its archives" begin
+        folder = joinpath(CONFORMANCE, "instances")
+        expected(name) = JSON.parse(read(joinpath(folder, name), String))
+        for name in ("frame_000000", "frame_000001")
+            frame = read_frame(joinpath(folder, "$name.glb"))
+            @test isempty(differences(as_json(frame), expected("$name.expected.json")))
+            @test close_values(evaluated_json(frame), expected("$name.evaluated.json"))
+            again = from_bytes(to_bytes(frame); parts_folder = frame.parts_folder)     # written and read: the same keys
+            @test isempty(differences(as_json(again), expected("$name.expected.json")))
+            for archive in ("instances_stored", "instances_deflate", "instances_lzma", "instances_zip64")
+                packed = read_frame(joinpath(CONFORMANCE, "archives", archive * ARCHIVE_SUFFIX, "$name.glb"))
+                @test isempty(differences(as_json(packed), expected("$name.expected.json")))
+                @test close_values(evaluated_json(packed), expected("$name.evaluated.json"))
+            end
+        end
+        embedded = read_frame(joinpath(folder, "embedded.glb"))
+        @test length(embedded.part_bytes) == 5
+        @test close_values(evaluated_json(embedded), expected("frame_000001.evaluated.json"))
+        for file in readdir(joinpath(folder, "parts"))
+            key, bytes = file[1:end-4], read(joinpath(folder, "parts", file))
+            @test content_key(bytes) == key
+            @test isempty(differences(JSON.parse(JSON.json(part_to_dict(read_part(bytes; key)))),
+                                      expected(joinpath("expected", "$key.json"))))
+            @test_throws ArgumentError read_part(bytes; key = repeat("0", 64))
+        end
+        index = read_index(joinpath(CONFORMANCE, "archives", "instances_deflate" * ARCHIVE_SUFFIX))
+        @test length(index["frames"]) == 2 && length(index["parts"]) == 5
+        @test content_key(Vector{UInt8}("abc")) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    end
+
+    @testset "Instances written: parts, derived fields, archives, a missing part" begin
+        frame = Frame()
+        parts = [add_part!(frame, fan(3)),                                                        # 0: a template
+                 add_part!(frame, dense_operator([1.0 0.0; 0.5 0.5; 0.0 1.0])),                   # 1: dense
+                 add_part!(frame, sparse_operator([2.0 0.0; 0.0 3.0; 4.0 0.0])),                  # 2: csr
+                 add_part!(frame, solve_operator([2.0 0 0; 0 4.0 0; 0 0 8.0], [2.0 2.0; 4.0 0.0; 0.0 8.0]))]   # 3
+        @test parts[2] == add_part!(frame, dense_operator([1.0 0.0; 0.5 0.5; 0.0 1.0]))       # the same part, the same key
+        sections = InstanceSet("sections"; owners = "SubOrgan", parts,
+                               columns = encoding3d.Columns("template" => [0, 0, 0], "owner" => [7, 8, 9],
+                                                            "age" => [1.0, 2.0, 3.0]),
+                               variables = Dict("age" => Variable(unit = "d")),
+                               vectors = Dict("ends" => [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]],
+                                              "sources" => [Float64[], [10.0, 20.0, 30.0], Float64[]]),
+                               derived = [DerivedField("water_potential"; entity_set = "Cell", input = "ends",
+                                                       operators = [1 NO_ID; 2 1; 3 NO_ID],
+                                                       weights = [1.0 0.0; 0.5 0.5; 2.0 0.0],
+                                                       offsets = ["sources", nothing],
+                                                       variable = Variable(unit = "MPa", role = "derived"))])
+        push!(frame.data_structures, DataStructure("plant"; entity_sets = [
+            EntitySet("SubOrgan"; columns = encoding3d.Columns("id" => [7, 8, 9]), rank = 0)], instance_sets = [sections]))
+        expected = [[1.0, 1.5, 2.0], [0.5 * 16 + 0.5 * 3, 0.5 * 32 + 0.5 * 3.5, 0.5 * 42 + 0.5 * 4], [22.0, 10.0, 12.0]]
+        @test evaluate(frame, "water_potential") ≈ expected
+        @test evaluate(frame, "water_potential"; data_structure = "plant", instance_set = "sections", rows = [3]) ≈
+              [expected[3]]
+        folder = mktempdir()
+        index = write_sequence(joinpath(folder, "run"), [frame])
+        @test isfile(joinpath(folder, "run", "parts", "$(parts[1]).glb"))
+        @test length(read_index(index)["parts"]) == 4
+        again = read_frame(read_index(index)["frames"][1]["path"])
+        @test evaluate(again, "water_potential") ≈ expected
+        read_sections = instance_set(data_structure(again, "plant"), "sections")
+        @test read_sections.owners == "SubOrgan" && read_sections.vectors["sources"].counts == [0, 3, 0]
+        @test !haskey(read_sections.columns, "ends__count") && read_sections.variables["age"].unit == "d"
+        embedded = from_bytes(to_bytes(frame; embed_parts = true))
+        @test length(embedded.part_bytes) == 4 && evaluate(embedded, "water_potential") ≈ expected
+        for compression in ("stored", "deflate")
+            archive = joinpath(folder, "run_$compression" * ARCHIVE_SUFFIX)
+            pack_archive(joinpath(folder, "run"), archive; compression)
+            packed = read_index(archive)
+            @test length(packed["parts"]) == 4
+            @test evaluate(read_frame(packed["frames"][1]["path"]), "water_potential") ≈ expected
+        end
+        rm(joinpath(folder, "run", "parts"); recursive = true)
+        without_parts = read_frame(read_index(index)["frames"][1]["path"])
+        error = try
+            evaluate(without_parts, "water_potential")
+            nothing
+        catch caught
+            caught
+        end
+        @test error isa MissingPartError && length(error.key) == 64 && occursin(error.key, sprint(showerror, error))
     end
 
     @testset "coupling" begin
