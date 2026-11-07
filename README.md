@@ -105,7 +105,8 @@ VirtualPlantLab (`bindings/julia/encoding3d/ext/`) are kept here only as **first
 teams**: built and tested by hand (each one's README), they move into the platforms once adopted.
 
 Each codec runs the same conformance check in its own tests. It reads the conformance GLBs and compares what it
-reads with their `*.expected.json`, and it runs `encoding3d validate` on what it writes. The steps are in the
+reads with their `*.expected.json` (0.4's instances and archives included: the four codecs read, write and evaluate
+them), and it runs `encoding3d validate` on what it writes. The steps are in the
 [specification, §9](spec/specification.md#9-conformance).
 
 Each platform has a column of `spec/vocabulary/standard_names.csv`, listing its own names for each standard name

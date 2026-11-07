@@ -57,7 +57,9 @@ encoding3d unpack run.fspm.zip folder                       # the folder back
 Each file is compressed alone, so a reader opens one frame without the others. `encoding3d.read`, `read_index`,
 `read_sequence`, the validator and ParaView open an archive as they open the folder; a file inside it is named
 `run.fspm.zip/frame_000024.glb`. In Python: `encoding3d.pack(folder, path, compression="deflate")` and
-`encoding3d.unpack(path, folder)`.
+`encoding3d.unpack(path, folder)`. The C++, Java and Julia codecs read archives as folders too (stored, deflate and lzma
+members) and pack them (`pack_archive`, `Archives.pack`; [C++](cpp.md), [Java](java.md), [Julia](julia.md)), and
+read, write and evaluate instances.
 
 Measured on a metafspm run's frames (use case 1, 57 frames, 2.6 GB; six frames from 3 MB to 198 MB, 451 MB, packed
 one at a time):

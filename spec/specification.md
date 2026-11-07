@@ -410,6 +410,7 @@ sequence:
 | `missing_values` | integer, text and boolean columns with missing values; a date column; `unknown` edge types and a `sibling_order` column; a `mixed` entity set; a labels map; bearer relations between two pairs of sets |
 | `growing_sequence/` | three frames of a growing root system and their index |
 | `instances/` | a sequence of two frames whose root segments are drawn by sections, instances of two templates: transforms, owners, an instance variable, vectors, a derived field of one term (dense, sparse solved) or two weighted terms with an offset; its parts (`parts/`, their expected values in `expected/<key>.json`), each frame's evaluated field (`frame_*.evaluated.json`), and the last frame with its parts embedded (`embedded.glb`) |
+| `archives/` | the `instances/` sequence packed into `.fspm.zip` archives: stored, deflate, lzma, and stored with every size and offset in ZIP64 records |
 
 An implementation conforms to 0.4 when two things hold:
 
@@ -420,8 +421,9 @@ An implementation conforms to 0.4 when two things hold:
 
 An implementation reading instances (§12) conforms when it reads `instances/` as expected, each part as its
 `expected/<key>.json`, and evaluates each frame's derived fields to its `frame_*.evaluated.json` within a relative
-1e-12 (a solved operator's values depend on the solver's rounding). A codec that reads 0.3 only skips `instances/`, as
-it skips `coupling/`.
+1e-12 (a solved operator's values depend on the solver's rounding); reading archives (§8.2), when it reads each frame
+of every archive of `archives/` as the folder's. `conformance/README.md` gives the dumps `encoding3d compare-all`
+compares. A codec that reads 0.3 only skips `instances/` and `archives/`, as it skips `coupling/`.
 
 A codec's participant (§11) conforms when it runs every **coupling session** of `conformance/coupling/` as expected,
 over both transports. A session's folder holds the coordinator's settings (`session.json`), a peer (a sequence the

@@ -21,8 +21,19 @@
   on instances and archives. Deflate is the default compression (measured on use case 1's frames: 11.6 % of the size
   at 79 MB/s, lzma 4.1 % at 17 MB/s).
 - The conformance case `instances/` (a sequence, its parts and their expected values, the evaluated fields, a frame
-  with its parts embedded); the C++, Java and Julia codecs' conformance runs and `compare-all` skip it, as they skip
-  `coupling/`. The conformance files say 0.4 (their expected values unchanged).
+  with its parts embedded), and `archives/`: that sequence packed stored, deflate, lzma, and with every ZIP64 record
+  (rewritten by `generate.py` only when their members change). `encoding3d compare-all` checks every codec's dumps of
+  them (frames, evaluated derived fields within a relative 1e-12, parts, each archive's frames; `--skip-instances` for
+  a codec reading 0.3 only, the action's `instances: "false"`), and the action validates written archives. The
+  conformance files say 0.4 (their expected values unchanged).
+- The C++, Java and Julia codecs on 0.4: instance sets, vectors and derived fields read and written; shared parts
+  (templates, operators) encoded, keyed by SHA-256, embedded or under `parts/`, found through the frame (a missing
+  part an error naming its key); derived fields evaluated (dense, `csr`, `solve`); the index's `parts`; `.fspm.zip`
+  archives read (ZIP64; stored, deflate, lzma) and packed. Their conformance runs dump the instances and archives, and
+  write the instances again with parts they encode themselves (sequence, index, archive). Dependencies: C++
+  minizip-ng (found or fetched; zlib, liblzma); Java xz-java (lzma; the rest `java.util.zip`); Julia ZipArchives.jl
+  and XZ_jll (liblzma's raw decoder), with SHA, SparseArrays, LinearAlgebra and Mmap. Java and Julia pack stored or
+  deflate (lzma read only), C++ all three.
 - ParaView: instance sets drawn as their placed templates (their own variables, their owners' and the ids containing
   them, their templates' constants), `instances` layers, `.fspm.zip` archives opened as folders; **encoding3d Select at
   scale** rebuilds the derived fields of the instances it selects (Isolate, Show In Panel, Put Back unchanged); the

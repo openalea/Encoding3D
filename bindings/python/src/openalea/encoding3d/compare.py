@@ -9,7 +9,7 @@ language: the codec dumps each GLB it reads as JSON (the layout of encoding3d.du
                                                        dump at the same relative path (x.expected.json: x.json); the
                                                        instances (0.4) and their archives as conformance/README.md says
 
-The derived fields a codec evaluates (*.evaluated.json) are compared within a relative RELATIVE_TOLERANCE (a solved
+The derived fields a codec evaluates (``*.evaluated.json``) are compared within a relative RELATIVE_TOLERANCE (a solved
 operator's values depend on the solver's rounding), every other number exactly.
 """
 import json
