@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- encoding3d, the Java codec of encoding3d: reading and writing frames and sequences (spec 0.3), a coupling session's participant. One dependency: Jackson
-     (and JeroMQ, optional, for the coupling's ZeroMQ transport).
+<!-- encoding3d, the Java codec of encoding3d: reading and writing frames and sequences (spec 0.4: instances, derived fields, shared parts, .fspm.zip
+     archives), a coupling session's participant. Dependencies: Jackson, xz-java (the archives' lzma members), and JeroMQ, optional, for the coupling's
+     ZeroMQ transport.
 
        mvn -f bindings/java/pom.xml verify          the tests, the conformance files included
 -->
@@ -36,6 +37,12 @@
       <groupId>com.fasterxml.jackson.core</groupId>
       <artifactId>jackson-databind</artifactId>
       <version>${jackson.version}</version>
+    </dependency>
+    <!-- the archives' lzma members (ZIP's method 14; stored and deflate: java.util.zip) -->
+    <dependency>
+      <groupId>org.tukaani</groupId>
+      <artifactId>xz</artifactId>
+      <version>1.10</version>
     </dependency>
     <!-- the coupling's ZeroMQ transport (pure Java); optional: the folder transport needs nothing -->
     <dependency>

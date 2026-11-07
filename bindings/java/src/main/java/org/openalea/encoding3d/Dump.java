@@ -123,6 +123,10 @@ public final class Dump {
                 for (boolean value : grid.periodic) periodic.add(value);
                 item.put("z_up", grid.zUp).put("max_level", grid.maxLevel).put("cells", grid.cells);
             }
+            if (!dataStructure.instanceSets.isEmpty()) {
+                ArrayNode instanceSets = entry.putArray("instance_sets");
+                for (InstanceSet instanceSet : dataStructure.instanceSets) instanceSets.add(instanceSetJson(instanceSet));
+            }
             if (!dataStructure.meshes.isEmpty()) {
                 ArrayNode meshes = entry.putArray("meshes");
                 for (Mesh mesh : dataStructure.meshes) {
@@ -168,6 +172,80 @@ public final class Dump {
             }
         }
         return dump;
+    }
+
+    /**
+     * An instance set: its table (its own columns), its parts' keys, owners, vectors (values and counts) and derived
+     * fields (operators and weights, K per instance, offsets).
+     */
+    private static ObjectNode instanceSetJson(InstanceSet instanceSet) {
+        ObjectNode entry = tableJson(instanceSet);
+        instanceSet.parts.forEach(entry.putArray("parts")::add);
+        if (instanceSet.owners != null) entry.put("owners", instanceSet.owners);
+        if (!instanceSet.vectors.isEmpty()) {
+            ObjectNode vectors = entry.putObject("vectors");
+            for (Map.Entry<String, Ragged> item : instanceSet.vectors.entrySet()) {
+                ObjectNode vector = vectors.putObject(item.getKey());
+                vector.set("values", columnJson(Column.of(item.getValue().values)));
+                ArrayNode counts = vector.putArray("counts");
+                for (long count : item.getValue().counts) counts.add(count);
+            }
+        }
+        if (!instanceSet.derived.isEmpty()) {
+            ArrayNode fields = entry.putArray("derived_fields");
+            for (DerivedField derived : instanceSet.derived) {
+                ObjectNode item = fields.addObject().put("name", derived.name).put("entity_set", derived.entitySet)
+                        .put("input", derived.input);
+                item.set("operators", rowsJson(Column.of(derived.operators), derived.terms));
+                item.set("weights", rowsJson(Column.of(derived.weights), derived.terms));
+                ArrayNode offsets = item.putArray("offsets");
+                for (String offset : derived.offsets) if (offset == null) offsets.addNull(); else offsets.add(offset);
+                item.put("unit", derived.variable.unit).put("role", derived.variable.role);
+                if (derived.variable.standardName != null) item.put("standard_name", derived.variable.standardName);
+            }
+        }
+        return entry;
+    }
+
+    /** The values of a column, {@code width} per row, each row an array (even of one value). */
+    private static ArrayNode rowsJson(Column column, int width) {
+        ArrayNode items = Glb.MAPPER.createArrayNode();
+        for (int row = 0; row < column.size() / width; row++) {
+            ArrayNode vector = items.addArray();
+            for (int component = 0; component < width; component++) addValue(vector, column, row * width + component);
+        }
+        return items;
+    }
+
+    private static ObjectNode sparseJson(SparseMatrix matrix) {
+        ObjectNode entry = Glb.MAPPER.createObjectNode();
+        entry.set("indptr", columnJson(Column.of(matrix.indptr())));
+        entry.set("indices", columnJson(Column.of(matrix.indices())));
+        entry.set("values", columnJson(Column.of(matrix.values())));
+        return entry;
+    }
+
+    /** A shared part as plain JSON values: a template's data structure (as frameToJson's), an operator's arrays. */
+    public static ObjectNode partToJson(Part part) {
+        if (part instanceof Template template) {
+            Frame frame = new Frame();
+            frame.dataStructures.add(template.dataStructure);
+            ObjectNode entry = Glb.MAPPER.createObjectNode().put("kind", "template");
+            entry.set("data_structure", frameToJson(frame).get("data_structures").get(0));
+            return entry;
+        }
+        Operator operator = (Operator) part;
+        ObjectNode entry = Glb.MAPPER.createObjectNode().put("kind", "operator").put("format", operator.format);
+        entry.putArray("shape").add(operator.rows).add(operator.columns);
+        switch (operator.format) {
+            case "dense" -> entry.set("values", rowsJson(Column.of(operator.values), operator.columns));
+            case "csr" -> entry.setAll(sparseJson(operator.sparse));
+            default -> {
+                entry.set("system", sparseJson(operator.system));
+                entry.set("right_hand_side", sparseJson(operator.rightHandSide));
+            }
+        }
+        return entry;
     }
 
     /**

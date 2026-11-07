@@ -12,6 +12,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -26,7 +27,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  */
 public final class Codec {
     /** The version of the specification this library reads and writes. */
-    public static final String SPECIFICATION_VERSION = "0.3";
+    public static final String SPECIFICATION_VERSION = "0.4";
     public static final List<String> EDGE_TYPES = List.of("none", "successor", "branch", "unknown");
 
     private static final String EXTENSION = "FSPM_scene", METADATA = "EXT_structural_metadata",
@@ -47,8 +48,21 @@ public final class Codec {
 
     // ── Writing ──────────────────────────────────────────────────────────
 
-    /** The GLB file of a frame. */
+    /** The GLB file of a frame; its instance sets' parts referred to by key only ({@link #write} writes them to parts/). */
     public static byte[] toBytes(Frame frame) {
+        return encodeFrame(frame, false, null);
+    }
+
+    /**
+     * The GLB file of a frame; {@code embedParts}: the parts its instance sets use in it (one self-contained file), else
+     * referred to by key only.
+     */
+    public static byte[] toBytes(Frame frame, boolean embedParts) {
+        return encodeFrame(frame, embedParts, null);
+    }
+
+    /** The GLB file of a frame; {@code partEntry}, when not null: the frame is a part's file, its FSPM_scene.part that. */
+    static byte[] encodeFrame(Frame frame, boolean embedParts, Function<Glb.BufferBuilder, ObjectNode> partEntry) {
         Glb.BufferBuilder buffers = new Glb.BufferBuilder();
         ObjectNode schema = Glb.MAPPER.createObjectNode().put("id", "fspm_scene");
         schema.putObject("classes");
@@ -122,6 +136,11 @@ public final class Codec {
                     }
                 }
             }
+            if (!dataStructure.instanceSets.isEmpty()) {
+                ArrayNode instanceSets = entry.putArray("instanceSets");
+                for (InstanceSet instanceSet : dataStructure.instanceSets)
+                    instanceSets.add(encodeInstanceSet(instanceSet, dataStructure, buffers, schema, tables, variables));
+            }
         }
 
         ArrayNode mappings = Glb.MAPPER.createArrayNode();
@@ -154,9 +173,15 @@ public final class Codec {
         if (frame.vocabularyVersion != null) scene.put("vocabulary", frame.vocabularyVersion);
         if (!frame.writer.isEmpty()) scene.set("writer", frame.writer);
         if (update != null) scene.set("update", update);
+        if (partEntry != null) scene.set("part", partEntry.apply(buffers));
         scene.set("dataStructures", dataStructures);
         if (!mappings.isEmpty()) scene.set("mappings", mappings);
         if (!variables.isEmpty()) scene.set("variables", variables);
+        List<String> keys = Parts.keys(frame);
+        if (embedParts && !keys.isEmpty()) {
+            ObjectNode embedded = scene.putObject("parts");
+            for (String key : keys) embedded.putObject(key).put("bufferView", buffers.add(Parts.bytes(frame, key)));
+        }
 
         ObjectNode extensions = Glb.MAPPER.createObjectNode();
         ObjectNode metadata = extensions.putObject(METADATA);
@@ -188,9 +213,90 @@ public final class Codec {
         return Glb.pack(document, binary);
     }
 
-    /** Writes a frame to the GLB file {@code path}. */
-    public static void write(Path path, Frame frame) throws IOException {
-        Files.write(path, toBytes(frame));
+    /**
+     * Writes a frame to the GLB file {@code path}, and each part its instance sets use to parts/&lt;key&gt;.glb next to
+     * it, when not there yet; the keys of those parts, sorted.
+     */
+    public static List<String> write(Path path, Frame frame) throws IOException {
+        return write(path, frame, false);
+    }
+
+    /** As {@link #write(Path, Frame)}; {@code embedParts}: the parts in the frame instead (one self-contained file). */
+    public static List<String> write(Path path, Frame frame, boolean embedParts) throws IOException {
+        Files.write(path, toBytes(frame, embedParts));
+        List<String> keys = Parts.keys(frame);
+        if (embedParts) return keys;
+        Path folder = path.toAbsolutePath().getParent().resolve(Parts.FOLDER);
+        for (String key : keys) {
+            Path target = folder.resolve(key + ".glb");
+            if (Files.exists(target)) continue;                  // its name is its hash: its content
+            Files.createDirectories(folder);
+            Path temporary = folder.resolve(key + ".glb.part");
+            Files.write(temporary, Parts.bytes(frame, key));
+            Files.move(temporary, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);   // never half a part
+        }
+        return keys;
+    }
+
+    /**
+     * The FSPM_scene entry of an instance set (specification §12.2), its tables added: the instance table (its columns,
+     * each vector's &lt;name&gt;__count, each derived field's &lt;name&gt;__operator and &lt;name&gt;__weight) and one
+     * table per vector (its values, the instances' one after the other).
+     */
+    private static ObjectNode encodeInstanceSet(InstanceSet instanceSet, DataStructure dataStructure, Glb.BufferBuilder buffers,
+                                                ObjectNode schema, ArrayNode tables, ObjectNode variables) {
+        checkIdentifier(instanceSet.name, "instance set name");
+        String where = "instance set '" + instanceSet.name + "' of '" + dataStructure.id + "'";
+        if (!instanceSet.has("template"))
+            throw new Encoding3dException(where + ": no 'template' column (each instance's index in its parts)");
+        int count = instanceSet.count();
+        InstanceSet table = new InstanceSet(instanceSet.name);    // its columns, and those of its vectors and fields
+        instanceSet.columns.forEach(table::set);
+        table.variables.putAll(instanceSet.variables);
+        ObjectNode entry = Glb.MAPPER.createObjectNode().put("name", instanceSet.name);
+        instanceSet.parts.forEach(entry.putArray("parts")::add);
+        if (instanceSet.owners != null) entry.put("owners", instanceSet.owners);
+        ArrayNode vectors = Glb.MAPPER.createArrayNode();
+        for (Map.Entry<String, Ragged> item : instanceSet.vectors.entrySet()) {
+            String name = item.getKey();
+            Ragged ragged = item.getValue();
+            checkIdentifier(name, "vector of " + where);
+            ragged.offsets();                                   // its counts checked against its values
+            if (ragged.size() != count)
+                throw new Encoding3dException(where + ": vector '" + name + "' has " + ragged.size() + " instances, the set " + count);
+            table.set(name + "__count", Column.of(ragged.counts));
+            Table values = new Table(name).set("values", Column.of(ragged.values));
+            vectors.addObject().put("name", name).put("propertyTable",
+                    addTable(values, dataStructure.id + "__" + instanceSet.name + "__" + name, buffers, schema, tables, variables));
+        }
+        ArrayNode derivedFields = Glb.MAPPER.createArrayNode();
+        for (DerivedField derived : instanceSet.derived) {
+            checkIdentifier(derived.name, "derived field of " + where);
+            if (derived.terms < 1 || derived.operators.length != count * derived.terms || derived.weights.length != count * derived.terms)
+                throw new Encoding3dException(where + ": derived field '" + derived.name + "' has not " + derived.terms
+                        + " operators and weights per instance");
+            if (!instanceSet.vectors.containsKey(derived.input))
+                throw new Encoding3dException(where + ": derived field '" + derived.name + "' applies to vector '" + derived.input
+                        + "', which the set does not have");
+            if (derived.offsets.length != derived.terms)
+                throw new Encoding3dException(where + ": derived field '" + derived.name + "' has not one offset per term");
+            table.set(derived.name + "__operator", new Column(ComponentType.INT64, derived.operators, derived.terms));
+            table.set(derived.name + "__weight", new Column(ComponentType.FLOAT64, derived.weights, derived.terms));
+            ObjectNode item = derivedFields.addObject().put("name", derived.name).put("entitySet", derived.entitySet)
+                    .put("input", derived.input).put("terms", derived.terms);
+            item.set("variable", declarationJson(derived.variable));
+            boolean anyOffset = false;
+            for (String offset : derived.offsets) anyOffset |= offset != null;
+            if (anyOffset) {
+                ArrayNode offsets = item.putArray("offsets");
+                for (String offset : derived.offsets) if (offset == null) offsets.addNull(); else offsets.add(offset);
+            }
+            if (derived.variable.description != null) item.put("description", derived.variable.description);
+        }
+        entry.put("propertyTable", addTable(table, dataStructure.id + "__" + instanceSet.name, buffers, schema, tables, variables));
+        if (!vectors.isEmpty()) entry.set("vectors", vectors);
+        if (!derivedFields.isEmpty()) entry.set("derivedFields", derivedFields);
+        return entry;
     }
 
     static void checkIdentifier(String name, String what) {
@@ -299,7 +405,8 @@ public final class Codec {
         } else {
             ComponentType type = column.type;
             Column data = column;
-            if (reserved && ID_COLUMNS.contains(name) && !type.isFloat() && type != ComponentType.INT64) {
+            if (reserved && (ID_COLUMNS.contains(name) || table.kind() == Table.Kind.INSTANCE_SET) && !type.isFloat()
+                    && type != ComponentType.INT64) {
                 long[] ids = new long[column.size()];                       // ids are INT64, whatever the platform's
                 for (int index = 0; index < ids.length; index++) ids[index] = (long) column.doubleAt(index);
                 data = new Column(ComponentType.INT64, ids, column.width);
@@ -601,6 +708,11 @@ public final class Codec {
 
     /** The frame of a GLB file's bytes. */
     public static Frame fromBytes(byte[] data) {
+        return fromBytes(data, null);
+    }
+
+    /** The frame of a GLB file's bytes; {@code partsFolder}: the folder its parts/ are in (the file's folder). */
+    public static Frame fromBytes(byte[] data, Path partsFolder) {
         Glb.Contents contents = Glb.unpack(data);
         JsonNode document = contents.document();
         byte[] binary = contents.binary();
@@ -654,6 +766,8 @@ public final class Codec {
             if (entry.has("grid")) dataStructure.grid = decodeGrid(entry.get("grid"));
             for (JsonNode meshEntry : entry.path("meshes"))
                 dataStructure.meshes.add(decodeMesh(document, binary, meshEntry, tableNames));
+            for (JsonNode item : entry.path("instanceSets"))
+                dataStructure.instanceSets.add(decodeInstanceSet(document, binary, metadata, variables, item));
             frame.dataStructures.add(dataStructure);
         }
         for (JsonNode entry : scene.path("mappings")) {
@@ -680,15 +794,102 @@ public final class Codec {
         }
         if (!others.isEmpty()) frame.unknown.set("extensions", others);
         if (document.has("extras")) frame.unknown.set("extras", document.get("extras"));
+        for (Iterator<Map.Entry<String, JsonNode>> items = scene.path("parts").fields(); items.hasNext(); ) {
+            Map.Entry<String, JsonNode> item = items.next();               // embedded parts: a self-contained frame
+            ByteBuffer bytes = view(document, binary, item.getValue().get("bufferView").asInt());
+            byte[] part = new byte[bytes.remaining()];
+            bytes.get(part);
+            frame.partBytes.put(item.getKey(), part);
+        }
+        frame.partsFolder = partsFolder;
         return frame;
     }
 
-    /** The frame of the GLB file {@code path}. */
+    /**
+     * The frame of the GLB file {@code path}, in a folder or in an archive ("run.fspm.zip/frame_000003.glb"); its parts
+     * are found next to it.
+     */
     public static Frame read(Path path) throws IOException {
-        return fromBytes(Files.readAllBytes(path));
+        Path folder = path.toAbsolutePath().getParent();
+        return fromBytes(Archives.readBytes(path), folder);
     }
 
-    private static ByteBuffer view(JsonNode document, byte[] binary, int index) {
+    /** An instance set (specification §12.2): its own columns, its vectors and derived fields; its parts by key. */
+    private static InstanceSet decodeInstanceSet(JsonNode document, byte[] binary, JsonNode metadata, JsonNode variables,
+                                                 JsonNode item) {
+        InstanceSet instanceSet = new InstanceSet(item.get("name").asText(),
+                item.hasNonNull("owners") ? item.get("owners").asText() : null);
+        decodeTable(document, binary, metadata, variables, item.get("propertyTable").asInt(), instanceSet);
+        instanceSet.name = item.get("name").asText();
+        String where = "instance set '" + instanceSet.name + "'";
+        for (JsonNode key : item.path("parts")) instanceSet.parts.add(key.asText());
+        for (JsonNode vector : item.path("vectors")) {
+            String name = vector.get("name").asText();
+            Table values = new Table("");
+            decodeTable(document, binary, metadata, variables, vector.get("propertyTable").asInt(), values);
+            instanceSet.vectors.put(name, new Ragged(doublesOf(values.column("values")),
+                    longsOf(takeColumn(instanceSet, name + "__count", where))));
+        }
+        for (JsonNode entry : item.path("derivedFields")) {
+            String name = entry.get("name").asText();
+            int terms = entry.path("terms").asInt(1);
+            Variable variable = variableOf(entry.get("variable"), entry.get("description"));
+            String[] offsets = new String[terms];
+            JsonNode declared = entry.path("offsets");
+            if (declared.isArray() && declared.size() != terms)
+                throw new Encoding3dException(where + ": derived field '" + name + "' has not one offset per term");
+            for (int term = 0; declared.isArray() && term < terms; term++)
+                offsets[term] = declared.get(term).isNull() ? null : declared.get(term).asText();
+            long[] operators = longsOf(takeColumn(instanceSet, name + "__operator", where));
+            double[] weights = doublesOf(takeColumn(instanceSet, name + "__weight", where));
+            if (operators.length != instanceSet.count() * terms || weights.length != instanceSet.count() * terms)
+                throw new Encoding3dException(where + ": derived field '" + name + "' has not " + terms
+                        + " operators and weights per instance");
+            instanceSet.derived.add(new DerivedField(name, entry.get("entitySet").asText(), entry.get("input").asText(), terms,
+                    operators, weights, offsets, variable));
+        }
+        return instanceSet;
+    }
+
+    private static Column takeColumn(Table table, String name, String where) {
+        Column column = table.columns.remove(name);
+        if (column == null) throw new Encoding3dException(where + ": no column '" + name + "'");
+        table.variables.remove(name);
+        return column;
+    }
+
+    private static double[] doublesOf(Column column) {
+        if (column.type == ComponentType.FLOAT64) return column.doubles();
+        double[] values = new double[column.size()];
+        for (int index = 0; index < values.length; index++) values[index] = column.doubleAt(index);
+        return values;
+    }
+
+    private static long[] longsOf(Column column) {
+        if (column.type == ComponentType.INT64) return column.longs();
+        long[] values = new long[column.size()];
+        for (int index = 0; index < values.length; index++) values[index] = (long) column.doubleAt(index);
+        return values;
+    }
+
+    private static Variable variableOf(JsonNode declared, JsonNode description) {
+        Variable variable = new Variable();
+        if (declared != null && !declared.isNull()) {
+            variable.unit = declared.path("unit").asText("1");
+            variable.role = declared.path("role").asText("state");
+            if (declared.hasNonNull("standardName")) variable.standardName = declared.get("standardName").asText();
+            if (declared.hasNonNull("kind")) variable.kind = declared.get("kind").asText();
+            if (declared.hasNonNull("minimum")) variable.minimum = declared.get("minimum").asDouble();
+            if (declared.hasNonNull("maximum")) variable.maximum = declared.get("maximum").asDouble();
+            for (JsonNode reference : declared.path("references")) variable.references.add(reference.asText());
+            for (JsonNode doi : declared.path("doi")) variable.doi.add(doi.asText());
+            if (declared.hasNonNull("format")) variable.format = declared.get("format").asText();
+        }
+        if (description != null && !description.isNull()) variable.description = description.asText();
+        return variable;
+    }
+
+    static ByteBuffer view(JsonNode document, byte[] binary, int index) {
         JsonNode view = document.get("bufferViews").get(index);
         if (view.path("buffer").asInt(0) != 0) throw new Encoding3dException("encoding3d files keep every buffer view in the GLB binary chunk");
         int start = view.path("byteOffset").asInt(0), length = view.get("byteLength").asInt();
@@ -819,22 +1020,8 @@ public final class Codec {
             }
             table.columns.put(name, column);
             JsonNode declared = variables.path(classId).get(name);
-            if (declared != null || property.has("description")) {
-                Variable variable = new Variable();
-                if (declared != null) {
-                    variable.unit = declared.path("unit").asText("1");
-                    variable.role = declared.path("role").asText("state");
-                    if (declared.hasNonNull("standardName")) variable.standardName = declared.get("standardName").asText();
-                    if (declared.hasNonNull("kind")) variable.kind = declared.get("kind").asText();
-                    if (declared.hasNonNull("minimum")) variable.minimum = declared.get("minimum").asDouble();
-                    if (declared.hasNonNull("maximum")) variable.maximum = declared.get("maximum").asDouble();
-                    for (JsonNode reference : declared.path("references")) variable.references.add(reference.asText());
-                    for (JsonNode doi : declared.path("doi")) variable.doi.add(doi.asText());
-                    if (declared.hasNonNull("format")) variable.format = declared.get("format").asText();
-                }
-                if (property.has("description")) variable.description = property.get("description").asText();
-                table.variables.put(name, variable);
-            }
+            if (declared != null || property.has("description"))
+                table.variables.put(name, variableOf(declared, property.get("description")));
         }
     }
 

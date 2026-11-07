@@ -25,6 +25,8 @@ public final class DataStructure {
     public ObjectNode extras = JsonNodeFactory.instance.objectNode();
     /** The platform's labels to the vocabulary's. */
     public final java.util.Map<String, String> labels = new java.util.LinkedHashMap<>();
+    /** Its instance sets (specification §12.2). */
+    public final List<InstanceSet> instanceSets = new ArrayList<>();
 
     public DataStructure(String id) {
         this.id = id;
@@ -38,5 +40,10 @@ public final class DataStructure {
     public EntitySet entitySet(String name) {
         for (EntitySet set : entitySets) if (set.name.equals(name)) return set;
         throw new Encoding3dException("data structure '" + id + "' has no entity set '" + name + "'");
+    }
+
+    public InstanceSet instanceSet(String name) {
+        for (InstanceSet set : instanceSets) if (set.name.equals(name)) return set;
+        throw new Encoding3dException("data structure '" + id + "' has no instance set '" + name + "'");
     }
 }

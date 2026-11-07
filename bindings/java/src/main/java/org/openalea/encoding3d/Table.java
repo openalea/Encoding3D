@@ -12,7 +12,8 @@ public class Table {
         SCALARS(List.of()),
         ENTITY_SET(List.of("id", "label", "complex", "parent", "edge_type", "level", "index", "sibling_order")),
         RELATION(List.of("id", "source", "target", "relation")),
-        MAPPING(List.of("source", "target", "weight"));
+        MAPPING(List.of("source", "target", "weight")),
+        INSTANCE_SET(List.of("id", "owner", "template", "transform"));
 
         public final List<String> reserved;
 

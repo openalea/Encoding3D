@@ -27,7 +27,7 @@ class CodecTest {
         try (Stream<Path> paths = Files.walk(CONFORMANCE)) {
             return paths.filter(path -> path.toString().endsWith(".glb"))
                     .filter(path -> !CONFORMANCE.relativize(path).startsWith("coupling"))
-                    .filter(path -> !CONFORMANCE.relativize(path).startsWith("instances"))   // 0.4: the Python codec's
+                    .filter(path -> !CONFORMANCE.relativize(path).startsWith("instances"))   // InstancesTest
                     .sorted().toList().stream();
         }
     }

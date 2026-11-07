@@ -1,6 +1,6 @@
 # Reading and writing in Java, and GroIMP
 
-`bindings/java/` holds the Java codec (Java 17, Maven; one dependency, Jackson). It reads and writes encoding3d files and
+`bindings/java/` holds the Java codec (Java 17, Maven; dependencies Jackson, and xz-java for the archives' lzma members). It reads and writes encoding3d files and
 passes the conformance check. In `bindings/java/groimp/` is GroIMP's adapter. Both have tests, run in
 `.github/workflows/java-codec.yml`.
 
@@ -31,6 +31,30 @@ A `Column` holds a Java array of its type (`long[]`, `double[]`, `boolean[]`, `S
 the array of their width), with a `width` of 2 or more for a fixed-size vector per row, and its missing rows
 (`withMissing(...)`, `isMissing(row)`; NaN in a float column). NaN and infinities are written
 with the specification's stand-ins and read back as they were.
+
+## Instances, derived fields and archives
+
+The codec reads and writes 0.4's instance sets (specification §12, [Instances](instances.md)): an `InstanceSet` is a
+table of one row per instance (`template`, `owner`, `transform`, `id` and its own variables), its `vectors` (`Ragged`)
+and `derived` fields (`DerivedField`); its `parts` are keys, found through the frame (embedded, else
+`parts/<key>.glb` next to it).
+
+```java
+Frame frame = Codec.read(Path.of("run.fspm.zip/frame_000003.glb"));     // a folder's file, or an archive's
+InstanceSet sections = frame.dataStructure("RootPopulation").instanceSet("sections");
+List<double[]> potentials = Instances.evaluate(frame, "water_potential");   // one array per instance
+Part part = Parts.part(frame, sections.parts.get(0));                     // a Template or an Operator
+
+Frame written = new Frame();                                              // writing: parts added by content
+String key = Parts.add(written, Operator.dense(4, 2, new double[] {1, 0, 0.75, 0.25, 0.5, 0.5, 0.25, 0.75}));
+// ... an InstanceSet whose parts hold key, in a data structure of written
+Codec.write(Path.of("frames/frame_000000.glb"), written);                // and frames/parts/<key>.glb, once
+Archives.pack(Path.of("frames"), Path.of("run.fspm.zip"));               // deflate, or "stored"
+```
+
+Archives are read stored, deflate (`java.util.zip.Inflater`) or lzma (xz-java), and packed stored or deflate
+(`java.util.zip.ZipOutputStream`). A `solve` operator is solved by a dense LU factorisation (with partial pivoting),
+once per operator and evaluation.
 
 ## Coupling with other platforms
 
