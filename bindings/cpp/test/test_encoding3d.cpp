@@ -1,5 +1,6 @@
 // The C++ codec's tests: the conformance files read as their expected values, written and read back the same, every
-// column type, meshes, sequences, and what the specification forbids refused.
+// column type, meshes, sequences, instances and their derived fields, shared parts, archives, and what the
+// specification forbids refused.
 //
 //     encoding3d_tests CONFORMANCE
 #include <algorithm>
@@ -44,7 +45,7 @@ std::vector<filesystem::path> conformance_files(const filesystem::path &conforma
     for (const auto &entry : filesystem::recursive_directory_iterator(conformance))
         if (entry.is_regular_file() && entry.path().extension() == ".glb" &&
             entry.path().string().find("coupling") == std::string::npos &&   // the coupling sessions: their own check
-            entry.path().string().find("instances") == std::string::npos)    // 0.4's instances: the Python codec's
+            entry.path().string().find("instances") == std::string::npos)    // the instances: test_instances
             files.push_back(entry.path());
     std::sort(files.begin(), files.end());
     return files;
@@ -238,6 +239,181 @@ void test_partial_frame() {
     check(frame_to_json(again)["update"]["removed"][0]["ids"] == json::array({5, 6}), "partial frame: its dump");
 }
 
+json read_json(const filesystem::path &path) {
+    std::ifstream file(path, std::ios::binary);
+    return json::parse(file);
+}
+
+/// {"<data structure>/<instance set>/<field>": values per instance} of a frame's derived fields, as JSON.
+json evaluated_json(const Frame &frame) {
+    json out = json::object();
+    for (const auto &data_structure : frame.data_structures)
+        for (const auto &instance_set : data_structure.instance_sets)
+            for (const auto &derived : instance_set.derived) {
+                json instances = json::array();
+                for (const auto &values : evaluate(frame, derived.name, data_structure.id, instance_set.name)) {
+                    json items = json::array();
+                    for (const auto value : values) items.push_back(std::isnan(value) ? json(nullptr) : json(value));
+                    instances.push_back(items);
+                }
+                out[data_structure.id + "/" + instance_set.name + "/" + derived.name] = instances;
+            }
+    return out;
+}
+
+/// Whether two evaluated fields agree within a relative 1e-12 (a solved operator's values depend on the rounding).
+bool close(const json &actual, const json &expected) {
+    if (expected.is_object() || expected.is_array()) {
+        if (actual.size() != expected.size() || actual.type() != expected.type()) return false;
+        if (expected.is_object()) {
+            for (const auto &item : expected.items())
+                if (!actual.contains(item.key()) || !close(actual[item.key()], item.value())) return false;
+            return true;
+        }
+        for (std::size_t item = 0; item < expected.size(); ++item)
+            if (!close(actual[item], expected[item])) return false;
+        return true;
+    }
+    if (expected.is_number())
+        return actual.is_number() &&
+               std::abs(actual.get<double>() - expected.get<double>()) <= 1e-12 * std::abs(expected.get<double>());
+    return actual == expected;
+}
+
+void test_instances(const filesystem::path &conformance) {
+    const auto folder = conformance / "instances";
+    for (const auto &name : {"frame_000000", "frame_000001"}) {
+        const auto frame = read_frame((folder / (std::string(name) + ".glb")).string());
+        report(compare(json::parse(frame_to_json(frame).dump()), read_json(folder / (std::string(name) + ".expected.json"))),
+               std::string("instances read as expected: ") + name);
+        check(close(evaluated_json(frame), read_json(folder / (std::string(name) + ".evaluated.json"))),
+              std::string("instances evaluated as expected: ") + name);
+        const auto again = from_bytes(to_bytes(frame), frame.parts_folder);    // written and read: the same keys
+        report(compare(json::parse(frame_to_json(again).dump()), read_json(folder / (std::string(name) + ".expected.json"))),
+               std::string("instances written and read: ") + name);
+        for (const auto &archive : {"instances_stored", "instances_deflate", "instances_lzma", "instances_zip64"}) {
+            const auto in_archive = read_frame((conformance / "archives" / (std::string(archive) + ".fspm.zip") /
+                                                (std::string(name) + ".glb")).string());
+            report(compare(json::parse(frame_to_json(in_archive).dump()),
+                           read_json(folder / (std::string(name) + ".expected.json"))),
+                   std::string("read from an archive: ") + archive + "/" + name);
+            check(close(evaluated_json(in_archive), read_json(folder / (std::string(name) + ".evaluated.json"))),
+                  std::string("evaluated from an archive: ") + archive + "/" + name);
+        }
+    }
+    const auto embedded = read_frame((folder / "embedded.glb").string());
+    check(embedded.part_bytes.size() == 5, "embedded: five parts in the frame");
+    check(close(evaluated_json(embedded), read_json(folder / "frame_000001.evaluated.json")), "embedded: evaluated");
+    for (const auto &entry : filesystem::directory_iterator(folder / "parts")) {
+        const auto key = entry.path().stem().string();
+        const auto bytes = file_bytes(entry.path());
+        check(content_key(bytes) == key, "a part's key is the SHA-256 of its bytes: " + key);
+        report(compare(json::parse(part_to_json(read_part(bytes, key)).dump()), read_json(folder / "expected" / (key + ".json"))),
+               "part read as expected: " + key);
+        check_throws([&] { read_part(bytes, std::string(64, '0')); }, "a part whose bytes do not hash to its key");
+    }
+    const auto index = read_index((conformance / "archives" / "instances_deflate.fspm.zip").string());
+    check(index.frames.size() == 2 && index.parts.size() == 5, "an archive's index: its frames and parts");
+    check(content_key({'a', 'b', 'c'}) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+          "SHA-256 of 'abc'");
+    check(content_key({}) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "SHA-256 of ''");
+}
+
+/// A template of `cells` cells (a fan of triangles), its entity set Cell with an area per cell.
+Template fan(std::size_t cells) {
+    Template made;
+    EntitySet set("Cell");
+    std::vector<double> area(cells, 0.5);
+    set.set("area", Column(area));
+    made.data_structure.entity_sets.push_back(set);
+    Mesh mesh;
+    mesh.name = "section";
+    std::vector<std::int64_t> rows;
+    for (std::size_t cell = 0; cell < cells; ++cell) {
+        const double pi = std::acos(-1.0), first = 2 * pi * double(cell) / double(cells),
+                     second = 2 * pi * double(cell + 1) / double(cells);
+        mesh.positions.insert(mesh.positions.end(), {0, 0, 0, std::cos(first), std::sin(first), 0, std::cos(second),
+                                                     std::sin(second), 0});
+        rows.insert(rows.end(), 3, static_cast<std::int64_t>(cell));
+    }
+    mesh.feature_rows.emplace_back("Cell", rows);
+    made.data_structure.meshes.push_back(mesh);
+    return made;
+}
+
+void test_instances_written(const filesystem::path &scratch) {
+    Frame frame;
+    DataStructure plant("plant");
+    EntitySet segments("SubOrgan", 0);
+    segments.set("id", Column(std::vector<std::int64_t>{7, 8, 9}));
+    plant.entity_sets.push_back(segments);
+    InstanceSet sections("sections", "SubOrgan");
+    sections.parts = {add_part(frame, fan(3)),                                                  // 0: a template
+                      add_part(frame, Operator::dense(3, 2, {1, 0, 0.5, 0.5, 0, 1})),           // 1: dense
+                      add_part(frame, Operator::csr(3, 2, {{0, 1, 2, 3}, {0, 1, 0}, {2, 3, 4}})),   // 2: csr
+                      add_part(frame, Operator::solve(3, 2, {{0, 1, 2, 3}, {0, 1, 2}, {2, 4, 8}},  // 3: diag(2, 4, 8)⁻¹ R
+                                                      {{0, 2, 3, 4}, {0, 1, 0, 1}, {2, 2, 4, 8}}))};
+    check(sections.parts[1] == add_part(frame, Operator::dense(3, 2, {1, 0, 0.5, 0.5, 0, 1})),
+          "the same part, the same key");
+    sections.set("template", Column(std::vector<std::int64_t>{0, 0, 0}))
+        .set("owner", Column(std::vector<std::int64_t>{7, 8, 9}))
+        .set("age", Column(std::vector<double>{1, 2, 3}))
+        .declare("age", Variable{"d"});
+    sections.vectors.emplace_back("ends", Ragged::of({{1, 2}, {3, 4}, {5, 6}}));
+    sections.vectors.emplace_back("sources", Ragged::of({{}, {10, 20, 30}, {}}));
+    DerivedField potential;
+    potential.name = "water_potential";
+    potential.entity_set = "Cell";
+    potential.input = "ends";
+    potential.terms = 2;
+    potential.operators = {1, NO_ID, 2, 1, 3, NO_ID};
+    potential.weights = {1, 0, 0.5, 0.5, 2, 0};
+    potential.offsets = {std::string("sources"), std::nullopt};
+    potential.variable.unit = "MPa";
+    potential.variable.role = "derived";
+    sections.derived.push_back(potential);
+    plant.instance_sets.push_back(sections);
+    frame.data_structures.push_back(plant);
+    const std::vector<std::vector<double>> expected = {
+        {1, 1.5, 2},                                                  // dense · (1, 2)
+        {0.5 * (2 * 3 + 10) + 0.5 * 3, 0.5 * (3 * 4 + 20) + 0.5 * 3.5, 0.5 * (4 * 3 + 30) + 0.5 * 4},
+        {2 * (2 * 5 + 2 * 6) / 2, 2 * (4 * 5) / 4, 2 * (8 * 6) / 8}};  // diag(2, 4, 8)⁻¹ R (5, 6), weighed by 2
+    check(evaluate(frame, "water_potential") == expected, "evaluated from the parts added");
+    check(evaluate(frame, "water_potential", "plant", "sections", {2}) == std::vector<std::vector<double>>{expected[2]},
+          "evaluated for some instances");
+    filesystem::remove_all(scratch);
+    const auto index_path = write_sequence(scratch.string(), {frame});
+    check(filesystem::exists(scratch / "parts" / (sections.parts[0] + ".glb")), "its parts written under parts/");
+    const auto index = read_index(index_path);
+    check(index.parts.size() == 4, "the index lists its parts");
+    const auto again = read_frame(index.frames[0].path);
+    check(evaluate(again, "water_potential") == expected, "written and read: evaluated the same");
+    const auto &read_sections = again.data_structure("plant").instance_set("sections");
+    check(read_sections.owners == std::optional<std::string>("SubOrgan") && read_sections.count() == 3 &&
+              read_sections.vector("sources").counts == std::vector<std::int64_t>{0, 3, 0} &&
+              !read_sections.has_column("ends__count") && read_sections.variables.at("age").unit == "d",
+          "written and read: the instance set");
+    const auto embedded = from_bytes(to_bytes(frame, true));
+    check(embedded.part_bytes.size() == 4 && evaluate(embedded, "water_potential") == expected, "embedded parts");
+    for (const auto &compression : {"stored", "deflate", "lzma"}) {
+        const auto archive = (scratch / (std::string("run_") + compression + ".fspm.zip")).string();
+        pack_archive(scratch.string(), archive, compression);
+        const auto packed = read_index(archive);
+        check(packed.parts.size() == 4 && evaluate(read_frame(packed.frames[0].path), "water_potential") == expected,
+              std::string("packed, read from the archive: ") + compression);
+    }
+    filesystem::remove_all(scratch / "parts");
+    const auto without_parts = read_frame(index.frames[0].path);
+    bool missing = false;
+    try {
+        evaluate(without_parts, "water_potential");
+    } catch (const MissingPartError &error) {
+        missing = error.key.size() == 64 && std::string(error.what()).find(error.key) != std::string::npos;
+    }
+    check(missing, "a missing part: an error naming its key");
+    filesystem::remove_all(scratch);
+}
+
 int main(int argument_count, char **arguments) {
     if (argument_count != 2) {
         std::cerr << "usage: encoding3d_tests CONFORMANCE\n";
@@ -247,7 +423,8 @@ int main(int argument_count, char **arguments) {
     const std::vector<std::pair<std::string, std::function<void()>>> tests = {
         {"conformance", [&] { test_conformance(conformance); }}, {"columns", test_columns}, {"mesh", test_mesh},
         {"refused", test_refused}, {"sequence", [&] { test_sequence(conformance); }},
-        {"partial frame", test_partial_frame}};
+        {"partial frame", test_partial_frame}, {"instances", [&] { test_instances(conformance); }},
+        {"instances written", [&] { test_instances_written(filesystem::temp_directory_path() / "encoding3d_tests_instances"); }}};
     for (const auto &[name, test] : tests) {
         try {
             test();

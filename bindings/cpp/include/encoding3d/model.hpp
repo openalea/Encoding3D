@@ -7,7 +7,10 @@
 //         Table          the data structure's scalars: a table of one row
 //         Grid           a regular or adaptive grid's layout
 //         Mesh           triangles, each vertex carrying the row of its entity in one or several entity sets
+//         InstanceSet    instances of shared templates (specification §12): a table of one row per instance, its
+//                        vectors (Ragged) and derived fields (DerivedField)
 //       Mapping          source entity <-> target entity weights between two data structures
+//     Template, Operator the shared parts instance sets use, kept once per sequence and found by their key
 //
 // A column holds one value per row (numbers, booleans, text), or a fixed-size vector per row (`width` values per
 // row, row after row). Missing values: NaN in float columns; elsewhere the column's `missing` mask (one flag per row,
@@ -32,7 +35,7 @@ namespace encoding3d {
 using json = nlohmann::ordered_json;
 
 /// The version of the specification this library reads and writes.
-inline constexpr const char *SPECIFICATION_VERSION = "0.3";
+inline constexpr const char *SPECIFICATION_VERSION = "0.4";
 /// The id of no entity: the complex or parent of an entity that has none, the feature row of a vertex with none.
 inline constexpr std::int64_t NO_ID = -1;
 /// The values of edge_type: the root of its scale, MTG '<', MTG '+'.
@@ -44,6 +47,13 @@ inline const std::vector<std::string> BASE_SCALES = {"Plant", "Axis", "GrowthUni
 /// What the specification forbids, or a file that is not encoding3d.
 struct Error : std::runtime_error {
     using std::runtime_error::runtime_error;
+};
+
+/// A shared part a frame refers to is nowhere it may be (specification §12.1): its key, and where it was looked for.
+struct MissingPartError : Error {
+    std::string key;
+    std::vector<std::string> looked;
+    MissingPartError(std::string part_key, std::vector<std::string> looked_at);
 };
 
 /// The values of a column: one vector per element type. Booleans are std::vector<bool>; text, labels and edge types
@@ -109,7 +119,7 @@ struct Variable {
     bool operator==(const Variable &other) const;
 };
 
-enum class TableKind { scalars, entity_set, relation, mapping };
+enum class TableKind { scalars, entity_set, relation, mapping, instance_set };
 
 /// Columns of equal length, in their order, and the declarations of its variables.
 struct Table {
@@ -210,6 +220,65 @@ struct Mesh {
     std::size_t vertex_count() const { return positions.size() / 3; }
 };
 
+/// One array of numbers per instance, of each instance's own length (specification §12.2): `values` holds them one
+/// after the other, in the instances' order; `counts` each one's length.
+struct Ragged {
+    std::vector<double> values;
+    std::vector<std::int64_t> counts;
+
+    Ragged() = default;
+    Ragged(std::vector<double> ragged_values, std::vector<std::int64_t> ragged_counts)
+        : values(std::move(ragged_values)), counts(std::move(ragged_counts)) {}
+    /// The ragged array of one vector per instance.
+    static Ragged of(const std::vector<std::vector<double>> &vectors);
+    /// The number of instances.
+    std::size_t size() const { return counts.size(); }
+    /// Where each instance's values start in `values` (one more than size(): the end).
+    std::vector<std::size_t> offsets() const;
+    /// The values of instance `row`.
+    std::vector<double> at(std::size_t row) const;
+};
+
+/// A derived field (specification §12.3): a field on the entity set `entity_set` of the instances' templates, rebuilt
+/// for each instance i from its vector `input` v as f = Σ_k w_ik (A_ik v + b_ik) over its `terms` K terms. `operators`
+/// and `weights`: K per instance, row by row (instance i's term k at i * K + k); an operator is an index in the
+/// instance set's parts, NO_ID for none. `offsets`: K names of vectors, or none, each term's offset b.
+struct DerivedField {
+    std::string name;
+    std::string entity_set;
+    std::string input;
+    std::size_t terms = 1;
+    std::vector<std::int64_t> operators;
+    std::vector<double> weights;
+    std::vector<std::optional<std::string>> offsets;
+    Variable variable;
+
+    std::int64_t operator_of(std::size_t row, std::size_t term) const { return operators[row * terms + term]; }
+    double weight_of(std::size_t row, std::size_t term) const { return weights[row * terms + term]; }
+};
+
+/// Instances of shared templates (specification §12.2): one row per instance, its reserved columns `template` (the
+/// index in `parts` of its template, INT64), `owner` (the id, in the entity set `owners`, of the entity it draws),
+/// `transform` (16 numbers per row, the column-major 4×4 placing the template; identity when absent) and `id`, then
+/// its own variables. `parts`: the keys of the parts (templates and operators) the instances use; `vectors` and
+/// `derived`: its vectors and derived fields (their columns <vector>__count, <field>__operator and <field>__weight
+/// are written from them, not held as columns).
+struct InstanceSet : Table {
+    std::optional<std::string> owners;
+    std::vector<std::string> parts;
+    std::vector<std::pair<std::string, Ragged>> vectors;
+    std::vector<DerivedField> derived;
+
+    InstanceSet() : Table("", TableKind::instance_set) {}
+    explicit InstanceSet(std::string name, std::optional<std::string> owner_set = std::nullopt)
+        : Table(std::move(name), TableKind::instance_set), owners(std::move(owner_set)) {}
+    std::size_t count() const { return row_count(); }
+    const Ragged &vector(const std::string &vector_name) const;
+    const DerivedField &derived_field(const std::string &field_name) const;
+    /// The 4×4 placing instance `row`'s template, column-major (identity without a transform column).
+    std::array<double, 16> transform(std::size_t row) const;
+};
+
 /// One plant population's graph, or one environment model's grid. origin: its frame in the scene, a 4×4 matrix row
 /// by row. extras: JSON values for the writing platform (e.g. what it needs to rebuild its own data structure);
 /// other readers keep them without interpreting them.
@@ -226,12 +295,51 @@ struct DataStructure {
     std::optional<std::string> model;
     json extras = json::object();
     std::vector<std::pair<std::string, std::string>> labels;   ///< the platform's labels -> the vocabulary's
+    std::vector<InstanceSet> instance_sets;
 
     DataStructure() = default;
     explicit DataStructure(std::string id, std::string kind = "graph") : id(std::move(id)), kind(std::move(kind)) {}
     const EntitySet &entity_set(const std::string &name) const;
     EntitySet &entity_set(const std::string &name);
+    const InstanceSet &instance_set(const std::string &name) const;
+    InstanceSet &instance_set(const std::string &name);
 };
+
+/// A template (a shared part, specification §12.1): the data structure its part file holds (id "template", kind
+/// "table", or "graph" with ranks): the template's own entity sets (e.g. a section's cells, their ids and constant
+/// variables), relations, and meshes in the template's coordinates. A template is a valid frame of its own.
+struct Template {
+    DataStructure data_structure{"template", "table"};
+
+    const EntitySet &entity_set(const std::string &name) const { return data_structure.entity_set(name); }
+};
+
+/// A matrix in compressed sparse rows: row r's entries are indices[indptr[r] .. indptr[r + 1]) and their values.
+struct SparseMatrix {
+    std::vector<std::int64_t> indptr;
+    std::vector<std::int64_t> indices;
+    std::vector<double> values;
+};
+
+/// A linear operator of derived fields (a shared part, specification §12.1), rows × columns: `format` "dense"
+/// (`values`, row by row), "csr" (`sparse`) or "solve" (S⁻¹ R, S `system`, rows × rows, R `right_hand_side`, rows ×
+/// columns, solved when evaluated).
+struct Operator {
+    std::string format = "dense";
+    std::size_t rows = 0;
+    std::size_t columns = 0;
+    std::vector<double> values;
+    SparseMatrix sparse;
+    SparseMatrix system;
+    SparseMatrix right_hand_side;
+
+    static Operator dense(std::size_t rows, std::size_t columns, std::vector<double> row_by_row);
+    static Operator csr(std::size_t rows, std::size_t columns, SparseMatrix matrix);
+    static Operator solve(std::size_t rows, std::size_t columns, SparseMatrix system, SparseMatrix right_hand_side);
+};
+
+/// A shared part: a template or an operator.
+using Part = std::variant<Template, Operator>;
 
 /// What makes a frame partial: a coupling session's message (specification §11). participant: its sender
 /// ("coordinator" for a turn's inputs); its tables hold some rows and columns only. removed: (data structure id,
@@ -243,7 +351,9 @@ struct Update {
 
 /// A scene at one time step (time in time_unit, step), or a parameter set. update: set for a partial frame, a coupling
 /// session's message. unknown: the content of a read file this library does not interpret (other root extensions,
-/// the root's extras), written back as it was.
+/// the root's extras), written back as it was. The shared parts its instance sets refer to by key (specification
+/// §12.1) are found in `part_bytes` (key -> GLB bytes: those embedded in the file read, and those add_part encoded),
+/// else at parts/<key>.glb under `parts_folder` (the folder, or the x.fspm.zip archive, the frame was read from).
 struct Frame {
     std::vector<DataStructure> data_structures;
     std::vector<Mapping> mappings;
@@ -254,6 +364,8 @@ struct Frame {
     std::optional<std::string> vocabulary_version;
     std::optional<Update> update;
     json unknown = json::object();
+    std::map<std::string, std::vector<std::uint8_t>> part_bytes;
+    std::string parts_folder;
 
     const DataStructure &data_structure(const std::string &id) const;
     DataStructure &data_structure(const std::string &id);

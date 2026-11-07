@@ -6,7 +6,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <limits>
 #include <map>
@@ -239,7 +241,8 @@ std::pair<json, json> encode_table(const Table &table, const std::string &class_
                 using T = typename std::decay_t<decltype(values)>::value_type;
                 if constexpr (is_number_v<T>) {
                     if constexpr (std::is_integral_v<T> && !std::is_same_v<T, std::int64_t>) {
-                        if (reserved && contains(ID_COLUMNS, name)) {      // ids are INT64, whatever the platform's
+                        if (reserved && (contains(ID_COLUMNS, name) ||       // ids are INT64, whatever the platform's
+                                         table.table_kind == TableKind::instance_set)) {   // and template, owner
                             property["type"] = "SCALAR";
                             property["componentType"] = "INT64";
                             if (column.width >= 2) {
@@ -393,11 +396,79 @@ std::vector<double> column_major(const std::array<double, 16> &origin) {
     return values;
 }
 
+/// The FSPM_scene entry of an instance set (specification §12.2), its tables added by `add_table`: the instance table
+/// (its columns, each vector's <name>__count, each derived field's <name>__operator and <name>__weight) and one table
+/// per vector (its values, the instances' one after the other).
+json encode_instance_set(const InstanceSet &instance_set, const DataStructure &data_structure,
+                         const std::function<std::int64_t(const Table &, const std::string &)> &add_table) {
+    check_identifier(instance_set.name, "instance set name");
+    const std::string where = "instance set '" + instance_set.name + "' of '" + data_structure.id + "'";
+    if (!instance_set.has_column("template"))
+        throw Error(where + ": no 'template' column (each instance's index in its parts)");
+    const std::size_t count = instance_set.count();
+    Table table = instance_set;                         // its columns, and those of its vectors and derived fields
+    json entry = {{"name", instance_set.name}, {"parts", instance_set.parts}};
+    if (instance_set.owners) entry["owners"] = *instance_set.owners;
+    json vectors = json::array();
+    for (const auto &[name, ragged] : instance_set.vectors) {
+        check_identifier(name, "vector of " + where);
+        ragged.offsets();                               // its counts checked against its values
+        if (ragged.size() != count)
+            throw Error(where + ": vector '" + name + "' has " + std::to_string(ragged.size()) + " instances, the set " +
+                        std::to_string(count));
+        table.set(name + "__count", Column(ragged.counts));
+        Table values(name);
+        values.set("values", Column(ragged.values));
+        vectors.push_back({{"name", name},
+                           {"propertyTable", add_table(values, data_structure.id + "__" + instance_set.name + "__" + name)}});
+    }
+    json derived_fields = json::array();
+    for (const auto &derived : instance_set.derived) {
+        check_identifier(derived.name, "derived field of " + where);
+        if (derived.terms == 0 || derived.operators.size() != count * derived.terms ||
+            derived.weights.size() != count * derived.terms)
+            throw Error(where + ": derived field '" + derived.name + "' has not " + std::to_string(derived.terms) +
+                        " operators and weights per instance");
+        bool has_input = false;
+        for (const auto &item : instance_set.vectors) has_input = has_input || item.first == derived.input;
+        if (!has_input)
+            throw Error(where + ": derived field '" + derived.name + "' applies to vector '" + derived.input +
+                        "', which the set does not have");
+        if (!derived.offsets.empty() && derived.offsets.size() != derived.terms)
+            throw Error(where + ": derived field '" + derived.name + "' has not one offset per term");
+        const std::size_t width = derived.terms == 1 ? 1 : derived.terms;
+        table.set(derived.name + "__operator", Column(derived.operators, width));
+        table.set(derived.name + "__weight", Column(derived.weights, width));
+        json item = {{"name", derived.name}, {"entitySet", derived.entity_set}, {"input", derived.input},
+                     {"terms", derived.terms}, {"variable", declaration_json(derived.variable)}};
+        if (std::any_of(derived.offsets.begin(), derived.offsets.end(), [](const auto &offset) { return bool(offset); })) {
+            json offsets = json::array();
+            for (const auto &offset : derived.offsets) offsets.push_back(offset ? json(*offset) : json(nullptr));
+            item["offsets"] = offsets;
+        }
+        if (derived.variable.description) item["description"] = *derived.variable.description;
+        derived_fields.push_back(item);
+    }
+    entry["propertyTable"] = add_table(table, data_structure.id + "__" + instance_set.name);
+    if (!vectors.empty()) entry["vectors"] = vectors;
+    if (!derived_fields.empty()) entry["derivedFields"] = derived_fields;
+    return entry;
+}
+
+/// Appends a buffer view to a builder (for the arrays of an operator part).
+using PartEntry = std::function<json(BufferBuilder &)>;
+
+std::vector<std::uint8_t> encode_frame(const Frame &frame, bool embed_parts, const PartEntry &part_entry);
+
 } // namespace
 
 // ── Writing ──────────────────────────────────────────────────────────────
 
-std::vector<std::uint8_t> to_bytes(const Frame &frame) {
+std::vector<std::uint8_t> to_bytes(const Frame &frame, bool embed_parts) { return encode_frame(frame, embed_parts, {}); }
+
+namespace {
+
+std::vector<std::uint8_t> encode_frame(const Frame &frame, bool embed_parts, const PartEntry &part_entry) {
     BufferBuilder buffers;
     json edge_values = json::array();
     for (std::size_t value = 0; value < EDGE_TYPES.size(); ++value)
@@ -411,7 +482,8 @@ std::vector<std::uint8_t> to_bytes(const Frame &frame) {
                                              {"children", json::array()}}})}};
     json accessors = json::array(), meshes = json::array();
 
-    auto add_table = [&](const Table &table, const std::string &class_id) {
+    const std::function<std::int64_t(const Table &, const std::string &)> add_table = [&](const Table &table,
+                                                                                           const std::string &class_id) {
         check_identifier(class_id, "class");
         auto [properties, stored] = encode_table(table, class_id, buffers, schema);
         schema["classes"][class_id] = {{"name", table.name}, {"properties", properties}};
@@ -485,6 +557,12 @@ std::vector<std::uint8_t> to_bytes(const Frame &frame) {
                 entry["meshes"].push_back(mesh_entry);
             }
         }
+        if (!data_structure.instance_sets.empty()) {
+            json instance_sets = json::array();
+            for (const auto &instance_set : data_structure.instance_sets)
+                instance_sets.push_back(encode_instance_set(instance_set, data_structure, add_table));
+            entry["instanceSets"] = instance_sets;
+        }
         data_structures.push_back(entry);
     }
 
@@ -520,9 +598,16 @@ std::vector<std::uint8_t> to_bytes(const Frame &frame) {
     if (frame.vocabulary_version) scene["vocabulary"] = *frame.vocabulary_version;
     if (!frame.writer.empty()) scene["writer"] = frame.writer;
     if (!update.is_null()) scene["update"] = update;
+    if (part_entry) scene["part"] = part_entry(buffers);
     scene["dataStructures"] = data_structures;
     if (!mappings.empty()) scene["mappings"] = mappings;
     if (!variables.empty()) scene["variables"] = variables;
+    const auto keys = frame_part_keys(frame);
+    if (embed_parts && !keys.empty()) {
+        json embedded = json::object();
+        for (const auto &key : keys) embedded[key] = {{"bufferView", buffers.add_bytes(frame_part_bytes(frame, key))}};
+        scene["parts"] = embedded;
+    }
 
     const json other_extensions = get(frame.unknown, "extensions", json::object());
     json extensions = {{METADATA, {{"schema", schema}, {"propertyTables", tables}}}, {EXTENSION, scene}};
@@ -548,11 +633,75 @@ std::vector<std::uint8_t> to_bytes(const Frame &frame) {
     return pack(document, buffers.data);
 }
 
-void write_frame(const std::string &path, const Frame &frame) {
-    const auto bytes = to_bytes(frame);
+void write_bytes(const std::filesystem::path &path, const std::vector<std::uint8_t> &bytes) {
     std::ofstream file(path, std::ios::binary);
-    if (!file) throw Error("cannot write '" + path + "'");
+    if (!file) throw Error("cannot write '" + path.string() + "'");
     file.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    if (!file) throw Error("cannot write '" + path.string() + "'");
+}
+
+} // namespace
+
+std::vector<std::string> write_frame(const std::string &path, const Frame &frame, bool embed_parts) {
+    write_bytes(path, to_bytes(frame, embed_parts));
+    const auto keys = frame_part_keys(frame);
+    if (embed_parts) return keys;
+    const auto folder = std::filesystem::absolute(std::filesystem::path(path)).parent_path() / "parts";
+    for (const auto &key : keys) {
+        const auto target = folder / (key + ".glb");
+        if (std::filesystem::exists(target)) continue;          // its name is its hash: its content
+        std::filesystem::create_directories(folder);
+        const auto temporary = folder / (key + ".glb.part");
+        write_bytes(temporary, frame_part_bytes(frame, key));
+        std::filesystem::rename(temporary, target);             // a reader never sees half a part
+    }
+    return keys;
+}
+
+std::vector<std::string> frame_part_keys(const Frame &frame) {
+    std::set<std::string> keys;
+    for (const auto &data_structure : frame.data_structures)
+        for (const auto &instance_set : data_structure.instance_sets)
+            keys.insert(instance_set.parts.begin(), instance_set.parts.end());
+    return {keys.begin(), keys.end()};
+}
+
+// ── Shared parts ─────────────────────────────────────────────────────────
+
+std::vector<std::uint8_t> part_to_bytes(const Part &part) {
+    if (const auto *template_part = std::get_if<Template>(&part)) {
+        Frame frame;
+        frame.data_structures.push_back(template_part->data_structure);
+        for (auto &set : frame.data_structures[0].entity_sets)      // an entity set without ids: its rows
+            if (!set.has_column("id") && !set.columns.empty()) {
+                std::vector<std::int64_t> ids(set.row_count());
+                for (std::size_t row = 0; row < ids.size(); ++row) ids[row] = static_cast<std::int64_t>(row);
+                set.columns.insert(set.columns.begin(), {"id", Column(ids)});
+            }
+        return encode_frame(frame, false, [](BufferBuilder &) { return json{{"kind", "template"}}; });
+    }
+    const auto &operator_part = std::get<Operator>(part);
+    return encode_frame(Frame(), false, [&](BufferBuilder &buffers) {
+        json entry = {{"kind", "operator"}, {"format", operator_part.format}, {"rows", operator_part.rows},
+                      {"columns", operator_part.columns}};
+        auto sparse = [&](const SparseMatrix &matrix) {
+            return json{{"indptr", buffers.add(matrix.indptr)}, {"indices", buffers.add(matrix.indices)},
+                        {"values", buffers.add(matrix.values)}};
+        };
+        if (operator_part.format == "dense") {
+            if (operator_part.values.size() != operator_part.rows * operator_part.columns)
+                throw Error("a dense operator holds rows × columns values");
+            entry["values"] = buffers.add(operator_part.values);
+        } else if (operator_part.format == "csr") {
+            entry.update(sparse(operator_part.sparse));
+        } else if (operator_part.format == "solve") {
+            entry["system"] = sparse(operator_part.system);
+            entry["rightHandSide"] = sparse(operator_part.right_hand_side);
+        } else {
+            throw Error("operator format '" + operator_part.format + "': dense, csr or solve");
+        }
+        return entry;
+    });
 }
 
 // ── Reading ──────────────────────────────────────────────────────────────
@@ -623,6 +772,22 @@ std::vector<std::uint64_t> read_unsigned(const std::string &type, const ViewByte
     else if (type == "UINT64") values = read_view<std::uint64_t>(raw, count);
     else throw Error("offsets or enum values of type " + type + " are not part of encoding3d 0.1");
     return values;
+}
+
+Variable variable_of(const json &declared, const json &description) {
+    Variable variable;
+    variable.unit = get(declared, "unit", "1").get<std::string>();
+    variable.role = get(declared, "role", "state").get<std::string>();
+    if (!get(declared, "standardName").is_null()) variable.standard_name = declared["standardName"].get<std::string>();
+    if (!get(declared, "kind").is_null()) variable.kind = declared["kind"].get<std::string>();
+    if (!description.is_null()) variable.description = description.get<std::string>();
+    if (!get(declared, "minimum").is_null()) variable.minimum = declared["minimum"].get<double>();
+    if (!get(declared, "maximum").is_null()) variable.maximum = declared["maximum"].get<double>();
+    if (!get(declared, "format").is_null()) variable.format = declared["format"].get<std::string>();
+    for (const auto &reference : get(declared, "references", json::array()))
+        variable.references.push_back(reference.get<std::string>());
+    for (const auto &doi : get(declared, "doi", json::array())) variable.doi.push_back(doi.get<std::string>());
+    return variable;
 }
 
 void decode_table(const json &document, const std::vector<std::uint8_t> &binary, const json &description,
@@ -713,22 +878,66 @@ void decode_table(const json &document, const std::vector<std::uint8_t> &binary,
         }
         table.columns.emplace_back(name, std::move(column));
         const json declared = get(get(variables, class_id, json::object()), name);
-        if (!declared.is_null() || property.contains("description")) {
-            Variable variable;
-            variable.unit = get(declared, "unit", "1").get<std::string>();
-            variable.role = get(declared, "role", "state").get<std::string>();
-            if (!get(declared, "standardName").is_null()) variable.standard_name = declared["standardName"].get<std::string>();
-            if (!get(declared, "kind").is_null()) variable.kind = declared["kind"].get<std::string>();
-            if (property.contains("description")) variable.description = property["description"].get<std::string>();
-            if (!get(declared, "minimum").is_null()) variable.minimum = declared["minimum"].get<double>();
-            if (!get(declared, "maximum").is_null()) variable.maximum = declared["maximum"].get<double>();
-            if (!get(declared, "format").is_null()) variable.format = declared["format"].get<std::string>();
-            for (const auto &reference : get(declared, "references", json::array()))
-                variable.references.push_back(reference.get<std::string>());
-            for (const auto &doi : get(declared, "doi", json::array())) variable.doi.push_back(doi.get<std::string>());
-            table.variables[name] = variable;
-        }
+        if (!declared.is_null() || property.contains("description"))
+            table.variables[name] = variable_of(declared, get(property, "description"));
     }
+}
+
+/// The numbers of a column as doubles, or as int64 (whatever its numeric type).
+template <typename T> std::vector<T> numbers_of(const Column &column, const std::string &where) {
+    return std::visit([&](const auto &values) -> std::vector<T> {
+        using V = typename std::decay_t<decltype(values)>::value_type;
+        if constexpr (is_number_v<V>) return std::vector<T>(values.begin(), values.end());
+        else throw Error(where + ": numbers expected");
+    }, column.values);
+}
+
+/// Removes the column `name` from `table`, and its declaration; its values.
+Column take_column(Table &table, const std::string &name, const std::string &where) {
+    for (auto item = table.columns.begin(); item != table.columns.end(); ++item)
+        if (item->first == name) {
+            Column column = std::move(item->second);
+            table.columns.erase(item);
+            table.variables.erase(name);
+            return column;
+        }
+    throw Error(where + ": no column '" + name + "'");
+}
+
+InstanceSet decode_instance_set(const json &item, const std::function<void(std::int64_t, Table &)> &table) {
+    InstanceSet instance_set(item.at("name").get<std::string>());
+    if (!get(item, "owners").is_null()) instance_set.owners = item["owners"].get<std::string>();
+    table(item.at("propertyTable").get<std::int64_t>(), instance_set);
+    instance_set.name = item.at("name").get<std::string>();
+    const std::string where = "instance set '" + instance_set.name + "'";
+    for (const auto &key : get(item, "parts", json::array())) instance_set.parts.push_back(key.get<std::string>());
+    for (const auto &vector : get(item, "vectors", json::array())) {
+        const std::string name = vector.at("name").get<std::string>();
+        Table values;
+        table(vector.at("propertyTable").get<std::int64_t>(), values);
+        Ragged ragged(numbers_of<double>(values.column("values"), where + " vector '" + name + "'"),
+                      numbers_of<std::int64_t>(take_column(instance_set, name + "__count", where), where));
+        instance_set.vectors.emplace_back(name, std::move(ragged));
+    }
+    for (const auto &entry : get(item, "derivedFields", json::array())) {
+        DerivedField derived;
+        derived.name = entry.at("name").get<std::string>();
+        derived.entity_set = entry.at("entitySet").get<std::string>();
+        derived.input = entry.at("input").get<std::string>();
+        derived.terms = get(entry, "terms", 1).get<std::size_t>();
+        derived.variable = variable_of(get(entry, "variable", json::object()), get(entry, "description"));
+        for (const auto &offset : get(entry, "offsets", json::array()))
+            derived.offsets.push_back(offset.is_null() ? std::nullopt : std::optional<std::string>(offset.get<std::string>()));
+        if (derived.offsets.empty()) derived.offsets.assign(derived.terms, std::nullopt);
+        derived.operators = numbers_of<std::int64_t>(take_column(instance_set, derived.name + "__operator", where), where);
+        derived.weights = numbers_of<double>(take_column(instance_set, derived.name + "__weight", where), where);
+        if (derived.operators.size() != instance_set.count() * derived.terms ||
+            derived.weights.size() != instance_set.count() * derived.terms || derived.offsets.size() != derived.terms)
+            throw Error(where + ": derived field '" + derived.name + "' has not " + std::to_string(derived.terms) +
+                        " operators, weights and offsets per instance");
+        instance_set.derived.push_back(std::move(derived));
+    }
+    return instance_set;
 }
 
 template <typename T>
@@ -795,14 +1004,14 @@ Mesh decode_mesh(const json &document, const std::vector<std::uint8_t> &binary, 
 
 } // namespace
 
-Frame from_bytes(const std::vector<std::uint8_t> &data) {
+Frame from_bytes(const std::vector<std::uint8_t> &data, const std::string &parts_folder) {
     auto [document, binary] = unpack(data);
     const json extensions = get(document, "extensions", json::object());
     if (!extensions.contains(EXTENSION)) throw Error("not an encoding3d file: no " + EXTENSION + " extension");
     const json &scene = extensions[EXTENSION];
     const json metadata = get(extensions, METADATA, {{"schema", json::object()}, {"propertyTables", json::array()}});
     const json variables = get(scene, "variables", json::object());
-    auto table = [&](std::int64_t index, Table &target) {
+    const std::function<void(std::int64_t, Table &)> table = [&](std::int64_t index, Table &target) {
         decode_table(document, binary, metadata.at("propertyTables").at(static_cast<std::size_t>(index)),
                      metadata.at("schema"), variables, target);
     };
@@ -864,6 +1073,8 @@ Frame from_bytes(const std::vector<std::uint8_t> &data) {
         }
         for (const auto &mesh_entry : get(entry, "meshes", json::array()))
             data_structure.meshes.push_back(decode_mesh(document, binary, mesh_entry, tables));
+        for (const auto &item : get(entry, "instanceSets", json::array()))
+            data_structure.instance_sets.push_back(decode_instance_set(item, table));
         frame.data_structures.push_back(std::move(data_structure));
     }
     for (const auto &entry : get(scene, "mappings", json::array())) {
@@ -892,14 +1103,53 @@ Frame from_bytes(const std::vector<std::uint8_t> &data) {
             other_extensions[item.key()] = item.value();
     if (!other_extensions.empty()) frame.unknown["extensions"] = other_extensions;
     if (document.contains("extras")) frame.unknown["extras"] = document["extras"];
+    const json embedded = get(scene, "parts", json::object());
+    for (const auto &item : embedded.items()) {                       // embedded parts: a self-contained frame
+        const auto raw = view_bytes(document, binary, item.value().at("bufferView").get<std::int64_t>());
+        frame.part_bytes[item.key()] = std::vector<std::uint8_t>(raw.data, raw.data + raw.size);
+    }
+    frame.parts_folder = parts_folder;
     return frame;
 }
 
 Frame read_frame(const std::string &path) {
-    std::ifstream file(path, std::ios::binary);
-    if (!file) throw Error("cannot read '" + path + "'");
-    std::vector<std::uint8_t> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    return from_bytes(data);
+    return from_bytes(read_file_bytes(path), std::filesystem::path(path).parent_path().string());
+}
+
+Part read_part(const std::vector<std::uint8_t> &data, const std::string &key) {
+    const std::string actual = content_key(data);
+    if (!key.empty() && key != actual)
+        throw Error("part " + key + ": its bytes hash to " + actual + " (the file is not the part its name says)");
+    const auto unpacked = unpack(data);
+    const json &document = unpacked.first;
+    const std::vector<std::uint8_t> &binary = unpacked.second;
+    const json described = get(get(get(document, "extensions", json::object()), EXTENSION, json::object()), "part");
+    if (described.is_null()) throw Error("part " + actual + ": not a part (no " + EXTENSION + ".part)");
+    const std::string kind = get(described, "kind", "").get<std::string>();
+    if (kind == "template") {
+        Frame frame = from_bytes(data);
+        if (frame.data_structures.size() != 1) throw Error("part " + actual + ": a template holds one data structure");
+        Template template_part;
+        template_part.data_structure = std::move(frame.data_structures[0]);
+        return template_part;
+    }
+    if (kind != "operator") throw Error("part " + actual + ": kind '" + kind + "' is not template or operator");
+    auto array = [&](const json &index, auto tag) {
+        using T = decltype(tag);
+        const auto raw = view_bytes(document, binary, index.get<std::int64_t>());
+        return read_view<T>(raw, raw.size / sizeof(T));
+    };
+    auto sparse = [&](const json &item) {
+        return SparseMatrix{array(item.at("indptr"), std::int64_t{}), array(item.at("indices"), std::int64_t{}),
+                            array(item.at("values"), double{})};
+    };
+    const auto rows = described.at("rows").get<std::size_t>(), columns = described.at("columns").get<std::size_t>();
+    const std::string format = described.at("format").get<std::string>();
+    if (format == "dense") return Operator::dense(rows, columns, array(described.at("values"), double{}));
+    if (format == "csr") return Operator::csr(rows, columns, sparse(described));
+    if (format == "solve")
+        return Operator::solve(rows, columns, sparse(described.at("system")), sparse(described.at("rightHandSide")));
+    throw Error("part " + actual + ": operator format '" + format + "' is not dense, csr or solve");
 }
 
 } // namespace encoding3d

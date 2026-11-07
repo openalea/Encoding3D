@@ -61,6 +61,53 @@ json table_json(const Table &table) {
 
 bool is_number(const json &value) { return value.is_number(); }
 
+json doubles_json(const std::vector<double> &values) {
+    json items = json::array();
+    for (const auto value : values) items.push_back(value_json(value));
+    return items;
+}
+
+/// An instance set: its table (its own columns), its parts' keys, owners, vectors (values and counts) and derived
+/// fields (operators and weights, K per instance, offsets).
+json instance_set_json(const InstanceSet &instance_set) {
+    json entry = table_json(instance_set);
+    entry["parts"] = instance_set.parts;
+    if (instance_set.owners) entry["owners"] = *instance_set.owners;
+    if (!instance_set.vectors.empty()) {
+        json vectors = json::object();
+        for (const auto &[name, ragged] : instance_set.vectors)
+            vectors[name] = {{"values", doubles_json(ragged.values)}, {"counts", ragged.counts}};
+        entry["vectors"] = vectors;
+    }
+    if (!instance_set.derived.empty()) {
+        json fields = json::array();
+        for (const auto &derived : instance_set.derived) {
+            json operators = json::array(), weights = json::array(), offsets = json::array();
+            for (std::size_t row = 0; row * derived.terms < derived.operators.size(); ++row) {
+                json operator_row = json::array(), weight_row = json::array();
+                for (std::size_t term = 0; term < derived.terms; ++term) {
+                    operator_row.push_back(derived.operator_of(row, term));
+                    weight_row.push_back(value_json(derived.weight_of(row, term)));
+                }
+                operators.push_back(operator_row);
+                weights.push_back(weight_row);
+            }
+            for (const auto &offset : derived.offsets) offsets.push_back(offset ? json(*offset) : json(nullptr));
+            json item = {{"name", derived.name}, {"entity_set", derived.entity_set}, {"input", derived.input},
+                         {"operators", operators}, {"weights", weights}, {"offsets", offsets},
+                         {"unit", derived.variable.unit}, {"role", derived.variable.role}};
+            if (derived.variable.standard_name) item["standard_name"] = *derived.variable.standard_name;
+            fields.push_back(item);
+        }
+        entry["derived_fields"] = fields;
+    }
+    return entry;
+}
+
+json sparse_json(const SparseMatrix &matrix) {
+    return {{"indptr", matrix.indptr}, {"indices", matrix.indices}, {"values", doubles_json(matrix.values)}};
+}
+
 } // namespace
 
 json frame_to_json(const Frame &frame) {
@@ -125,6 +172,12 @@ json frame_to_json(const Frame &frame) {
             }
             entry["meshes"] = meshes;
         }
+        if (!data_structure.instance_sets.empty()) {
+            json instance_sets = json::array();
+            for (const auto &instance_set : data_structure.instance_sets)
+                instance_sets.push_back(instance_set_json(instance_set));
+            entry["instance_sets"] = instance_sets;
+        }
         data_structures.push_back(entry);
     }
     json mappings = json::array();
@@ -144,6 +197,30 @@ json frame_to_json(const Frame &frame) {
         out["update"] = {{"participant", frame.update->participant}, {"removed", removed}};
     }
     return out;
+}
+
+json part_to_json(const Part &part) {
+    if (const auto *template_part = std::get_if<Template>(&part)) {
+        Frame frame;
+        frame.data_structures.push_back(template_part->data_structure);
+        return {{"kind", "template"}, {"data_structure", frame_to_json(frame)["data_structures"][0]}};
+    }
+    const auto &operator_part = std::get<Operator>(part);
+    json entry = {{"kind", "operator"}, {"format", operator_part.format},
+                  {"shape", {operator_part.rows, operator_part.columns}}};
+    if (operator_part.format == "dense") {
+        json rows = json::array();
+        for (std::size_t row = 0; row < operator_part.rows; ++row)
+            rows.push_back(doubles_json({operator_part.values.begin() + static_cast<std::ptrdiff_t>(row * operator_part.columns),
+                                         operator_part.values.begin() + static_cast<std::ptrdiff_t>((row + 1) * operator_part.columns)}));
+        entry["values"] = rows;
+    } else if (operator_part.format == "csr") {
+        entry.update(sparse_json(operator_part.sparse));
+    } else {
+        entry["system"] = sparse_json(operator_part.system);
+        entry["right_hand_side"] = sparse_json(operator_part.right_hand_side);
+    }
+    return entry;
 }
 
 std::vector<std::string> compare(const json &actual, const json &expected, const std::string &path) {

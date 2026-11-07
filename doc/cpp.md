@@ -13,7 +13,9 @@ cmake -S bindings/cpp -B build && cmake --build build && ctest --test-dir build
 cmake --install build --prefix /some/prefix         # then: find_package(encoding3d), encoding3d::encoding3d
 ```
 
-The one dependency, nlohmann_json, is used when installed and fetched otherwise.
+The dependencies, nlohmann_json and minizip-ng (archives: ZIP64, deflate through zlib, lzma through liblzma), are used
+when installed and fetched otherwise (minizip-ng's package `minizip-ng`, or conda-forge's `minizip`; fetched, it is
+built static with deflate and lzma only).
 
 ## The format's own tables
 
@@ -44,6 +46,28 @@ encoding3d::write_frame("plants.glb", written);
 A column holds a vector of numbers (any integer or float type), `bool` or `std::string`. With a `width` of 2 or
 more, it holds a fixed-size vector per row. NaN and infinities are written with the specification's stand-ins and
 read back as they were.
+
+## Instances, derived fields and archives
+
+The codec reads and writes 0.4's instance sets (specification §12, [Instances](instances.md)): an `InstanceSet` is a
+table of one row per instance (`template`, `owner`, `transform`, `id` and its own variables), its `vectors` (`Ragged`)
+and `derived` fields (`DerivedField`); its `parts` are keys, found through the frame (embedded, else
+`parts/<key>.glb` next to it).
+
+```cpp
+auto frame = encoding3d::read_frame("run.fspm.zip/frame_000003.glb");    // a folder's file, or an archive's
+const auto &sections = frame.data_structure("RootPopulation").instance_set("sections");
+auto potentials = encoding3d::evaluate(frame, "water_potential");      // one vector per instance
+auto part = encoding3d::frame_part(frame, sections.parts[0]);          // a Template or an Operator
+
+encoding3d::Frame written;                                             // writing: parts added by content
+const auto key = encoding3d::add_part(written, encoding3d::Operator::dense(4, 2, {1, 0, 0.75, 0.25, 0.5, 0.5, 0.25, 0.75}));
+// ... an InstanceSet whose parts hold key, in a data structure of written
+encoding3d::write_frame("frames/frame_000000.glb", written);           // and frames/parts/<key>.glb, once
+encoding3d::pack_archive("frames", "run.fspm.zip");                    // deflate; "stored" or "lzma"
+```
+
+A `solve` operator is solved by a dense LU factorisation (with partial pivoting), once per operator and evaluation.
 
 ## Coupling with other platforms
 

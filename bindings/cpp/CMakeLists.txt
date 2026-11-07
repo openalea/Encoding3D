@@ -15,7 +15,8 @@ option(ENCODING3D_BUILD_TESTS "Build the tests and the conformance tool" ${PROJE
 set(ENCODING3D_CPLANTBOX_SOURCE_DIR "" CACHE PATH "CPlantBox's source folder (its src/ holds structural/), for the adapter")
 set(ENCODING3D_CPLANTBOX_LIBRARY "" CACHE FILEPATH "CPlantBox's built library (libCPlantBox), for the adapter")
 
-# The one dependency, header-only: nlohmann_json, found installed or fetched
+# The dependencies: nlohmann_json (header-only) and minizip-ng (ZIP64 archives, deflate with zlib, lzma with liblzma),
+# each found installed or fetched
 find_package(nlohmann_json 3.11 QUIET)
 if(NOT nlohmann_json_FOUND)
     include(FetchContent)
@@ -26,18 +27,61 @@ if(NOT nlohmann_json_FOUND)
     FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
+# minizip-ng: installed as its own package (MINIZIP::minizip-ng), or with its compatibility layer (MINIZIP::minizip,
+# conda-forge's "minizip"); else fetched and built static with deflate and lzma only (zlib and liblzma found, or fetched
+# by it). An installed encoding3d needs an installed minizip-ng; a fetched one is for building in the tree.
+set(ENCODING3D_MINIZIP_PACKAGE "")
+find_package(minizip-ng 4 CONFIG QUIET)
+if(TARGET MINIZIP::minizip-ng)
+    set(ENCODING3D_MINIZIP_PACKAGE minizip-ng)
+    set(ENCODING3D_MINIZIP MINIZIP::minizip-ng)
+else()
+    find_package(minizip 4 CONFIG QUIET)
+    if(TARGET MINIZIP::minizip)
+        set(ENCODING3D_MINIZIP_PACKAGE minizip)
+        set(ENCODING3D_MINIZIP MINIZIP::minizip)
+    endif()
+endif()
+if(NOT ENCODING3D_MINIZIP_PACKAGE)
+    include(FetchContent)
+    FetchContent_Declare(minizip_ng
+        URL https://github.com/zlib-ng/minizip-ng/archive/refs/tags/4.0.10.tar.gz
+        URL_HASH SHA256=c362e35ee973fa7be58cc5e38a4a6c23cc8f7e652555daf4f115a9eb2d3a6be7)
+    foreach(option MZ_COMPAT MZ_BZIP2 MZ_ZSTD MZ_LIBCOMP MZ_PKCRYPT MZ_WZAES MZ_OPENSSL MZ_LIBBSD MZ_ICONV)
+        set(${option} OFF CACHE BOOL "" FORCE)
+    endforeach()
+    foreach(option MZ_ZLIB MZ_LZMA MZ_FETCH_LIBS)
+        set(${option} ON CACHE BOOL "" FORCE)
+    endforeach()
+    set(SKIP_INSTALL_ALL ON)
+    set(ENCODING3D_SHARED_LIBS ${BUILD_SHARED_LIBS})
+    set(BUILD_SHARED_LIBS OFF)
+    FetchContent_MakeAvailable(minizip_ng)
+    set(BUILD_SHARED_LIBS ${ENCODING3D_SHARED_LIBS})
+    set_target_properties(minizip-ng PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    set(ENCODING3D_MINIZIP $<BUILD_INTERFACE:MINIZIP::minizip-ng>)
+endif()
+if(ENCODING3D_MINIZIP_PACKAGE)
+    message(STATUS "encoding3d: archives with the installed minizip-ng (package ${ENCODING3D_MINIZIP_PACKAGE})")
+else()
+    message(STATUS "encoding3d: archives with minizip-ng, fetched")
+endif()
+
 add_library(encoding3d
     src/model.cpp
     src/glb.cpp
     src/codec.cpp
     src/sequence.cpp
     src/dump.cpp
+    src/parts.cpp
+    src/archive.cpp
     src/coupling.cpp)
 add_library(encoding3d::encoding3d ALIAS encoding3d)
 target_include_directories(encoding3d PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
 target_link_libraries(encoding3d PUBLIC nlohmann_json::nlohmann_json)
+target_link_libraries(encoding3d PRIVATE ${ENCODING3D_MINIZIP})
 
 # The coupling's ZeroMQ transport, with libzmq when found (its folder transport needs nothing)
 option(ENCODING3D_WITH_ZMQ "Build the coupling's ZeroMQ transport (libzmq)" ON)
