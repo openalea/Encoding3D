@@ -10,7 +10,7 @@ from openalea.metafspm.io.encoding3d import export_scene, import_frame
 export_scene("scene.glb", scene)                       # the scene now
 data_structures = import_frame("scene.glb")            # metafspm's DataStructures, rebuilt bit for bit
 
-recorder = SceneRecorder("outputs", frame_period=24)  # openalea.metafspm.scene.recorder: a frame every 24 steps
+recorder = SceneRecorder("outputs", frame_period="1 d")  # openalea.metafspm.scene.recorder: a frame every day
 scene = Scene(planting, ..., recorder=recorder)
 ```
 
@@ -88,7 +88,9 @@ with encoding3d.read("plant.glb", lazy=True) as frame:
 ```
 
 The ParaView reader and a coupling session's replay read frames this way (a replay decodes only the columns some
-link uses).
+link uses). The reader opens each frame once for itself and its *Select at scale* filter, places the instances of the
+visible instances layers only (`placed_meshes`, one row per triangle of the instances' ids and rows and of the layers'
+colour variables), and leaves a hidden layer's to the filter, which places those of the entities it selects.
 
 ## The vocabulary
 

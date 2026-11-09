@@ -34,8 +34,11 @@ sits in. Do not move the file out of that folder. A link to it, placed anywhere,
 seconds); only what ParaView shows is converted. To print the time in the view, add **Filters → Annotate Time Filter** on
 the reader.
 
-Large runs: frames grow with the plants. To look around quickly, open an early `frame_XXXXXX.glb` first. In a
-sequence, ParaView reads only the frame of the current time.
+Large runs: frames grow with the plants. In a sequence, ParaView reads only the frame of the current time, once for
+the reader and its *Select at scale* filters. A layer of instances that the views hide (metafspm's root sections) is
+not drawn by the reader: the layer is an empty block, and *Select at scale* draws the sections of what it selects
+(section 6). Opening a late frame then costs little more than a glTF viewer needs for its shoot, roots and soil (metafspm's use
+case 1, day 23: 1.9 GB, of which 1 GB for the frame's tables in frames written before November 2026).
 
 ## 3. What appears: the layers
 
@@ -47,7 +50,8 @@ range, opacity and visibility, with its own colour legend.
 The layers are the blocks of the reader's item. To see them and change them one by one:
 
 - **View → MultiBlock Inspector** opens a panel that lists the layers by name.
-  - The **check box** of a layer shows or hides it, for example the sections.
+  - The **check box** of a layer shows or hides it, for example the soil. A layer of sections hidden by the
+    views is empty (section 3b): tick **Expand Hidden Instances** first to fill it.
   - **Click a layer** (Ctrl-click for several) to edit only that layer, in the inspector's lower part:
     - **Block Coloring**: its colour variable (the drop-down), **Rescale to Data Range**, the colour map (the
       *Edit color map* button opens the **Color Map Editor**), **Toggle Color Legend Visibility** and **Use Separate
@@ -71,21 +75,36 @@ Some frames draw many entities with one shape each, stored once: the sections of
 tissue drawn at a coarse scale (specification §12, "instances"). They appear as a layer, or without a `views.json` as a
 block named **instances sections** (or another name) in their data structure's block.
 
-- Each instance is drawn where it belongs, with its own variables (for example `sections.age`), those of the entity it
-  draws (for example `SubOrgan.radius`) and the template's own values (for example `Cell.label_code`, `Cell.area`).
+- Each instance is drawn where it belongs. Its cells hold the ids of the entity it draws and of the entities containing
+  it (`SubOrgan.id`, `Axis.id`, `Plant.id`), the rows of each cell (`encoding3d_instance`,
+  `encoding3d_template_row.Cell`) and the layer's colour variable. Tick **All Instance Arrays** in the reader's
+  *Properties* for every variable too: the instance's own (for example `sections.age`), the entity's (for example
+  `SubOrgan.radius`) and the template's (for example `Cell.label_code`, `Cell.area`). Each is one value per triangle,
+  so a large frame needs several times the memory.
+- A layer of instances that the views hide is not drawn by the reader: its block is empty, and **encoding3d Select at
+  scale** draws the instances of what it selects, from the frame. Tick **Expand Hidden Instances** in the reader's
+  *Properties* to draw them all (for small scenes: a late frame of a run can hold millions of triangles of sections).
 - Its **inner values** (for example the water potential on each cell of a section, `Cell.water_potential`) are not
   in the file: they are rebuilt from a few values of the instance when you ask for them. Two ways:
-  - **Select it** (section 6 below): pick a section, apply **encoding3d Select at scale** at `SubOrgan` (or a plant,
-    an axis). The selection holds the inner values of every instance it contains, ready to colour by. Its buttons
-    **Isolate**, **Show In Panel** and **Put Back** work as for any selection.
-  - **All of them**: tick **Evaluate Derived Fields** in the reader's *Properties*, then **Apply**. Every instance's
-    inner values are rebuilt at each time step. Use it for small scenes: it is slower than selecting a few.
+  - **Select it** (section 6 below): pick a root segment (or a section, when its layer is shown), apply **encoding3d
+    Select at scale** (the default Scale, `picked`, is the segment's own: its section), or at a plant or an axis. The
+    selection holds the inner values of every instance it contains, ready to colour by. Its buttons **Isolate**,
+    **Show In Panel** and **Put Back** work as for any selection. The values rebuilt are kept while the frame is open:
+    switching the Scale back does not compute them again.
+  - **All of them**: tick **Evaluate Derived Fields** in the reader's *Properties* (and **Expand Hidden Instances**
+    when the views hide their layer), then **Apply**. Every instance's inner values are rebuilt at each time step. Use
+    it for small scenes: it is slower than selecting a few.
 
   A layer coloured by an inner value (in `views.json`) draws its instances in one colour until then; its selection
   is coloured by it.
 
 If ParaView says in **View → Output Messages** that a part is missing, the `parts/` folder was not copied with the
-frames: copy the whole `frames/` folder, or send the `.fspm.zip`.
+frames: copy the whole `frames/` folder, or send the `.fspm.zip`. The selection's rebuild then stops with that error.
+
+A frame may hold no sections, or none for the plant selected: metafspm draws them every `display_period` and for its
+`display_plants` only. The selection is then without sections at that time step, and **View → Output Messages** says
+so once per time step, naming the plants that have some, for example: *no 'GranapAnatomy' instance drawn for the
+selected Plant [12] at t = 1.2e+06 s: the frame's 911 instances are owned by Plant [11]*.
 
 ## 4. Switch configurations
 
@@ -116,17 +135,24 @@ a `.fspm.zip` cannot be saved: unpack it first (`encoding3d unpack run.fspm.zip 
    part of the view (a root, a leaf). The picked cells are highlighted.
 2. With the reader's item still active in the *Pipeline Browser*, choose **Filters → encoding3d → encoding3d Select at
    scale** (or **Filters → Alphabetical**, or Ctrl+Space and type "Select at scale"), then **Apply**.
-3. In the filter's *Properties*, choose the **Scale**: `Plant` (the default), `Axis`, `Organ`, `SubOrgan`, ...
-   `Compartment`. Click **Apply**. The selection is the picked element's whole plant, axis, organ or segment, with
-   everything it contains at finer scales, in every layer, the hidden ones included (a segment's section comes with
-   it).
+3. In the filter's *Properties*, choose the **Scale**: `picked` (the default: the picked cells' own scale, a root's
+   segment for example), `Plant`, `Axis`, `Organ`, `SubOrgan`, ... `Compartment`. Click **Apply**. The selection is
+   the picked element's whole plant, axis, organ or segment, with everything it contains at finer scales, in every
+   layer, the hidden ones included (a segment's section comes with it).
 4. Play the time steps: the selection follows the same plant or organ as it grows.
+
+**Choose a Scale, click Apply, then use the buttons.** The buttons work on the Scale applied: a Scale chosen in the
+drop-down and not yet applied is not seen by them (ParaView sends a property to the filter on Apply only). Right after
+the filter is made, they work on the default, `picked`, with no Apply.
+
+Apply draws the selection in the active view, with the reader still shown.
 
 The selection's item is drawn like the layers (the same colour maps). Its *Properties* panel has three buttons:
 
 - **Isolate**: the active view shows only the selection; the other items are hidden.
-- **Show In Panel**: a new view opens beside the active one with the selection alone, its camera fitted to it; the
-  first view is not changed.
+- **Show In Panel**: a new view opens beside the active one with the selection alone, its camera fitted to it. The
+  first view is put back as it was before the filter: the selection that Apply drew there is hidden (Put Back shows it
+  again).
 - **Put Back**: one step back. The items that Isolate hid are shown again, or the panel is closed.
 
 To narrow a selection (an axis of the plant shown), pick on the selection's item in the view or panel, apply another
@@ -137,7 +163,9 @@ another element with the same filter, make the new selection, then click **Copy 
 *Properties* and click **Apply**.
 
 A Scale finer than the picked element (a `Compartment` of a leaf drawn without sections) is reported in **View →
-Output Messages**.
+Output Messages**, and so are the time steps at which the selection has no sections (section 3b). A selection at
+`Plant` of a late frame holds all of that plant's sections (tens of millions of triangles at day 23 of metafspm's use
+case 1): select an axis or a segment there.
 
 ## Limits
 
@@ -172,7 +200,15 @@ Output Messages**.
   draws them again when the configuration or the views file changes. The block properties come from
   `openalea.encoding3d.views.block_displays`, and `displays_from_blocks` reads them back. Both are tested without
   ParaView.
-- Instances: the reader draws each instance set with `openalea.encoding3d.instances.placed_meshes`; each cell has its
-  instance's row (`encoding3d_instance`) and its rows in the template's entity sets (`encoding3d_template_row.<set>`),
-  each block its frame's file (field data `encoding3d_frame`). The filter's `rebuild_derived` evaluates the derived
-  fields of the instances its output holds (`openalea.encoding3d.evaluate`, one matrix product per operator).
+- Instances: the reader draws each visible instance set with `openalea.encoding3d.instances.placed_meshes`; each cell
+  has its instance's row (`encoding3d_instance`), its rows in the template's entity sets
+  (`encoding3d_template_row.<set>`), the ids containing it and the layer's colour variable (every variable with
+  `all_arrays`); each block its frame's file (field data `encoding3d_frame`). A hidden layer's block is empty, with its
+  layer as field data (`encoding3d_unexpanded`); the filter's `grow_entities` places the instances inside the entities
+  it selects (`instance_rows_at`), `rebuild_derived` evaluates the derived fields of the instances its output holds
+  (`openalea.encoding3d.evaluate`, one matrix product per operator, kept per open frame), and `missing_instances` says
+  why a selection has none. The reader and the filter share the frames open (`open_frame`, the last two).
+- `pvbatch paraview/check_in_paraview.py --large <run>/frames.fspm.zip [day]` is a check by hand on a large run: the
+  hidden sections layer empty on opening, a root segment selected at `picked`, `Axis` and `Plant` (only those
+  sections placed, their derived field equal to `evaluate`'s), the default Scale, the panel leaving the view as it
+  was, and the message of a half-day frame without sections; it prints each step's cells and the peak memory.

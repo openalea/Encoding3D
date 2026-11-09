@@ -40,6 +40,28 @@
   reader's **Evaluate Derived Fields** for all; `check_in_paraview.py --instances`, by hand.
 - Docs: Instances, derived fields and archives (reading, packing, how a platform writes them: a reduced network's
   eliminated nodes, a coarse cell's linear recovery); tutorial 1's sections 5 (instances) and 6 (an archive).
+- ParaView on large frames (2026-11-09): a hidden instances layer (metafspm's sections) is an empty block, its
+  instances placed by **encoding3d Select at scale** for the entities it selects only (**Expand Hidden Instances** on
+  the reader draws them all); an instances block holds the ids, the instance and template rows and the layers' colour
+  variables only, one value per triangle (**All Instance Arrays** for every variable), its arrays handed to VTK
+  without copies; the reader and the filter share one read of a frame (`open_frame`, the last two kept) and the
+  derived fields rebuilt per open frame. Use case 1 (2 plants, 25 days, pvbatch peak RSS): the frame of day 16 opens
+  in 0.87 GB (was 5.69), day 23 in 1.92 GB (was killed at 8 GB; 1 GB of it the frame's JSON, written compactly by
+  metafspm since), a root segment selected with its section in 0.72–2.0 GB at any day, its axis in 1.2–4.3 GB.
+  `placed_meshes`' `mesh` is the mesh's index in its template (was its name, an object array), its positions placed
+  without a 4-component temporary.
+- encoding3d Select at scale: its Scale's default is **picked**, the picked cells' own scale (`views.PICKED_SCALE`,
+  `views.picked_scale`), so that Isolate and Show In Panel work before any Apply; the buttons work on the Scale applied
+  (said in its documentation and the how-to); Show In Panel hides the selection that Apply drew in the view, and Put
+  Back shows it again; the filter's `<Visibility replace_input="0"/>` hint (was an unknown `<ReplaceInput>`): Apply
+  leaves the reader shown. A time step at which the selection holds no instance is said once per time step, with the
+  plants that have some (`missing_instances`: `display_plants`, `display_period`); a derived field that cannot be
+  rebuilt is an error (was a warning). `grow_entities`, `instance_rows_at`.
+- The plugin colours a layer's representation by an array its data holds only (`views.block_displays`' `main_array`
+  among the arrays present, `arrays=None` when not known): no "Could not determine array range" for a selection without
+  the shoot; drawn again when the arrays present change between time steps.
+- Docs: `doc/python.md`'s recorder example (`frame_period="1 d"`, was 24 steps), metafspm writing 0.4 in
+  `implementations.md`, which also says that only metafspm reads its extras (their `absent_rows`, `none_rows`).
 
 ## Unreleased: frame views (specification §8.1, draft for 0.3)
 

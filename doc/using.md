@@ -114,27 +114,30 @@ print(report)
 
 The plugin has a filter that selects by scale: pick an element, and get its whole plant, axis, organ or segment,
 with everything it contains at finer scales, in every layer, hidden ones included (a segment's section drawings, a
-hidden layer by default, come with the selection).
+hidden layer by default, come with the selection: the reader leaves a hidden layer of instances empty, and the filter
+places the instances of what it selects only).
 
 1. Pick cells in the view (**Select Cells On (s)**, or `s`), on the reader's item or a selection shown before. The
    item picked on becomes the active one in the Pipeline Browser.
 2. **Filters → encoding3d → encoding3d Select at scale**, then **Apply**. The filter takes ParaView's current selection
    when it is made, as *Extract Selection* does (its **Selection** property: **Copy Active Selection** takes the
    selection made since, on the same item).
-3. Choose the **Scale** in its Properties: a drop-down of the frames' scales, coarser first (`Plant`, `Axis`,
-   `Organ`, `SubOrgan`, … `Compartment`), `Plant` at first. **Apply** grows the picked cells again.
+3. Choose the **Scale** in its Properties: `picked` at first (the picked cells' own scale, e.g. a root's segment),
+   then the frames' scales, coarser first (`Plant`, `Axis`, `Organ`, `SubOrgan`, … `Compartment`). **Apply** grows
+   the picked cells again. The buttons below work on the Scale applied: choose a Scale, Apply, then use them.
 4. Play the time steps: the picked entities are kept, so the plant or organ is followed as it grows.
 
 The filter's output is one block per layer, named and filled like the reader's, each holding the selection's part
 of the layer (empty when it has none), and it is drawn as the layers (the same colour maps), the hidden ones shown.
 A scale finer than the picked element (a Compartment of a leaf drawn without sections) is reported in the Output
-Messages, with the scales the picked cells have.
+Messages, with the scales the picked cells have, and so is a time step at which the selection has no sections (a
+platform drawing them at some time steps, or for some plants: those which have some are named).
 
 The filter's buttons show it:
 
 - **Isolate**: the active view shows only the selection, the other items hidden.
 - **Show In Panel**: a new view beside the active one shows the selection alone, its camera fit to it, the first view
-  untouched.
+  as it was before the filter (the selection that Apply drew there hidden, shown again by Put Back).
 - **Put Back**: one step back, the hidden items shown again or the panel closed. Then delete the filter to drop the
   selection.
 

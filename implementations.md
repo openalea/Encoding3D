@@ -3,7 +3,7 @@
 | Platform | Language | Where | Reads | Writes | Specification version |
 |---|---|---|---|---|---|
 | openalea.encoding3d (reference codec) | Python | this repository, `bindings/python/` | yes | yes | 0.4 |
-| openalea.metafspm | Python | `openalea.metafspm.io.encoding3d` (branch release2026) | yes: its own frames, rebuilt bit for bit | yes | 0.3 (through openalea.encoding3d) |
+| openalea.metafspm | Python | `openalea.metafspm.io.encoding3d` (branch release2026) | yes: its own frames, rebuilt bit for bit | yes | 0.4 (through openalea.encoding3d) |
 | encoding3d (C++ codec) | C++ | this repository, `bindings/cpp/` | yes | yes | 0.4 |
 | CPlantBox | C++ | `bindings/cpp/cplantbox/` (`encoding3d::cplantbox`), to move into CPlantBox | yes: static root systems, from any graph with segment ends | yes: organs, segments, geometry, soil grid, mapping | 0.3 |
 | encoding3d (Java codec) | Java | this repository, `bindings/java/` | yes | yes | 0.4 |
@@ -19,6 +19,13 @@ operators), read `.fspm.zip` archives (ZIP64; stored, deflate and lzma members) 
 deflate or lzma (minizip-ng); Java, stored or deflate (`java.util.zip`; lzma read with xz-java); Julia, stored or
 deflate (ZipArchives.jl; lzma read with liblzma). Python alone draws instances (`placed_meshes`, ParaView) and prunes
 parts. The platform adapters write no instance sets yet (0.3 content).
+
+A data structure's `extras` (specification §3) are the writing platform's own, which other readers do not need and
+keep as JSON. metafspm's (`extras.metafspm`) hold what it rebuilds its MPG from: since 2026-11-09 its properties'
+missing values as row ranges (`absent_rows`, `none_rows`: flat `[start, stop, ...]` lists of half-open ranges over the
+scale's rows, about 60 times smaller than the former vid lists on use case 1's last frame). Only metafspm reads them:
+the Python, C++, Java and Julia codecs, the validator, ParaView and the conformance cases do not, so the specification
+and the conformance files are unchanged.
 
 Coupling sessions (specification §11): the Python package holds the coordinator and a participant; encoding3d.jl, the C++
 and the Java codecs a participant each. All four pass the coupling conformance sessions over both transports (ZeroMQ:
