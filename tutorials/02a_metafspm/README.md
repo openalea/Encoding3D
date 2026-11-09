@@ -8,7 +8,7 @@ the environment its repository describes, with encoding3d beside it:
 
 ```bash
 git clone -b release2026 https://github.com/openalea/metafspm.git
-git clone https://github.com/openalea/encoding3d.git
+git clone -b other_platforms_bindings https://github.com/openalea/encoding3d.git
 mamba env create -n metafspm -f metafspm/conda/environment.yml
 mamba activate metafspm
 pip install -e encoding3d -e metafspm
@@ -20,7 +20,8 @@ pip install jupyter nbmake
 In the notebook you
 
 1. write a small root growth component (a toy: a tip elongating at a constant rate, cut every centimetre);
-2. grow two plants in a scene for two days, a frame recorded every six hours (`SceneRecorder`);
+2. grow two plants in a scene for two days, a frame recorded every six hours (`SceneRecorder`), the frames packed
+   into one file at the end (`frames.fspm.zip`);
 3. read those frames with encoding3d alone, as any platform would;
 4. record smaller frames for logging, keeping two scales and two variables;
 5. turn the last frame back into metafspm's data structures, exactly as they were (`import_frame`).

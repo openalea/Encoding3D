@@ -20,7 +20,7 @@ for VirtualPlantLab's side (this folder's `Project.toml`: encoding3d.jl from thi
 **How to run it:** `./run.sh` (`JULIA=/path/to/julia ./run.sh` if Julia is not on the path). It prepares the Julia
 project, then runs `coupling.ipynb`, which starts the coordinator, launches `carbon.jl` and runs metafspm's scene.
 Its files are in `outputs/`: the coordinator's record of the shared plant (`record/`) and metafspm's own frames
-(`metafspm/`). The notebook explains:
+(`metafspm/`, its frames packed into `frames.fspm.zip`). The notebook explains:
 
 1. metafspm's root growth, with its sugar as an input;
 2. VirtualPlantLab's model seen from metafspm: a `RemoteComponent`, computing nothing, whose state variables are the
@@ -28,5 +28,5 @@ Its files are in `outputs/`: the coordinator's record of the shared plant (`reco
 3. the session: the coordinator, VirtualPlantLab's model launched, metafspm's scene run;
 4. what happened, from the coordinator's record.
 
-Open `outputs/metafspm/frames/scene.fspm.json` in ParaView with encoding3d's plugin (tutorial 1) and colour the roots
-by `C_hexose_root`.
+Open `outputs/metafspm/frames.fspm.zip` (its frames, packed at the end) in ParaView with encoding3d's plugin
+(tutorial 1) and colour the roots by `C_hexose_root`.
