@@ -191,7 +191,8 @@ The command exits with 1 when a file has errors, so it can run in a CI.
 ## Sharing a sequence: one file
 
 ```bash
-encoding3d pack outputs/frames run.fspm.zip                # the folder as one archive (deflate; --compression lzma)
+encoding3d pack outputs/frames run.fspm.zip                # the folder as one archive (deflate; --compression lzma),
+                                                           # checked, then the folder removed (--keep-folder keeps it)
 encoding3d unpack run.fspm.zip folder                      # and back
 encoding3d prune outputs/frames                            # the parts no frame uses any more, removed
 ```

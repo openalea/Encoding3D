@@ -47,7 +47,7 @@ the vocabulary and units.
 
 ```{eval-rst}
 .. automodule:: openalea.encoding3d.archive
-   :members: pack, unpack, read_bytes, exists, split
+   :members: pack, check_archive, ArchiveCheckError, unpack, read_bytes, exists, split
 ```
 
 ## Views

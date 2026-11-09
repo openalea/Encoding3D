@@ -48,16 +48,26 @@ A sequence is a folder: the index `scene.fspm.json`, `views.json`, the frames an
 frame (a folder survives a crash and grows as the run goes). To send or keep it, pack it into one `.fspm.zip` file:
 
 ```bash
-encoding3d pack outputs/frames run.fspm.zip                 # deflate, the default
+encoding3d pack outputs/frames run.fspm.zip                 # deflate, the default; checked, then the folder removed
+encoding3d pack outputs/frames run.fspm.zip --keep-folder   # the folder kept
 encoding3d pack outputs/frames run.fspm.zip --compression lzma   # smaller, slower: for archiving
 encoding3d validate run.fspm.zip                            # every frame and part, as for the folder
 encoding3d unpack run.fspm.zip folder                       # the folder back
 ```
 
+`pack` checks the archive once it is written, before it replaces any archive at that path: every file of the
+folder's sequence is a member and nothing else, of the same size and CRC-32, each member read back (decompressed,
+its CRC-32 computed again), and the archive passes the validator with no error (warnings allowed). Only then is
+the folder removed, unless `--keep-folder`. When the check fails, the archive is not written, the folder stays and
+the command exits with 1 (Python: `encoding3d.ArchiveCheckError`). A folder holding files that are not its sequence's
+(say, notes, or parts no frame uses: `encoding3d prune` removes those) is not removed: `pack` refuses before writing,
+and `--keep-folder` packs it, leaving those files out.
+
 Each file is compressed alone, so a reader opens one frame without the others. `encoding3d.read`, `read_index`,
 `read_sequence`, the validator and ParaView open an archive as they open the folder; a file inside it is named
-`run.fspm.zip/frame_000024.glb`. In Python: `encoding3d.pack(folder, path, compression="deflate")` and
-`encoding3d.unpack(path, folder)`. The C++, Java and Julia codecs read archives as folders too (stored, deflate and lzma
+`run.fspm.zip/frame_000024.glb`. In Python: `encoding3d.pack(folder, path, compression="deflate",
+keep_folder=False)`, `encoding3d.check_archive(path, folder)` (the check alone) and `encoding3d.unpack(path,
+folder)`. The C++, Java and Julia codecs read archives as folders too (stored, deflate and lzma
 members) and pack them (`pack_archive`, `Archives.pack`; [C++](cpp.md), [Java](java.md), [Julia](julia.md)), and
 read, write and evaluate instances.
 

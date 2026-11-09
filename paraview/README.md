@@ -25,7 +25,8 @@ sits in. Do not move the file out of that folder. A link to it, placed anywhere,
 
 1. **File → Open...**, go to the run's `outputs/.../frames/` folder, and choose `scene.fspm.json` (all the frames, as
    time steps) or a single `frame_XXXXXX.glb`. A sequence packed into one file, `run.fspm.zip` (made by
-   `encoding3d pack`), opens the same way: choose the `.fspm.zip` file itself.
+   `encoding3d pack`, or metafspm's recorder at a run's end, which then removes the folder), opens the same way:
+   choose the `.fspm.zip` file itself.
 2. If ParaView asks which reader to use, choose **encoding3d reader**.
 3. Click **Apply** in the *Properties* panel.
 

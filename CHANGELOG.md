@@ -2,6 +2,21 @@
 
 ## Unreleased: specification 0.4 (draft), instances, derived fields, shared parts and archives
 
+- **A checked pack, then the folder removed** (Python): `pack(folder, path, compression=, level=, keep_folder=False)`
+  writes the archive next to *path*, checks it (`check_archive(path, folder)`: every file of the sequence a member and
+  nothing else, of the same size and CRC-32, each member read back; the archive valid, 0 errors), moves it into
+  place, then removes the folder; `keep_folder=True` keeps it. A failed check leaves the folder and any former
+  archive as they were and raises `ArchiveCheckError`; a folder holding files that are not its sequence's is refused
+  before writing (it would not be removed whole), and so is an archive inside the folder. `encoding3d pack ...
+  [--keep-folder]` (exit 1 when the check fails). The conformance run and ParaView's check keep their folders.
+- **The validator on archives:** `validate_sequence` takes a sequence's `.fspm.zip` (or its folder) as `validate_file`
+  does: its parts are found in the archive (they were reported missing when the archive itself was given).
+- **Ids across frames on an adaptive grid** (specification §8): a leaf cell is the region its `level` and `index`
+  give, so a cell coarsened away and refined again is the same entity and MAY have its id again; an id that comes back
+  MUST have the same `level` and `index`. The validator checks that instead of refusing any id that comes back on an
+  adaptive grid's cells (metafspm's adaptive soil, whose ids are a cell's level and corner, gave 3 errors on use case
+  1's frames; none now).
+
 - Specification 0.4 (§12, all additions: a 0.3 file is a valid 0.4 file): **instance sets** (a data structure's
   `instanceSets`: one row per instance, its template, transform, owner and own variables; vectors, one array per
   instance), **linear derived fields** (f = Σ_k w_k · (A_k · v + b_k) on a template's entity set: one or several

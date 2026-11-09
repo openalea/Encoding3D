@@ -4,8 +4,9 @@ The encoding3d command line::
     encoding3d validate FILE...                    check .glb frames or sequences (scene.fspm.json, a folder, a .fspm.zip),
                                                 and every part they refer to; exit 1 on errors
     encoding3d info FILE                           what a frame holds
-    encoding3d pack FOLDER OUT.fspm.zip [--compression deflate|lzma|stored] [--level N]
-                                                a sequence as one ZIP64 archive, each file compressed alone
+    encoding3d pack FOLDER OUT.fspm.zip [--compression deflate|lzma|stored] [--level N] [--keep-folder]
+                                                a sequence as one ZIP64 archive, each file compressed alone,
+                                                checked, then the folder removed (kept with --keep-folder)
     encoding3d unpack ARCHIVE.fspm.zip FOLDER     the archive back as a folder
     encoding3d prune INDEX                         remove the parts no frame of the sequence uses
     encoding3d display FILE NAME... [-o OUT]       add display copies of variables (in place, or to OUT)
@@ -86,9 +87,15 @@ def _display(arguments) -> int:
 
 
 def _pack(arguments) -> int:
-    from openalea.encoding3d.archive import pack
-    path = pack(arguments.folder, arguments.output, compression=arguments.compression, level=arguments.level)
-    print(f"{path}: {os.path.getsize(path)} bytes ({arguments.compression})")
+    from openalea.encoding3d.archive import ArchiveCheckError, pack
+    try:
+        path = pack(arguments.folder, arguments.output, compression=arguments.compression, level=arguments.level,
+                    keep_folder=arguments.keep_folder)
+    except ArchiveCheckError as error:
+        print(f"not packed, the folder kept: {error}", file=sys.stderr)
+        return 1
+    print(f"{path}: {os.path.getsize(path)} bytes ({arguments.compression}), checked; the folder "
+          f"{'kept' if arguments.keep_folder else 'removed'}")
     return 0
 
 
@@ -195,11 +202,13 @@ def main(argv=None) -> int:
     info.add_argument("file")
     info.set_defaults(run=_info)
     packing = commands.add_parser("pack", help="a sequence as one .fspm.zip archive (ZIP64, each file compressed "
-                                               "alone)")
+                                               "alone), checked, then the folder removed")
     packing.add_argument("folder", help="the sequence's folder (or its scene.fspm.json)")
     packing.add_argument("output", help="the archive, x.fspm.zip")
     packing.add_argument("--compression", choices=["deflate", "lzma", "stored"], default="deflate")
     packing.add_argument("--level", type=int, default=None, help="deflate's level, 0-9")
+    packing.add_argument("--keep-folder", action="store_true",
+                         help="keep the folder (by default removed once the archive is checked)")
     packing.set_defaults(run=_pack)
     unpacking = commands.add_parser("unpack", help="a .fspm.zip archive back as a folder")
     unpacking.add_argument("archive")

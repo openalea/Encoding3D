@@ -13,10 +13,10 @@ from openalea.encoding3d.codec import (from_bytes, part_bytes, read, read_index,
                            to_bytes, write, write_index, write_parts, write_sequence)
 from openalea.encoding3d.parts import MissingPartError, prune_parts  # noqa: E402
 from openalea.encoding3d.instances import evaluate, placed_meshes  # noqa: E402
-from openalea.encoding3d.archive import pack, unpack  # noqa: E402
+from openalea.encoding3d.archive import ArchiveCheckError, check_archive, pack, unpack  # noqa: E402
 
-__all__ = ["SPECIFICATION_VERSION", "DataStructure", "DerivedField", "EntitySet", "Frame", "Grid", "InstanceSet",
+__all__ = ["SPECIFICATION_VERSION", "ArchiveCheckError", "DataStructure", "DerivedField", "EntitySet", "Frame", "Grid", "InstanceSet",
            "Mapping", "Mesh", "MissingPartError", "NO_ID", "Operator", "Ragged", "Relation", "Table", "Template",
-           "Update", "Variable", "column_major", "evaluate", "from_bytes", "pack", "part_bytes", "placed_meshes",
+           "Update", "Variable", "check_archive", "column_major", "evaluate", "from_bytes", "pack", "part_bytes", "placed_meshes",
            "prune_parts", "read", "read_index", "read_part", "read_sequence", "to_bytes", "unpack", "write",
            "write_index", "write_parts", "write_sequence"]

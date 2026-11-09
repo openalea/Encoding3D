@@ -659,6 +659,18 @@ def _check_meshes(data_structure, document: dict, report) -> None:
 
 # ── Files and sequences ──────────────────────────────────────────────────
 
+def _adaptive_cells(data_structure, entity_set):
+    """{id: (level, index)} of an adaptive grid's leaf cells (the region each id names), None for any other set."""
+    grid = data_structure.grid
+    if grid is None or grid.kind != "adaptive" or entity_set.name != grid.cells or \
+            "level" not in entity_set.columns or "index" not in entity_set.columns:
+        return None
+    levels = np.asarray(entity_set.columns["level"]).tolist()
+    indices = np.asarray(entity_set.columns["index"]).reshape(len(levels), -1).tolist()
+    return {identifier: (level, tuple(index)) for identifier, level, index
+            in zip(entity_set.columns["id"].tolist(), levels, indices)}
+
+
 def validate_file(path: str) -> Report:
     """Validate a .glb frame (and the parts it refers to, embedded or in parts/ next to it), or a sequence: its
     index, its folder or its .fspm.zip archive (each frame, each part once, and the rules across frames)."""
@@ -669,6 +681,9 @@ def validate_file(path: str) -> Report:
 
 
 def validate_sequence(index_path: str) -> Report:
+    """A sequence's issues: *index_path* is its scene.fspm.json, its folder or its .fspm.zip archive (each frame,
+    each part once, and the rules across frames)."""
+    index_path = archive.index_of(index_path)
     report = Report(index_path)
     try:
         index = json.loads(archive.read_bytes(index_path).decode("utf-8"))
@@ -683,7 +698,7 @@ def validate_sequence(index_path: str) -> Report:
     times = [entry["time"] for entry in index["frames"]]
     if any(later < earlier for earlier, later in zip(times, times[1:])):
         report.error("index/frames", "frames are in time order")
-    seen, gone, checked_parts, referenced = {}, {}, {}, set()
+    seen, gone, cells_of, checked_parts, referenced = {}, {}, {}, {}, set()
     listed = index.get("parts", {})
     for key, file_name in listed.items():
         if file_name != part_file(key):
@@ -713,6 +728,11 @@ def validate_sequence(index_path: str) -> Report:
                 key = (data_structure.id, entity_set.name)
                 current = set(entity_set.columns["id"].tolist())
                 reused = current & gone.get(key, set())
+                cells = _adaptive_cells(data_structure, entity_set)
+                if cells is not None:           # a cell coarsened away and refined again is the same cell (§8)
+                    known = cells_of.setdefault(key, {})
+                    reused = {identifier for identifier in reused if known.get(identifier) != cells[identifier]}
+                    known.update(cells)
                 if reused:
                     report.error(f"{entry['file']}: {data_structure.id}/{entity_set.name}/id",
                                  f"{len(reused)} id(s) reused after their entity disappeared, e.g. "

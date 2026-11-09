@@ -12,13 +12,14 @@ import pytest
 
 import generate
 from conftest import CONFORMANCE
-from openalea.encoding3d import (DataStructure, DerivedField, EntitySet, Frame, InstanceSet, MissingPartError, NO_ID,
-                                 Operator, Ragged, column_major, evaluate, from_bytes, pack, placed_meshes,
+from openalea.encoding3d import (ArchiveCheckError, DataStructure, DerivedField, EntitySet, Frame, InstanceSet,
+                                 MissingPartError, NO_ID, Operator, Ragged, archive as archives, column_major,
+                                 evaluate, from_bytes, pack, placed_meshes,
                                  prune_parts, read, read_index, read_part, to_bytes, unpack, write, write_index,
                                  write_sequence)
 from openalea.encoding3d.cli import main
 from openalea.encoding3d.dump import frame_to_dict, part_to_dict
-from openalea.encoding3d.validate import validate_file
+from openalea.encoding3d.validate import validate_file, validate_sequence
 
 INSTANCES = os.path.join(CONFORMANCE, "instances")
 
@@ -240,7 +241,7 @@ def test_a_part_whose_bytes_are_not_its_key_is_an_error(tmp_path):
 @pytest.mark.parametrize("compression", ["deflate", "lzma", "stored"])
 def test_an_archive_reads_as_its_folder(tmp_path, compression):
     archive = str(tmp_path / "run.fspm.zip")
-    pack(INSTANCES, archive, compression=compression)
+    pack(INSTANCES, archive, compression=compression, keep_folder=True)
     with zipfile.ZipFile(archive) as opened:
         names = opened.namelist()
         kinds = {info.compress_type for info in opened.infolist()}
@@ -262,7 +263,7 @@ def test_an_archive_reads_as_its_folder(tmp_path, compression):
 
 def test_unpack_gives_the_folder_back(tmp_path):
     archive = str(tmp_path / "run.fspm.zip")
-    pack(os.path.join(INSTANCES, "scene.fspm.json"), archive)
+    pack(os.path.join(INSTANCES, "scene.fspm.json"), archive, keep_folder=True)
     index = unpack(archive, str(tmp_path / "back"))
     for relative in ["scene.fspm.json", "frame_000000.glb", "frame_000001.glb"] + \
             [f"parts/{name}" for name in os.listdir(os.path.join(INSTANCES, "parts"))]:
@@ -280,15 +281,132 @@ def test_pack_refuses_a_sequence_missing_a_part(tmp_path):
     assert not os.path.exists(tmp_path / "run.fspm.zip")
 
 
+def a_sequence(tmp_path) -> str:
+    """The instances' two frames written in tmp_path/frames, with a views file: their folder."""
+    folder = str(tmp_path / "frames")
+    write_sequence(folder, frames())
+    with open(os.path.join(folder, "views.json"), "w", encoding="utf-8") as file:
+        json.dump({"encoding3d_views": 1, "configurations": {"default": {"layers": []}}}, file)
+    return folder
+
+
+def files_of(folder: str) -> dict:
+    found = {}
+    for root, _, names in os.walk(folder):
+        for name in names:
+            with open(os.path.join(root, name), "rb") as file:
+                found[os.path.relpath(os.path.join(root, name), folder)] = file.read()
+    return found
+
+
+def test_pack_checks_the_archive_then_removes_the_folder(tmp_path):
+    folder = a_sequence(tmp_path)
+    written = files_of(folder)
+    archive = pack(folder, str(tmp_path / "run.fspm.zip"))
+    assert not os.path.exists(folder) and sorted(os.listdir(tmp_path)) == ["run.fspm.zip"]
+    with zipfile.ZipFile(archive) as opened:
+        assert sorted(opened.namelist()) == sorted(name.replace(os.sep, "/") for name in written)
+        for name, content in written.items():
+            assert opened.read(name.replace(os.sep, "/")) == content, name
+    assert validate_file(archive).ok
+    back = unpack(archive, folder)
+    assert files_of(folder) == written and validate_file(back).ok
+
+
+def test_pack_keeps_the_folder_when_asked(tmp_path):
+    folder = a_sequence(tmp_path)
+    written = files_of(folder)
+    archive = pack(folder, str(tmp_path / "run.fspm.zip"), keep_folder=True)
+    assert files_of(folder) == written and validate_file(archive).ok
+
+
+def test_a_corrupted_member_keeps_the_folder(tmp_path, monkeypatch):
+    folder = a_sequence(tmp_path)
+    written = files_of(folder)
+    original = archives._write
+
+    def corrupted(base, members, path, compression, level):         # a byte of the last frame's data flipped
+        original(base, members, path, compression, level)
+        with zipfile.ZipFile(path) as opened:
+            info = opened.getinfo("frame_000001.glb")
+        with open(path, "r+b") as file:
+            file.seek(info.header_offset + 26)
+            name_length, extra_length = np.frombuffer(file.read(4), dtype="<u2")
+            file.seek(info.header_offset + 30 + int(name_length) + int(extra_length) + 100)
+            byte = file.read(1)
+            file.seek(-1, os.SEEK_CUR)
+            file.write(bytes([byte[0] ^ 0xFF]))
+    monkeypatch.setattr(archives, "_write", corrupted)
+    with pytest.raises(ArchiveCheckError, match="frame_000001.glb"):
+        pack(folder, str(tmp_path / "run.fspm.zip"), compression="stored")
+    assert files_of(folder) == written
+    assert sorted(os.listdir(tmp_path)) == ["frames"]                 # neither the archive nor its temporary file
+
+
+def test_an_invalid_sequence_is_not_packed(tmp_path):
+    folder = a_sequence(tmp_path)
+    with open(os.path.join(folder, "scene.fspm.json")) as file:
+        index = json.load(file)
+    index["frames"].reverse()                                         # out of time order: not valid
+    with open(os.path.join(folder, "scene.fspm.json"), "w") as file:
+        json.dump(index, file)
+    written = files_of(folder)
+    with pytest.raises(ArchiveCheckError, match="time order"):
+        pack(folder, str(tmp_path / "run.fspm.zip"))
+    assert files_of(folder) == written and sorted(os.listdir(tmp_path)) == ["frames"]
+
+
+def test_a_folder_with_other_files_is_not_removed(tmp_path):
+    folder = a_sequence(tmp_path)
+    with open(os.path.join(folder, "notes.txt"), "w") as file:
+        file.write("not a file of the sequence")
+    with pytest.raises(ArchiveCheckError, match="notes.txt"):
+        pack(folder, str(tmp_path / "run.fspm.zip"))
+    assert os.path.exists(os.path.join(folder, "notes.txt")) and not os.path.exists(tmp_path / "run.fspm.zip")
+    with pytest.raises(ValueError, match="inside the folder"):
+        pack(folder, os.path.join(folder, "run.fspm.zip"))
+    assert validate_file(pack(folder, str(tmp_path / "run.fspm.zip"), keep_folder=True)).ok
+    assert os.path.exists(os.path.join(folder, "notes.txt"))
+
+
+def test_an_archive_with_parts_validates_as_its_folder(tmp_path):
+    folder = a_sequence(tmp_path)
+    archive = pack(folder, str(tmp_path / "run.fspm.zip"), keep_folder=True)
+    for path in (archive, os.path.join(archive, "scene.fspm.json")):
+        for report in (validate_file(path), validate_sequence(path)):
+            assert report.ok and not report.warnings, str(report)
+    key = generate.SQUARE.key                                          # a part not hashing to its key, in the archive
+    with open(os.path.join(folder, "parts", f"{key}.glb"), "wb") as file:
+        file.write(generate.part_bytes(generate.HEXAGON))
+    broken = str(tmp_path / "broken.fspm.zip")
+    archives._write(folder, archives.sequence_members(os.path.join(folder, "scene.fspm.json")), broken, "deflate",
+                    None)
+    for report in (validate_file(broken), validate_sequence(broken)):
+        assert any(key in issue.message and "hash" in issue.message for issue in report.errors), str(report)
+        assert not any("does not exist" in issue.message for issue in report.issues), str(report)
+    with zipfile.ZipFile(archive) as opened, zipfile.ZipFile(broken, "w") as out:     # a part missing from it
+        for name in opened.namelist():
+            if name != f"parts/{key}.glb":
+                out.writestr(name, opened.read(name))
+    report = validate_sequence(broken)
+    assert any(key in issue.message and "does not exist" in issue.message for issue in report.errors), str(report)
+
+
 def test_the_command_line(tmp_path, capsys):
     archive = str(tmp_path / "run.fspm.zip")
-    assert main(["pack", INSTANCES, archive, "--compression", "lzma"]) == 0
+    assert main(["pack", INSTANCES, archive, "--compression", "lzma", "--keep-folder"]) == 0
+    assert os.path.exists(os.path.join(INSTANCES, "scene.fspm.json"))
     assert main(["validate", archive]) == 0
     assert main(["unpack", archive, str(tmp_path / "back")]) == 0
     assert main(["info", os.path.join(INSTANCES, "frame_000000.glb")]) == 0
     assert "instances sections of SubOrgan: 3 instances, 5 parts" in capsys.readouterr().out
     assert main(["prune", str(tmp_path / "back")]) == 0
     assert "0 part(s) removed" in capsys.readouterr().out
+    assert main(["pack", str(tmp_path / "back"), str(tmp_path / "again.fspm.zip")]) == 0
+    assert "checked; the folder removed" in capsys.readouterr().out and not os.path.exists(tmp_path / "back")
+    assert main(["pack", INSTANCES, str(tmp_path / "refused.fspm.zip")]) == 1      # its expected values: kept
+    assert "not packed, the folder kept" in capsys.readouterr().err
+    assert os.path.exists(os.path.join(INSTANCES, "scene.fspm.json"))
 
 
 # ── Pruning ──────────────────────────────────────────────────────────────

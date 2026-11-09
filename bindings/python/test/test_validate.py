@@ -101,6 +101,29 @@ def test_ids_never_reused(tmp_path):
     assert "id(s) reused after their entity disappeared" in str(report), str(report)
 
 
+def adaptive_soil_at(step: int, ids, levels, indices):
+    """generate.adaptive_soil's grid with the leaf cells *ids* at *levels* and *indices*, at *step*."""
+    frame = generate.adaptive_soil()
+    cells = frame.data_structures[0].entity_set("Cell")
+    cells.columns = {"id": np.asarray(ids, dtype=np.int64), "level": np.asarray(levels, dtype=np.int64),
+                     "index": np.asarray(indices, dtype=np.int64),
+                     "soil_water_potential": np.full(len(ids), -0.02e6)}
+    frame.time, frame.step = float(step), step
+    return frame
+
+
+def test_an_adaptive_grid_cell_refined_again_keeps_its_id(tmp_path):
+    fine = [[i, j, k] for i in range(2) for j in range(2) for k in range(2)]
+    refined = adaptive_soil_at(0, list(range(8)) + [8], [1] * 8 + [0], fine + [[1, 0, 0]])
+    coarsened = adaptive_soil_at(1, [9, 8], [0, 0], [[0, 0, 0], [1, 0, 0]])
+    again = adaptive_soil_at(2, list(range(8)) + [8], [1] * 8 + [0], fine + [[1, 0, 0]])
+    report = validate_sequence(write_sequence(str(tmp_path / "back"), [refined, coarsened, again]))
+    assert report.ok, str(report)                                     # the same cells (level, index) again
+    moved = adaptive_soil_at(2, [9, 3], [0, 1], [[0, 0, 0], [1, 0, 0]])        # cell 3's id given to another cell
+    report = validate_sequence(write_sequence(str(tmp_path / "moved"), [refined, coarsened, moved]))
+    assert "1 id(s) reused after their entity disappeared, e.g. [3]" in str(report), str(report)
+
+
 def test_index_order(tmp_path):
     index = write_sequence(str(tmp_path), generate.growing_sequence())
     with open(index) as file:

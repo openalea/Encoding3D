@@ -474,7 +474,9 @@ def check_instances() -> None:
     import tempfile
     import numpy as np
     from vtkmodules.util.numpy_support import vtk_to_numpy
-    from openalea.encoding3d import evaluate, pack, read
+    import zipfile
+    from openalea.encoding3d import evaluate, read
+    from openalea.encoding3d.archive import sequence_members
     source = os.path.join(HERE, os.pardir, "conformance", "instances")
     folder = tempfile.mkdtemp(prefix="encoding3d_instances_")
     try:
@@ -490,7 +492,10 @@ def check_instances() -> None:
                    "color_by": {"entity_set": "Cell", "variable": "area"}}]
         with open(os.path.join(frames, "views.json"), "w", encoding="utf-8") as file:
             json.dump({"encoding3d_views": 1, "configurations": {"default": {"layers": layers}}}, file)
-        archive = pack(frames, os.path.join(folder, "run.fspm.zip"))
+        archive = os.path.join(folder, "run.fspm.zip")   # packed as encoding3d.pack does (its check needs jsonschema,
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as out:   # not in ParaView), the folder kept
+            for member in sequence_members(os.path.join(frames, "scene.fspm.json")):
+                out.write(os.path.join(frames, member), member)
         view = simple.GetActiveViewOrCreate("RenderView")
         view.ViewSize = [900, 700]
         for name, path in (("folder", os.path.join(frames, "scene.fspm.json")), ("archive", archive)):

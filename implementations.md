@@ -18,7 +18,8 @@ operators), read `.fspm.zip` archives (ZIP64; stored, deflate and lzma members) 
 `instances/` and `archives/`. They pack archives with: Python, stored, deflate or lzma (`zipfile`); C++, stored,
 deflate or lzma (minizip-ng); Java, stored or deflate (`java.util.zip`; lzma read with xz-java); Julia, stored or
 deflate (ZipArchives.jl; lzma read with liblzma). Python alone draws instances (`placed_meshes`, ParaView) and prunes
-parts. The platform adapters write no instance sets yet (0.3 content).
+parts, and its `pack` alone checks the archive it wrote (members, sizes and CRC-32 read back, the validator) and
+then removes the folder (`keep_folder=True` keeps it); the other codecs' packs keep the folder. The platform adapters write no instance sets yet (0.3 content).
 
 A data structure's `extras` (specification §3) are the writing platform's own, which other readers do not need and
 keep as JSON. metafspm's (`extras.metafspm`) hold what it rebuilds its MPG from: since 2026-11-09 its properties'

@@ -340,7 +340,7 @@ def test_select_at_scale_rebuilds_the_selected_instances_derived_fields():
 
 def test_an_archive_opens_as_its_folder(tmp_path):
     from openalea.encoding3d import pack
-    archive = pack(INSTANCES, str(tmp_path / "run.fspm.zip"))
+    archive = pack(INSTANCES, str(tmp_path / "run.fspm.zip"), keep_folder=True)
     source = reader.Source(archive)
     assert source.times == [0., 1.]
     block = instance_block(reader.frame_to_vtk(source.frame_at(1.), derived=True))

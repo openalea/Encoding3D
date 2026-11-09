@@ -339,7 +339,9 @@ The folder's layout:
 - **Ids across frames.** An entity keeps its id from frame to frame. An id whose entity has disappeared MUST NOT be
   given to another entity in a later frame of the same data structure and entity set. Labels and parents MAY change,
   e.g. an apex moved by growth. A platform whose own ids may come back (a counter restarted, a deleted maximum's id
-  given again) keeps, across a sequence, a map from its entities to the ids it writes.
+  given again) keeps, across a sequence, a map from its entities to the ids it writes. An adaptive grid's leaf cell is
+  the region its `level` and `index` give: a cell coarsened away and refined again later is the same entity, and MAY
+  have its id again; an id that comes back MUST have the same `level` and `index`.
 - **Ids are not positions.** Ids may be sparse (e.g. offsets keeping them stable as a plant grows). Readers SHOULD
   NOT size arrays by the largest id.
 - **Parts.** The index's `parts` SHOULD list every part its frames use, each at `parts/<key>.glb`. A writer writes a

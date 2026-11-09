@@ -82,7 +82,8 @@ def main(conformance: str, out: str) -> int:
                                sorted(instances_index, key=lambda entry: entry["time"]), time_unit="d",
                                parts=sorted(instances_parts))
         os.makedirs(os.path.join(out, "written", "archives"), exist_ok=True)
-        encoding3d.pack(folder, os.path.join(out, "written", "archives", "instances" + ARCHIVE_SUFFIX))
+        encoding3d.pack(folder, os.path.join(out, "written", "archives", "instances" + ARCHIVE_SUFFIX),
+                        keep_folder=True)                     # its frames validated as files too
     return 0
 
 
