@@ -107,8 +107,8 @@ def evaluate(frame, field: str, instances=None, data_structure: str = None, inst
 class PlacedMeshes:
     """The instances' template meshes, placed: *positions* (V, 3) in the data structure's frame (its origin not
     applied), *triangles* (T, 3) into them, and per triangle: *instance* (its instance's row), *template* (the index
-    of its template in the set's parts), *mesh* (the template mesh's name) and *template_rows* ({template entity set:
-    the triangle's row in it, NO_ID for none})."""
+    of its template in the set's parts), *mesh* (the index of its mesh in the template's meshes) and *template_rows*
+    ({template entity set: the triangle's row in it, NO_ID for none})."""
     positions: np.ndarray
     triangles: np.ndarray
     instance: np.ndarray
@@ -127,22 +127,22 @@ def placed_meshes(frame, data_structure, instance_set, instances=None) -> Placed
     rows = _rows(instance_set, instances)
     transforms = instance_set.transforms()
     templates = instance_set.columns["template"]
-    positions, triangles, instance, template_of, mesh_names, set_rows = [], [], [], [], [], []
+    positions, triangles, instance, template_of, mesh_indices, set_rows = [], [], [], [], [], []
     vertex_count = 0
     for template_index in np.unique(templates[rows]).tolist():
         template = frame.part(instance_set.parts[template_index])
         chosen = rows[templates[rows] == template_index]
-        for mesh in template.meshes:
+        for mesh_index, mesh in enumerate(template.meshes):
             corners = (mesh.indices if mesh.indices is not None else np.arange(len(mesh.positions))).reshape(-1, 3)
             local = np.c_[mesh.positions, np.ones(len(mesh.positions))]                     # (v, 4)
-            placed = np.einsum("nij,vj->nvi", transforms[chosen], local)[:, :, :3]           # (n, v, 3)
+            placed = np.einsum("nij,vj->nvi", transforms[chosen][:, :3, :], local)            # (n, v, 3)
             positions.append(placed.reshape(-1, 3))
             offsets = vertex_count + np.arange(chosen.size, dtype=np.int64) * len(mesh.positions)
             triangles.append((corners[None, :, :] + offsets[:, None, None]).reshape(-1, 3))
             vertex_count += chosen.size * len(mesh.positions)
             instance.append(np.repeat(chosen, len(corners)))
             template_of.append(np.full(chosen.size * len(corners), template_index, dtype=np.int64))
-            mesh_names.append(np.full(chosen.size * len(corners), mesh.name, dtype=object))
+            mesh_indices.append(np.full(chosen.size * len(corners), mesh_index, dtype=np.int32))
             first = corners[:, 0]
             set_rows.append({name: np.tile(feature_rows[first], chosen.size)
                              for name, feature_rows in mesh.feature_rows.items()})
@@ -158,4 +158,4 @@ def placed_meshes(frame, data_structure, instance_set, instances=None) -> Placed
         return np.concatenate(items) if items else np.zeros(shape, dtype=dtype)
     return PlacedMeshes(positions=joined(positions, np.float64, (0, 3)), triangles=joined(triangles, np.int64, (0, 3)),
                         instance=joined(instance, np.int64), template=joined(template_of, np.int64),
-                        mesh=joined(mesh_names, object), template_rows=template_rows)
+                        mesh=joined(mesh_indices, np.int32), template_rows=template_rows)

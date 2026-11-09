@@ -297,8 +297,11 @@ def instance_block(output, name="instances sections"):
 def test_instances_are_placed_templates_with_their_own_fields():
     from openalea.encoding3d import evaluate, read
     frame = read(os.path.join(INSTANCES, "frame_000001.glb"))
-    block = instance_block(reader.frame_to_vtk(frame))
-    assert block.GetNumberOfCells() == 4 + 4 + 6 + 6
+    slim = instance_block(reader.frame_to_vtk(frame))             # by default the ids and rows selection needs
+    assert arrays_of(slim) == {reader.INSTANCE_ROW, reader.TEMPLATE_ROW + "Cell", "SubOrgan.id", "Axis.id",
+                               "Plant.id"}, arrays_of(slim)
+    block = instance_block(reader.frame_to_vtk(frame, all_arrays=True))      # with every variable
+    assert block.GetNumberOfCells() == slim.GetNumberOfCells() == 4 + 4 + 6 + 6
     instance = cell_array(block, reader.INSTANCE_ROW)
     np.testing.assert_array_equal(instance, np.repeat([0, 1, 2, 3], [4, 4, 6, 6]))
     np.testing.assert_array_equal(cell_array(block, "sections.age"), [1., 1., 1., 1., .5, .5, .5, .5] + [0.] * 6
@@ -365,3 +368,86 @@ def test_an_instances_layer():
         {"name": "x", "source": {"data_structure": "root_system", "kind": "instances", "instance_set": "sections"},
          "color_by": {"entity_set": "Cell", "variable": "nothing"}}]}}}
     assert not check_views(wrong, frame).ok
+
+
+HIDDEN_SECTIONS = {"encoding3d_views": 1, "configurations": {"default": {"layers": [
+    {"name": "roots", "source": {"data_structure": "root_system", "kind": "segments", "entity_set": "SubOrgan"},
+     "color_by": {"entity_set": "SubOrgan", "variable": "water_potential"}},
+    {"name": "sections", "source": {"data_structure": "root_system", "kind": "instances", "instance_set": "sections"},
+     "color_by": {"entity_set": "Cell", "variable": "water_potential"}, "visible": False}]}}}
+
+
+def test_a_hidden_instances_layer_is_built_by_the_selection_alone(monkeypatch):
+    """A hidden instances layer of a frame read from a file is an empty block (its instances not placed); Select at
+    scale builds the placed templates of the instances it selects only, from the frame the reader opened (one read
+    for both), and their derived fields are evaluated once per open frame; Expand Hidden Instances draws them all."""
+    from openalea.encoding3d import evaluate, instances
+    path = os.path.join(INSTANCES, "frame_000001.glb")
+    frame = reader.open_frame(path)
+    assert reader.Source(os.path.join(INSTANCES, "scene.fspm.json")).frame_at(1.) is reader.open_frame(path) is frame
+    data = reader.frame_to_vtk(frame, views=HIDDEN_SECTIONS)
+    sections = data.GetBlock(1)
+    assert sections.GetNumberOfCells() == 0 and sections.GetFieldData().GetAbstractArray(reader.UNEXPANDED_FIELD)
+    owners = frame.data_structures[0].instance_set("sections").columns["owner"]
+    picked = [("root_system", {"SubOrgan.id": np.array([float(owners[2])]), "Axis.id": np.array([100.]),
+                               "Plant.id": np.array([1000.])})]
+    assert reader.instance_rows_at(frame.data_structures[0], frame.data_structures[0].instance_set("sections"),
+                                   [100], "Axis").tolist() == [0, 1, 2, 3]
+    calls = []
+    reader._DERIVED.clear()                                         # (an earlier test's rebuild of this frame)
+    evaluated = instances.evaluate
+    monkeypatch.setattr(instances, "evaluate", lambda *arguments, **options: calls.append(options["instances"])
+                        or evaluated(*arguments, **options))
+    for _ in range(2):                                              # the second time from the open frame's cache
+        grown = reader.grow_selection(data, picked, "SubOrgan")
+        block = grown.GetBlock(1)
+        assert set(cell_array(block, reader.INSTANCE_ROW)) == {2} and block.GetNumberOfCells() == 6
+        assert block.GetFieldData().GetAbstractArray(reader.FRAME_FIELD).GetValue(0) == path
+        reader.rebuild_derived(grown)
+        np.testing.assert_allclose(cell_array(block, "Cell.water_potential"),
+                                   evaluated(frame, "water_potential", instances=[2])[0], rtol=1e-12)
+        assert block.GetCellData().GetScalars().GetName() == "Cell.water_potential"
+    assert [rows.tolist() for rows in calls] == [[2]]
+    axis = reader.grow_selection(data, picked, "Axis")
+    assert set(cell_array(axis.GetBlock(1), reader.INSTANCE_ROW)) == {0, 1, 2, 3}
+    reader.rebuild_derived(axis)
+    assert [rows.tolist() for rows in calls] == [[2], [0, 1, 3]]
+    np.testing.assert_allclose(cell_array(axis.GetBlock(1), "Cell.water_potential"),
+                               np.concatenate(evaluate(frame, "water_potential")), rtol=1e-12)
+    expanded = reader.frame_to_vtk(frame, views=HIDDEN_SECTIONS, expand_hidden=True)
+    assert expanded.GetBlock(1).GetNumberOfCells() == 20
+
+
+def test_a_selection_without_instances_says_which_plants_have_some():
+    path = os.path.join(INSTANCES, "frame_000001.glb")
+    frame = reader.open_frame(path)
+    data = reader.frame_to_vtk(frame, views=HIDDEN_SECTIONS)
+    lateral = [("root_system", {"SubOrgan.id": np.array([60.]), "Axis.id": np.array([101.]),
+                                "Plant.id": np.array([1000.])})]
+    chosen = reader._views().picked_entities(lateral, "Axis")
+    grown = reader.grow_entities(data, chosen, "Axis")
+    assert grown.GetBlock(0).GetNumberOfCells() == 3 and grown.GetBlock(1).GetNumberOfCells() == 0
+    messages = reader.missing_instances(data, grown, chosen, "Axis")
+    assert messages == ["no 'sections' instance drawn for the selected Axis [101] at t = 1 d: the frame's 4 "
+                        "instances are owned by Plant [1000]"], messages
+    whole = reader.grow_entities(data, reader._views().picked_entities(lateral, "Plant"), "Plant")
+    assert reader.missing_instances(data, whole, {"root_system": [1000]}, "Plant") == []
+    absent = {"encoding3d_views": 1, "configurations": {"default": {"layers": [          # a frame without them
+        {"name": "other", "source": {"data_structure": "root_system", "kind": "instances", "instance_set": "other"}}]}}}
+    without = reader.frame_to_vtk(frame, views=absent)
+    assert without.GetBlock(0).GetNumberOfCells() == 0
+    grown = reader.grow_entities(without, {"root_system": [1000]}, "Plant")
+    assert reader.missing_instances(without, grown, {"root_system": [1000]}, "Plant") == [
+        "no 'other' instance drawn for the selected Plant [1000] at t = 1 d: the frame holds none"]
+
+
+def test_instance_arrays_made_for_vtk_are_held_by_it():
+    """The instances block's arrays are handed to VTK without a copy: they outlive the numpy arrays' names."""
+    import gc
+    from openalea.encoding3d import read
+    frame = read(os.path.join(INSTANCES, "frame_000001.glb"))
+    block = instance_block(reader.frame_to_vtk(frame, derived=True))
+    gc.collect()
+    np.testing.assert_array_equal(cell_array(block, reader.INSTANCE_ROW), np.repeat([0, 1, 2, 3], [4, 4, 6, 6]))
+    assert np.isfinite(cell_array(block, "Cell.water_potential")).all()
+    assert vtk_to_numpy(block.GetPoints().GetData()).shape == (60, 3)

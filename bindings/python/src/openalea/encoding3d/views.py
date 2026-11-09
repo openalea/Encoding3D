@@ -415,9 +415,9 @@ def layer_from_display(layer: dict, display: dict) -> dict:
     return updated
 
 
-def block_displays(layers: list, arrays=()) -> dict:
+def block_displays(layers: list, arrays=None) -> dict:
     """What ParaView's plugin sets on the reader's representation for the *layers* of a configuration (its blocks,
-    *arrays* the cell arrays they hold), each layer drawn as its own block:
+    *arrays* the cell arrays they hold: None when not known), each layer drawn as its own block:
 
         selectors       the visible layers' blocks (the representation's BlockSelectors)
         colourings      [(selector, cell array)] of the coloured layers (BlockColorArrayNames)
@@ -425,12 +425,14 @@ def block_displays(layers: list, arrays=()) -> dict:
         opacities       [(selector, opacity)] of the layers not opaque (BlockOpacities)
         colour_maps     {cell array: {"colormap", "range", "log"}}, the first layer coloured by it giving it
         main_array      the array the representation itself is coloured by (the first visible coloured layer's, else
-                        the first coloured one's; None: no layer coloured): ParaView colours a block by its own array
-                        only when the representation is coloured by one
+                        the first coloured one's, among the *arrays* present when they are known; None: no layer
+                        coloured by an array present, e.g. a selection without the shoot): ParaView colours a block by
+                        its own array only when the representation is coloured by one, and warns when it is coloured
+                        by an array it lacks
         scalar_bars     the arrays of the visible coloured layers
         representation  the visible layers' representation when they agree, else "Surface"
     """
-    settings = [display_settings(layer, arrays) for layer in layers]
+    settings = [display_settings(layer, arrays or ()) for layer in layers]
     colourings = [(setting["selector"], setting["color_array"]) for setting in settings if setting["color_array"]]
     colour_maps = {}
     for setting in settings:
@@ -438,6 +440,9 @@ def block_displays(layers: list, arrays=()) -> dict:
             colour_maps[setting["color_array"]] = {key: setting[key] for key in ("colormap", "range", "log")}
     visible = [setting for setting in settings if setting["visible"]]
     shown_arrays = [setting["color_array"] for setting in visible if setting["color_array"]]
+    present = [array for _, array in colourings if arrays is None or array in arrays]
+    main_array = next((array for array in shown_arrays if arrays is None or array in arrays),
+                      present[0] if present else None)
     representations = {setting["representation"] for setting in visible}
     return {"selectors": [setting["selector"] for setting in visible], "colourings": colourings,
             "solid_colours": [(setting["selector"], setting["solid_color"]) for setting in settings
@@ -445,7 +450,7 @@ def block_displays(layers: list, arrays=()) -> dict:
             "opacities": [(setting["selector"], setting["opacity"]) for setting in settings
                           if setting["opacity"] != 1.],
             "colour_maps": colour_maps,
-            "main_array": shown_arrays[0] if shown_arrays else (colourings[0][1] if colourings else None),
+            "main_array": main_array,
             "scalar_bars": list(dict.fromkeys(shown_arrays)),
             "representation": representations.pop() if len(representations) == 1 else "Surface"}
 
@@ -566,6 +571,23 @@ def _ids(values) -> np.ndarray:
     """Ids read back from a cell array (float64, NaN where no entity): int64, -1 where none."""
     values = np.asarray(values, dtype=np.float64).reshape(-1)
     return np.where(np.isfinite(values), np.nan_to_num(values), -1).astype(np.int64)
+
+
+PICKED_SCALE = "picked"     # the "Select at scale" filter's default Scale: the picked cells' own one (picked_scale)
+
+
+def picked_scale(picked: list, scales: list) -> str:
+    """The picked cells' own scale: of *scales* (coarser first), the finest at which every block of *picked*
+    (picked_entities') has an entity for some picked cell, else the finest at which one has (a root's segment picked:
+    its SubOrgan; a section's cell: its owner's); None when no picked cell has an entity at any of *scales*."""
+    def holds(arrays: dict, scale: str) -> bool:
+        return id_array(scale) in arrays and bool((_ids(arrays[id_array(scale)]) >= 0).any())
+    for every in (True, False):
+        for scale in reversed(scales):
+            found = [holds(arrays, scale) for _, arrays in picked]
+            if found and (all(found) if every else any(found)):
+                return scale
+    return None
 
 
 def picked_entities(picked: list, scale: str) -> dict:

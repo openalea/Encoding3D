@@ -139,6 +139,9 @@ def test_layers_become_block_properties():
     assert displays["scalar_bars"] == ["SubOrgan.water_potential"] and displays["representation"] == "Surface"
     assert displays["colour_maps"]["SubOrgan.label_code"] == {"colormap": views.DEFAULTS["colormap"], "range": None,
                                                               "log": False}
+    without = views.block_displays(layers, {"SubOrgan.label_code"})              # the shown layer's array missing
+    assert without["main_array"] == "SubOrgan.label_code"                         # (a hidden layer's, present)
+    assert views.block_displays(layers, set())["main_array"] is None              # an empty selection: none
     plain = views.block_displays(views.configuration(roots_views(), "plain")[1])
     assert plain["solid_colours"] == [("/Root/all", [0.5, 0.4, 0.3])] and plain["main_array"] is None
     assert plain["opacities"] == [("/Root/all", 0.3)]
@@ -209,6 +212,17 @@ def test_picked_cells_grow_to_their_entity_and_what_it_contains():
                           ["roots selection"]) == ["roots", "shoot"]
     blocks = [["Plant", "Axis", "SubOrgan"], [], ["Plant", "Axis", "Organ", "SubOrgan", "Compartment"]]
     assert views.scale_names(blocks) == ["Plant", "Axis", "Organ", "SubOrgan", "Compartment"]   # every block's
+
+
+def test_the_picked_cells_own_scale():
+    """The Select at scale filter's default Scale: the finest at which every picked block has an entity."""
+    scales = ["Plant", "Axis", "SubOrgan", "Compartment"]
+    segment = ("plants", {"Plant.id": np.array([1.]), "Axis.id": np.array([2.]), "SubOrgan.id": np.array([3.])})
+    leaf = ("plants", {"Plant.id": np.array([1.]), "Axis.id": np.array([4.]), "SubOrgan.id": np.array([np.nan])})
+    assert views.picked_scale([segment], scales) == "SubOrgan"
+    assert views.picked_scale([segment, leaf], scales) == "Axis"                 # every block has an axis
+    assert views.picked_scale([("plants", {"Plant.id": np.array([np.nan])})], scales) is None
+    assert views.picked_scale([], scales) is None and views.PICKED_SCALE == "picked"
 
 
 def test_views_are_checked_without_jsonschema(monkeypatch):

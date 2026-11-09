@@ -21,11 +21,12 @@ What it shows, one block per data structure:
     grid            a regular grid as image data (z pointing down when the grid says so), an adaptive grid as
                     hexahedra, the cells' variables as cell data
     instances <name>  an instance set (specification §12): each instance's template meshes placed by its transform;
-                    cell data: the instance's own variables ("<instance set>.<variable>"), its owner's
-                    ("<owners>.<variable>", the ids of the entities containing it), its template's constant variables
-                    ("<template entity set>.<variable>"); its derived fields ("<template entity set>.<field>") when
-                    "Evaluate Derived Fields" is ticked, else rebuilt by "encoding3d Select at scale" for the
-                    instances it selects
+                    cell data: the ids of its owner and of the entities containing it, its instance's row and its
+                    rows in the template's entity sets, and a layer's colour variable ("All Instance Arrays": also
+                    the instance's own variables "<instance set>.<variable>", its owner's "<owners>.<variable>", its
+                    template's constants "<template entity set>.<variable>"); its derived fields ("<template entity
+                    set>.<field>") when "Evaluate Derived Fields" is ticked, else rebuilt by "encoding3d Select at
+                    scale" for the instances it selects
 
 Labels and other text columns become integer codes ("<entity set>.label_code", the names in the block's field data).
 The graph's links (complex, parent, edge_type) and the columns of role "setting" (a platform's own bookkeeping, e.g.
@@ -36,11 +37,13 @@ With views (specification §8.1: a views.json next to the file, or the one "View
 block per layer of the chosen "Configuration" (the file's active one by default), named by the layer: only its
 selected entities (a mesh's triangles whose rows at the select entity set match, the segments whose rows match, the
 grid's cells, the others hidden), its colour variable as the active scalars, a segments layer with a "tube" as tubes
-(radius also as point data "tube_radius"); hidden layers are there too, and a layer whose names a frame lacks is an
-empty block. The plugin then draws each layer as its block, with its own colour variable, colour map, range, log
-scale or solid colour, opacity and visibility (encoding3d_displays.py, next to this file: it watches the
-representations ParaView makes, and draws them again when "Configuration" changes); the MultiBlock Inspector edits a
-layer, the reader's "Save Views" button writes the display back into the views file ("Save As": a new configuration).
+(radius also as point data "tube_radius"); hidden layers are there too (a hidden instances layer as an empty block,
+its instances placed by "encoding3d Select at scale" for what it selects, unless "Expand Hidden Instances"), and a
+layer whose names a frame lacks is an empty block. The plugin then draws each layer as its block, with its own colour
+variable, colour map, range, log scale or solid colour, opacity and visibility (encoding3d_displays.py, next to this
+file: it watches the representations ParaView makes, and draws them again when "Configuration" changes, or the arrays
+its data holds); the MultiBlock Inspector edits a layer, the reader's "Save Views" button writes the display back into
+the views file ("Save As": a new configuration).
 
 Every cell also has the ids of the entities containing its own ("<entity set>.id" at each coarser scale, through the
 complex links: a root segment's Organ, Axis and Plant), and every block its data structure (field data
@@ -49,11 +52,14 @@ at scale" (Filters > encoding3d), applied with cells picked on the reader or any
 plant, axis, organ ... ("Scale", a drop-down of the scales) with everything it holds at finer scales, in every block
 of the reader (every layer, the hidden ones included), the same blocks with their arrays, drawn as the layers; the
 picked entities are followed through the time steps. Its buttons Isolate (the other items hidden), Show In Panel (a
-render view of its own) and Put Back (one step back) show it.
+render view of its own) and Put Back (one step back) show it, at the Scale applied ("picked", the picked cells' own
+scale, until another is chosen and applied). The reader and the filter share the frames open (open_frame).
 
 frame_to_vtk(frame) builds the output without ParaView (VTK only), e.g. for scripts and tests; picked_cells,
-grow_selection and rebuild_derived, the filter's.
+grow_selection (grow_entities), rebuild_derived and missing_instances, the filter's.
 """
+import collections
+import json
 import os
 import sys
 
@@ -92,9 +98,10 @@ SEGMENT_ENDS = (("proximal_end_x", "x1"), ("proximal_end_y", "y1"), ("proximal_e
 
 # ── Frames to VTK data sets ──────────────────────────────────────────────────
 
-def _array(name: str, values: np.ndarray):
+def _array(name: str, values: np.ndarray, deep: bool = True):
+    """A VTK array of *values*; *deep* False for values made for it alone (the array then holds them, no copy)."""
     values = np.ascontiguousarray(values)
-    array = numpy_to_vtk(values, deep=True)
+    array = numpy_to_vtk(values, deep=deep)
     array.SetName(name)
     return array
 
@@ -122,12 +129,15 @@ def _shown(entity_set, name: str, settings: bool) -> bool:
     return name not in LINKS and (declared is None or declared.role != "setting")
 
 
-def _add_columns(data, entity_set, rows: np.ndarray, field_data, settings: bool = False, forced=()) -> None:
+def _add_columns(data, entity_set, rows: np.ndarray, field_data, settings: bool = False, forced=(),
+                 only=None) -> None:
     """Cell data of *entity_set*'s columns, one value per cell from *rows* (-1: no entity, NaN); the columns
-    *forced* (a layer's colour variable) whatever their role."""
+    *forced* (a layer's colour variable) whatever their role; *only*: those columns alone (and the forced ones)."""
     valid = rows >= 0
     taken = np.where(valid, rows, 0)
     for name, column in entity_set.columns.items():
+        if only is not None and name not in only and name not in forced:
+            continue
         if not _shown(entity_set, name, settings) and name not in forced:
             continue
         label = f"{entity_set.name}.{name}"
@@ -136,7 +146,7 @@ def _add_columns(data, entity_set, rows: np.ndarray, field_data, settings: bool 
                 continue                                    # free text: not a colouring
             codes, names = _codes(column)
             values = np.where(valid, codes[taken], -1)
-            data.AddArray(_array(f"{label}_code", values))
+            data.AddArray(_array(f"{label}_code", values, deep=False))
             listed = vtkStringArray()
             listed.SetName(f"{label}_names")
             for item in names:
@@ -149,7 +159,7 @@ def _add_columns(data, entity_set, rows: np.ndarray, field_data, settings: bool 
         if np.ma.isMaskedArray(values):
             values = values.filled(np.nan)                              # and where a value is missing
         values = np.where(valid.reshape((-1,) + (1,) * (values.ndim - 1)), values, np.nan)
-        data.AddArray(_array(label, values))
+        data.AddArray(_array(label, values, deep=False))
 
 
 def _instances_module():
@@ -160,6 +170,7 @@ def _instances_module():
 
 INSTANCE_SET_FIELD = "encoding3d_instance_set"   # field data of an instances block: its instance set
 FRAME_FIELD = "encoding3d_frame"                 # and the file of its frame (where the filter rebuilds derived fields)
+UNEXPANDED_FIELD = "encoding3d_unexpanded"       # and, for a hidden layer's block left empty, how to build its part
 INSTANCE_ROW = "encoding3d_instance"             # cell data: each cell's instance (its row in the instance set)
 TEMPLATE_ROW = "encoding3d_template_row."        # + a template entity set: each cell's row in it
 
@@ -212,52 +223,107 @@ def _owner_rows(data_structure, instance_set) -> np.ndarray:
 
 
 def _instances(frame, data_structure, instance_set, settings: bool = False, rows=None, forced: dict = None,
-               derived: bool = False):
-    """The placed template meshes of the instances at *rows* (all for None) of *instance_set*: cell data of their own
-    variables, their owners' and the entities containing them (ids), their templates' constants, each cell's
-    instance and template rows; *derived*: its derived fields evaluated too."""
+               derived: bool = False, all_arrays: bool = False):
+    """The placed template meshes of the instances at *rows* (all for None) of *instance_set*: cell data of the ids of
+    their owners and of the entities containing them, each cell's instance and template rows, and of the variables
+    *forced* ({entity set: columns}, a layer's colour variable); *all_arrays*: also every other variable of the
+    instances, of their owners and of their templates (one value per triangle each: the block's largest part);
+    *derived*: its derived fields evaluated too."""
     instances = _instances_module()
     placed = instances.placed_meshes(frame, data_structure, instance_set, instances=rows)
     polydata = vtkPolyData()
-    points = vtkPoints()
-    points.SetData(numpy_to_vtk(np.ascontiguousarray(_transform(placed.positions, data_structure.origin)), deep=True))
+    points = vtkPoints()                                # (made for the block: held by VTK, not copied)
+    points.SetData(numpy_to_vtk(np.ascontiguousarray(_transform(placed.positions, data_structure.origin)), deep=False))
     polydata.SetPoints(points)
     count = len(placed.triangles)
     cells = vtkCellArray()
-    cells.SetData(numpy_to_vtkIdTypeArray(np.arange(0, 3 * count + 1, 3, dtype=np.int64), deep=True),
-                  numpy_to_vtkIdTypeArray(np.ascontiguousarray(placed.triangles.reshape(-1), dtype=np.int64), deep=True))
+    cells.SetData(numpy_to_vtkIdTypeArray(np.arange(0, 3 * count + 1, 3, dtype=np.int64), deep=False),
+                  numpy_to_vtkIdTypeArray(np.ascontiguousarray(placed.triangles.reshape(-1), dtype=np.int64),
+                                          deep=False))
     polydata.SetPolys(cells)
     forced = forced or {}
+    only = None if all_arrays else ()
     cell_data, field_data = polydata.GetCellData(), polydata.GetFieldData()
     own = sys.modules[_encoding3d().Table.__module__].Table(instance_set.name, columns={
         name: column for name, column in instance_set.columns.items() if name not in ("transform", "template")},
         variables=instance_set.variables)
     if own.columns:
-        _add_columns(cell_data, own, placed.instance, field_data, settings, forced.get(instance_set.name, ()))
-    cell_data.AddArray(_array(INSTANCE_ROW, placed.instance.astype(np.int64)))
+        _add_columns(cell_data, own, placed.instance, field_data, settings, forced.get(instance_set.name, ()), only)
+    cell_data.AddArray(_array(INSTANCE_ROW, placed.instance.astype(np.int64), deep=False))
     owner_rows = _owner_rows(data_structure, instance_set)[placed.instance] if count else np.zeros(0, dtype=np.int64)
     if instance_set.owners is not None:
         owners = data_structure.entity_set(instance_set.owners)
-        _add_columns(cell_data, owners, owner_rows, field_data, settings, forced.get(owners.name, ()))
+        _add_columns(cell_data, owners, owner_rows, field_data, settings, forced.get(owners.name, ()),
+                     None if all_arrays else ("id",))
         if owners.rank is not None:
             _add_ancestors(polydata, data_structure, owners.name, owner_rows)
     templates = np.unique(placed.template).tolist()
     for set_name, template_rows in placed.template_rows.items():
-        merged, offsets = _merged_template_sets(frame, instance_set, set_name, templates)
-        start = np.array([offsets.get(index, -1) for index in placed.template], dtype=np.int64)
-        merged_rows = np.where((template_rows >= 0) & (start >= 0), start + template_rows, -1)
-        if merged.columns:
-            _add_columns(cell_data, merged, merged_rows, field_data, settings, forced.get(set_name, ()))
-        cell_data.AddArray(_array(TEMPLATE_ROW + set_name, template_rows.astype(np.int64)))
+        if all_arrays or forced.get(set_name):
+            merged, offsets = _merged_template_sets(frame, instance_set, set_name, templates)
+            start = np.array([offsets.get(index, -1) for index in placed.template], dtype=np.int64)
+            merged_rows = np.where((template_rows >= 0) & (start >= 0), start + template_rows, -1)
+            if merged.columns:
+                _add_columns(cell_data, merged, merged_rows, field_data, settings, forced.get(set_name, ()), only)
+        cell_data.AddArray(_array(TEMPLATE_ROW + set_name, template_rows.astype(np.int64), deep=False))
+    del placed
     _identify(polydata, data_structure)
+    _name_frame(polydata, frame, instance_set)
+    if derived and count:
+        _add_derived(polydata, frame, data_structure, instance_set)
+    return polydata
+
+
+def _name_frame(data_set, frame, instance_set) -> None:
+    """Field data: the instance set of *data_set* (an instances block) and its frame's file."""
     for name, value in ((INSTANCE_SET_FIELD, instance_set.name), (FRAME_FIELD, getattr(frame, "path", "") or "")):
         listed = vtkStringArray()
         listed.SetName(name)
         listed.InsertNextValue(str(value))
-        field_data.AddArray(listed)
-    if derived and count:
-        _add_derived(polydata, frame, data_structure, instance_set)
+        data_set.GetFieldData().AddArray(listed)
+
+
+def _unexpanded(frame, data_structure, instance_set, layer: dict, settings: bool, all_arrays: bool):
+    """The empty block of a hidden instances layer: its instance set, frame, data structure and scales as field data,
+    and the layer (UNEXPANDED_FIELD), from which "encoding3d Select at scale" builds the part it selects."""
+    polydata = vtkPolyData()
+    _identify(polydata, data_structure)
+    _name_frame(polydata, frame, instance_set)
+    listed = vtkStringArray()
+    listed.SetName(UNEXPANDED_FIELD)
+    listed.InsertNextValue(json.dumps({"layer": layer, "settings": bool(settings), "all_arrays": bool(all_arrays)}))
+    polydata.GetFieldData().AddArray(listed)
     return polydata
+
+
+def _layer_instance_rows(data_structure, instance_set, select) -> np.ndarray:
+    """The rows of *instance_set* a layer's *select* keeps (by the instances' own columns or by their owners'); None
+    without one: all."""
+    if not select:
+        return None
+    views = _views()
+    if select["entity_set"] == instance_set.name:
+        return np.flatnonzero(views.selected(instance_set, select["where"]))
+    matching = views.selected(data_structure.entity_set(select["entity_set"]), select["where"])
+    owners = _owner_rows(data_structure, instance_set)
+    return np.flatnonzero((owners >= 0) & matching[np.where(owners >= 0, owners, 0)])
+
+
+def instance_rows_at(data_structure, instance_set, ids, scale: str) -> np.ndarray:
+    """The rows of the instances of *instance_set* whose owner is, or is inside, one of the entities *ids* at
+    *scale* (its owners' set, or a coarser scale of theirs)."""
+    if instance_set.owners is None:
+        return np.zeros(0, dtype=np.int64)
+    owners = data_structure.entity_set(instance_set.owners)
+    owner_rows = _owner_rows(data_structure, instance_set)
+    if scale == owners.name:
+        found = np.where(owner_rows >= 0, np.asarray(owners.columns["id"], dtype=np.int64)[np.maximum(owner_rows, 0)],
+                         -1)
+    else:
+        found = _views().ancestor_ids(data_structure, owners.name, owner_rows).get(scale)
+        if found is None:
+            return np.zeros(0, dtype=np.int64)
+    return np.flatnonzero((owner_rows >= 0) & np.isin(found, np.asarray(list(ids), dtype=np.int64)))
 
 
 def _add_derived(data_set, frame, data_structure, instance_set) -> None:
@@ -275,8 +341,7 @@ def _add_derived(data_set, frame, data_structure, instance_set) -> None:
         template_rows = cell_data.GetArray(TEMPLATE_ROW + derived.entity_set)
         if template_rows is None:
             continue
-        values = _instances_module().evaluate(frame, derived.name, instances=chosen, data_structure=data_structure.id,
-                                              instance_set=instance_set.name)
+        values = _evaluated(frame, data_structure, instance_set, derived.name, chosen)
         lengths = np.array([value.size for value in values], dtype=np.int64)
         flat = np.concatenate(values) if values else np.zeros(0)
         starts = np.concatenate([[0], np.cumsum(lengths)[:-1]]).astype(np.int64)
@@ -285,7 +350,26 @@ def _add_derived(data_set, frame, data_structure, instance_set) -> None:
         valid = (rows >= 0) & (rows < lengths[position])
         out = np.full(rows.size, np.nan)
         out[valid] = flat[starts[position[valid]] + rows[valid]]
-        cell_data.AddArray(_array(f"{derived.entity_set}.{derived.name}", out))
+        cell_data.AddArray(_array(f"{derived.entity_set}.{derived.name}", out, deep=False))
+
+
+_DERIVED = {}       # {(frame file, data structure, instance set, field): {instance row: values}} of the frames open
+
+
+def _evaluated(frame, data_structure, instance_set, field: str, rows: np.ndarray) -> list:
+    """The derived field *field* of the instances at *rows*, evaluated once per frame open (open_frame): a selection
+    switched back to a scale, or a time step seen again while its frame is open, is not evaluated again."""
+    path = getattr(frame, "path", "") or ""
+    if _FRAMES.get(path) is not frame:                  # a frame not shared: evaluated, not kept
+        return _instances_module().evaluate(frame, field, instances=rows, data_structure=data_structure.id,
+                                            instance_set=instance_set.name)
+    known = _DERIVED.setdefault((path, data_structure.id, instance_set.name, field), {})
+    missing = np.array([row for row in rows.tolist() if row not in known], dtype=np.int64)
+    if missing.size:
+        values = _instances_module().evaluate(frame, field, instances=missing, data_structure=data_structure.id,
+                                              instance_set=instance_set.name)
+        known.update(zip(missing.tolist(), values))
+    return [known[row] for row in rows.tolist()]
 
 
 def _transform(points: np.ndarray, origin: np.ndarray) -> np.ndarray:
@@ -330,7 +414,7 @@ def _add_ancestors(data_set, data_structure, set_name: str, rows: np.ndarray) ->
     for name, ids in _views().ancestor_ids(data_structure, set_name, rows).items():
         label = _views().id_array(name)
         if not cell_data.HasArray(label):
-            cell_data.AddArray(_array(label, np.where(ids >= 0, ids, np.nan).astype(np.float64)))
+            cell_data.AddArray(_array(label, np.where(ids >= 0, ids, np.nan).astype(np.float64), deep=False))
 
 
 def _identify(data_set, data_structure) -> None:
@@ -484,14 +568,26 @@ def _tubes(lines):
     return tubes
 
 
-def _layer(frame, layer: dict, settings: bool = False, derived: bool = False):
+def _layer(frame, layer: dict, settings: bool = False, derived: bool = False, expand_hidden: bool = False,
+           all_arrays: bool = False):
     """The data set of a layer (views.configuration's, its defaults filled): its selected entities only, its colour
     variable as the active scalars; empty when the frame lacks a name it gives (e.g. a mesh drawn from a later frame
-    on), so that every frame of a sequence has the same blocks."""
+    on), so that every frame of a sequence has the same blocks. A hidden instances layer of a frame read from a file
+    is left empty unless *expand_hidden* (_unexpanded: "encoding3d Select at scale" builds the part it selects);
+    *all_arrays*: an instances layer's every variable (_instances)."""
     views = _views()
     report = views.check_views({"encoding3d_views": views.FORMAT, "configurations": {"layer": {"layers": [layer]}}}, frame)
     if not report.ok:
-        return vtkPolyData()
+        empty = vtkPolyData()
+        if layer["source"]["kind"] == "instances":        # (named: the filter says the frame has none of them)
+            for name, value in ((INSTANCE_SET_FIELD, layer["source"]["instance_set"]),
+                                (FRAME_FIELD, getattr(frame, "path", "") or ""),
+                                (views.DATA_STRUCTURE_FIELD, layer["source"]["data_structure"])):
+                listed = vtkStringArray()
+                listed.SetName(name)
+                listed.InsertNextValue(str(value))
+                empty.GetFieldData().AddArray(listed)
+        return empty
     source = layer["source"]
     data_structure = frame.data_structure(source["data_structure"])
     select = layer.get("select")
@@ -513,15 +609,10 @@ def _layer(frame, layer: dict, settings: bool = False, derived: bool = False):
         data_set = _mesh(mesh, data_structure, settings, kept, forced)
     elif source["kind"] == "instances":
         instance_set = data_structure.instance_set(source["instance_set"])
-        rows = None
-        if chosen is not None:
-            matching = views.selected(*chosen)
-            if chosen[0].name == instance_set.name:
-                rows = np.flatnonzero(matching)
-            else:                                                       # by their owners
-                owners = _owner_rows(data_structure, instance_set)
-                rows = np.flatnonzero((owners >= 0) & matching[np.where(owners >= 0, owners, 0)])
-        data_set = _instances(frame, data_structure, instance_set, settings, rows, forced, derived)
+        if not layer.get("visible", True) and not expand_hidden and getattr(frame, "path", ""):
+            return _unexpanded(frame, data_structure, instance_set, layer, settings, all_arrays)
+        rows = _layer_instance_rows(data_structure, instance_set, select)
+        data_set = _instances(frame, data_structure, instance_set, settings, rows, forced, derived, all_arrays)
     elif source["kind"] == "segments":
         entity_set = data_structure.entity_set(source["entity_set"])
         rows = np.flatnonzero(views.selected(*chosen)) if chosen is not None else None
@@ -545,15 +636,19 @@ def _layer(frame, layer: dict, settings: bool = False, derived: bool = False):
     return data_set
 
 
-def frame_to_vtk(frame, settings: bool = False, views=None, configuration: str = None,
-                 derived: bool = False) -> vtkMultiBlockDataSet:
+def frame_to_vtk(frame, settings: bool = False, views=None, configuration: str = None, derived: bool = False,
+                 expand_hidden: bool = False, all_arrays: bool = False) -> vtkMultiBlockDataSet:
     """The frame as a multiblock data set: one block per data structure, holding its meshes, its entity sets with
     segment ends as lines, its grid and its instance sets (their placed templates). *settings*: also the graph's links
     (complex, parent, edge_type) and the columns of role "setting". *derived*: the instances' derived fields
     evaluated (all of them: for small scenes; the Select at scale filter rebuilds those of the instances it holds).
 
+    *all_arrays*: an instance set's every variable, one value per triangle (else the ids, rows and colour variables
+    only: see _instances).
+
     *views* (a views document, or the path of a views.json): instead, one block per layer of the *configuration*
-    (None: the active one), named by the layer, hidden layers included (see _layer)."""
+    (None: the active one), named by the layer, hidden layers included (see _layer: a hidden instances layer is left
+    empty unless *expand_hidden*)."""
     if views is not None:
         views_module = _views()
         document = views_module.read_views(views) if isinstance(views, (str, os.PathLike)) else views
@@ -562,7 +657,7 @@ def frame_to_vtk(frame, settings: bool = False, views=None, configuration: str =
             raise ValueError(str(report))
         output = vtkMultiBlockDataSet()
         for layer in views_module.configuration(document, configuration)[1]:
-            _named(output, _layer(frame, layer, settings, derived), layer["name"])
+            _named(output, _layer(frame, layer, settings, derived, expand_hidden, all_arrays), layer["name"])
         return output
     output = vtkMultiBlockDataSet()
     for data_structure in frame.data_structures:
@@ -577,14 +672,33 @@ def frame_to_vtk(frame, settings: bool = False, views=None, configuration: str =
             build = _regular_grid if data_structure.grid.kind == "regular" else _adaptive_grid
             _named(blocks, build(data_structure, settings), "grid")
         for instance_set in data_structure.instance_sets:
-            _named(blocks, _instances(frame, data_structure, instance_set, settings, derived=derived),
-                   f"instances {instance_set.name}")
+            _named(blocks, _instances(frame, data_structure, instance_set, settings, derived=derived,
+                                      all_arrays=all_arrays), f"instances {instance_set.name}")
         if blocks.GetNumberOfBlocks():
             _named(output, blocks, data_structure.id)
     return output
 
 
 TIME_UNITS = {"s": 1., "min": 60., "h": 3600., "d": 86400.}    # in seconds: the reader's Time Unit choices
+
+_FRAMES = collections.OrderedDict()     # the frames open, by file: the reader's and the filter's, one read for both
+FRAMES_KEPT = 2                         # (the last two used: a time step and the one before, or two files)
+
+
+def open_frame(path: str):
+    """The frame of *path*, read lazily once and shared: by the reader (Source.frame_at) and by "encoding3d Select
+    at scale" (the instances it builds, the derived fields it rebuilds); the least recently used closed beyond
+    FRAMES_KEPT, its rebuilt derived fields dropped."""
+    if path in _FRAMES:
+        _FRAMES.move_to_end(path)
+        return _FRAMES[path]
+    while len(_FRAMES) >= FRAMES_KEPT:
+        closed, frame = _FRAMES.popitem(last=False)
+        frame.close()
+        for key in [key for key in _DERIVED if key[0] == closed]:
+            del _DERIVED[key]
+    _FRAMES[path] = _encoding3d().read(path, lazy=True)         # lazily: only what is drawn is decoded
+    return _FRAMES[path]
 
 
 class Source:
@@ -603,7 +717,6 @@ class Source:
             with encoding3d.read(path, lazy=True) as frame:         # its time, from the file's JSON alone
                 self.times = [float(frame.time)]
                 self.time_unit = frame.time_unit
-        self._cache = {}
 
     def factor(self, unit: str) -> float:
         """The factor from the files' time unit to *unit* (one of TIME_UNITS; empty, or a unit of the files not in
@@ -613,16 +726,12 @@ class Source:
         return TIME_UNITS[self.time_unit] / TIME_UNITS[unit]
 
     def frame_at(self, time: float = None):
-        """The frame of the last time not after *time* (the first frame for None or an earlier time)."""
+        """The frame of the last time not after *time* (the first frame for None or an earlier time): open_frame's."""
         number = 0
         if time is not None:
             earlier = [n for n, frame_time in enumerate(self.times) if frame_time <= time + 1e-12 * max(1., abs(time))]
             number = earlier[-1] if earlier else 0
-        if number not in self._cache:                     # read lazily: only what the display reads is decoded
-            for frame in self._cache.values():
-                frame.close()
-            self._cache = {number: _encoding3d().read(self.paths[number], lazy=True)}
-        return self._cache[number]
+        return open_frame(self.paths[number])
 
 
 # ── Selection by scale ───────────────────────────────────────────────────────
@@ -738,48 +847,128 @@ def _kept(data_set, chosen: dict, scale: str):
     return output
 
 
-def grow_selection(frame_data, picked: list, scale: str) -> vtkMultiBlockDataSet:
-    """The cells of *frame_data* (the reader's output: its blocks, a layer's hidden ones included) inside the entities
-    at *scale* containing the *picked* cells (picked_cells'), with everything they contain at finer scales: the same
-    blocks, named alike, each holding its part (empty when none). A ValueError when no picked cell has an entity at
-    *scale*."""
-    chosen = _views().picked_entities(picked, scale)
+def _built(data_set, chosen: dict, scale: str):
+    """The part of a hidden instances layer's empty block (_unexpanded) inside the entities *chosen* at *scale*:
+    the placed templates of those instances alone, built from the frame (open_frame), drawn as the layer."""
+    views = _views()
+    empty = data_set.NewInstance()
+    empty.GetFieldData().ShallowCopy(data_set.GetFieldData())
+    data_structure_id = (_texts(data_set, views.DATA_STRUCTURE_FIELD) or [""])[0]
+    path = (_texts(data_set, FRAME_FIELD) or [""])[0]
+    if data_structure_id not in chosen or not path:
+        return empty
+    built = json.loads(_texts(data_set, UNEXPANDED_FIELD)[0])
+    layer = built["layer"]
+    data_structure = open_frame(path).data_structure(data_structure_id)
+    instance_set = data_structure.instance_set(_texts(data_set, INSTANCE_SET_FIELD)[0])
+    rows = instance_rows_at(data_structure, instance_set, chosen[data_structure_id], scale)
+    kept = _layer_instance_rows(data_structure, instance_set, layer.get("select"))
+    if kept is not None:
+        rows = np.intersect1d(rows, kept)
+    if not rows.size:
+        return empty
+    colour = layer.get("color_by")
+    forced = {colour["entity_set"]: (colour["variable"],)} if colour else {}
+    part = _instances(open_frame(path), data_structure, instance_set, built["settings"], rows, forced,
+                      all_arrays=built["all_arrays"])
+    array = views.colour_array(layer, {part.GetCellData().GetArrayName(number)
+                                       for number in range(part.GetCellData().GetNumberOfArrays())})
+    if array is not None and part.GetCellData().HasArray(array):
+        part.GetCellData().SetActiveScalars(array)
+    part.GetFieldData().AddArray(data_set.GetFieldData().GetAbstractArray(UNEXPANDED_FIELD))   # (its layer)
+    return part
+
+
+def _grown(data_set, chosen: dict, scale: str):
+    if _texts(data_set, UNEXPANDED_FIELD) and not data_set.GetNumberOfCells():     # a hidden layer's empty block
+        return _built(data_set, chosen, scale)
+    return _kept(data_set, chosen, scale)
+
+
+def grow_entities(frame_data, chosen: dict, scale: str) -> vtkMultiBlockDataSet:
+    """The cells of *frame_data* (the reader's output: its blocks, a layer's hidden ones included) inside the
+    entities *chosen* ({data structure id: ids at *scale*}, views.picked_entities'), with everything they contain at
+    finer scales: the same blocks, named alike, each holding its part (empty when none); a hidden instances layer's
+    part built from its frame (those instances alone)."""
     output = vtkMultiBlockDataSet()
     if isinstance(frame_data, vtkDataObjectTree):
         output.CopyStructure(frame_data)
         iterator = frame_data.NewTreeIterator()
         iterator.InitTraversal()
         while not iterator.IsDoneWithTraversal():
-            output.SetDataSet(iterator, _kept(iterator.GetCurrentDataObject(), chosen, scale))
+            output.SetDataSet(iterator, _grown(iterator.GetCurrentDataObject(), chosen, scale))
             iterator.GoToNextItem()
     elif frame_data is not None:
-        output.SetBlock(0, _kept(frame_data, chosen, scale))
+        output.SetBlock(0, _grown(frame_data, chosen, scale))
     return output
 
 
-_FRAMES = {}                                    # the frames the filter rebuilds derived fields from, by file
+def grow_selection(frame_data, picked: list, scale: str) -> vtkMultiBlockDataSet:
+    """grow_entities of the entities at *scale* containing the *picked* cells (picked_cells'). A ValueError when no
+    picked cell has an entity at *scale*."""
+    return grow_entities(frame_data, _views().picked_entities(picked, scale), scale)
 
 
-def _frame_of_file(path: str):
-    if path not in _FRAMES:
-        while len(_FRAMES) >= 2:
-            _FRAMES.pop(next(iter(_FRAMES))).close()
-        _FRAMES[path] = _encoding3d().read(path, lazy=True)
-    return _FRAMES[path]
+def missing_instances(frame_data, grown, chosen: dict, scale: str) -> list:
+    """Why the instances blocks of *grown* (grow_entities' of *frame_data*) hold nothing for the entities *chosen* at
+    *scale*, one message per block: the frame has no instance in that set (e.g. a platform drawing its sections at
+    some time steps only), or none owned by those entities (it draws them for some plants only: the plants which
+    have some are named)."""
+    views = _views()
+    messages = []
+    for leaf, part in zip(leaves(frame_data), leaves(grown)):
+        names, files = _texts(leaf, INSTANCE_SET_FIELD), _texts(leaf, FRAME_FIELD)
+        data_structure_id = (_texts(leaf, views.DATA_STRUCTURE_FIELD) or [""])[0]
+        if not names or not files or not files[0] or part is None or part.GetNumberOfCells() \
+                or data_structure_id not in chosen:
+            continue
+        frame = open_frame(files[0])
+        wanted = f"the selected {scale} {sorted(chosen[data_structure_id])}"
+        when = f"t = {frame.time:g} {frame.time_unit}"
+        try:
+            data_structure = frame.data_structure(data_structure_id)
+            instance_set = data_structure.instance_set(names[0])
+        except KeyError:                                # not in this frame (drawn at some time steps only)
+            instance_set = None
+        if instance_set is None or not instance_set.count:
+            messages.append(f"no '{names[0]}' instance drawn for {wanted} at {when}: the frame holds none")
+            continue
+        coarsest = views.ranked_sets(data_structure)[0] if views.ranked_sets(data_structure) else None
+        owner_rows = _owner_rows(data_structure, instance_set)
+        holders = []
+        if coarsest is not None and instance_set.owners is not None:
+            if coarsest == instance_set.owners:
+                ids = np.asarray(data_structure.entity_set(coarsest).columns["id"], dtype=np.int64)[
+                    owner_rows[owner_rows >= 0]]
+            else:
+                ids = views.ancestor_ids(data_structure, instance_set.owners, owner_rows).get(coarsest,
+                                                                                               np.zeros(0))
+            holders = sorted({int(value) for value in np.asarray(ids).tolist() if value >= 0})
+        messages.append(f"no '{instance_set.name}' instance drawn for {wanted} at {when}: the frame's "
+                        f"{instance_set.count} instances are owned by {coarsest} {holders}" if holders else
+                        f"no '{instance_set.name}' instance drawn for {wanted} at {when}: none of the frame's "
+                        f"{instance_set.count} instances is inside them")
+    return messages
 
 
 def rebuild_derived(data) -> None:
     """In place: the derived fields of the instances each instances block of *data* holds (a selection's: few
-    instances), evaluated from their frame's file (its parts found next to it); a block without its frame's file, or
-    without cells, unchanged."""
+    instances), evaluated from their frame's file (its parts found next to it), once per frame open (open_frame); a
+    block without its frame's file, or without cells, unchanged. A hidden layer's part coloured by a derived field
+    gets it as its active scalars."""
     for leaf in leaves(data):
         names, files = _texts(leaf, INSTANCE_SET_FIELD), _texts(leaf, FRAME_FIELD)
         data_structure = _texts(leaf, _views().DATA_STRUCTURE_FIELD)
         if not names or not files or not files[0] or not data_structure or not leaf.GetNumberOfCells():
             continue
-        frame = _frame_of_file(files[0])
+        frame = open_frame(files[0])
         found = frame.data_structure(data_structure[0])
         _add_derived(leaf, frame, found, found.instance_set(names[0]))
+        built = _texts(leaf, UNEXPANDED_FIELD)
+        if built:
+            array = _views().colour_array(json.loads(built[0])["layer"])
+            if array is not None and leaf.GetCellData().HasArray(array):
+                leaf.GetCellData().SetActiveScalars(array)
 
 
 def frame_upstream(algorithm, port: int = 0):
@@ -838,7 +1027,7 @@ if VTKPythonAlgorithmBase is not None:
             self._file_name, self._source, self._settings = None, None, False
             self._views, self._configuration, self._save_as = "", "", ""
             self._time_unit = "d"
-            self._derived = False
+            self._derived, self._expand_hidden, self._all_arrays = False, False, False
 
         @smproperty.stringvector(name="FileName")
         @smdomain.filelist()
@@ -862,13 +1051,42 @@ if VTKPythonAlgorithmBase is not None:
         @smproperty.xml("""<IntVectorProperty name="DerivedFields" label="Evaluate Derived Fields"
                                               command="SetDerivedFields" number_of_elements="1" default_values="0">
                              <BooleanDomain name="bool"/>
-                             <Documentation>The derived fields of every instance (e.g. the values on each section's
-                             cells), evaluated at each time step: for small scenes. Unticked, "encoding3d Select at
-                             scale" rebuilds those of the instances it selects.</Documentation>
+                             <Documentation>The derived fields of every instance drawn (e.g. the values on each
+                             section's cells; a layer the views hide is drawn with "Expand Hidden Instances"),
+                             evaluated at each time step: for small scenes. Unticked, "encoding3d Select at scale"
+                             rebuilds those of the instances it selects.</Documentation>
                            </IntVectorProperty>""")
         def SetDerivedFields(self, value):
             if bool(value) != self._derived:
                 self._derived = bool(value)
+                self.Modified()
+
+        @smproperty.xml("""<IntVectorProperty name="ExpandHiddenInstances" label="Expand Hidden Instances"
+                                              command="SetExpandHiddenInstances" number_of_elements="1"
+                                              default_values="0">
+                             <BooleanDomain name="bool"/>
+                             <Documentation>Also draw every instance of the instances layers the views hide (e.g. every
+                             root section: millions of triangles in a large frame). Unticked, a hidden instances layer
+                             is an empty block, and "encoding3d Select at scale" draws the instances of what it
+                             selects.</Documentation>
+                           </IntVectorProperty>""")
+        def SetExpandHiddenInstances(self, value):
+            if bool(value) != self._expand_hidden:
+                self._expand_hidden = bool(value)
+                self.Modified()
+
+        @smproperty.xml("""<IntVectorProperty name="AllInstanceArrays" label="All Instance Arrays"
+                                              command="SetAllInstanceArrays" number_of_elements="1"
+                                              default_values="0">
+                             <BooleanDomain name="bool"/>
+                             <Documentation>Every variable of the instances, of their owners and of their templates
+                             as cell data of the instances' triangles (one value per triangle each: several times the
+                             memory). Unticked: the ids that selection needs, each cell's instance and template rows,
+                             and the layers' colour variables.</Documentation>
+                           </IntVectorProperty>""")
+        def SetAllInstanceArrays(self, value):
+            if bool(value) != self._all_arrays:
+                self._all_arrays = bool(value)
                 self.Modified()
 
         @smproperty.stringvector(name="TimeUnit", label="Time Unit", number_of_elements="1", default_values="d")
@@ -968,7 +1186,8 @@ if VTKPythonAlgorithmBase is not None:
             output = vtkMultiBlockDataSet.GetData(out_info, 0)
             path = self._views_path()
             output.ShallowCopy(frame_to_vtk(frame, settings=self._settings, views=path,
-                                            configuration=self._configuration or None, derived=self._derived))
+                                            configuration=self._configuration or None, derived=self._derived,
+                                            expand_hidden=self._expand_hidden, all_arrays=self._all_arrays))
             if time is not None:
                 output.GetInformation().Set(output.DATA_TIME_STEP(), frame.time * factor)
             return 1
@@ -976,7 +1195,7 @@ if VTKPythonAlgorithmBase is not None:
     @smproxy.filter(name=SELECT_AT_SCALE, label="encoding3d Select at scale")
     @smhint.xml("""<ShowInMenu category="encoding3d"/>""")
     @smhint.xml("""<InitializationHelper class="vtkSMExtractSelectionProxyInitializationHelper"/>""")
-    @smhint.xml("""<ReplaceInput value="0"/>""")
+    @smhint.xml("""<Visibility replace_input="0"/>""")
     @smproperty.xml("""<InputProperty name="Selection" command="SetInputConnection" port_index="1">
                          <ProxyGroupDomain name="groups">
                            <Group name="sources"/><Group name="filters"/>
@@ -995,15 +1214,19 @@ if VTKPythonAlgorithmBase is not None:
                          ...</Documentation>
                        </InputProperty>""")
     class Encoding3dSelectAtScale(VTKPythonAlgorithmBase):
-        """The cells picked on its input grown to their entity at Scale (a plant, an axis, an organ, a segment ...)
-        with everything it contains at finer scales, in every block of the encoding3d reader upstream (every layer, the
-        hidden ones included: a segment's section). The picked entities are kept across time steps (the plant
-        followed as it grows) until the selection changes; Scale re-grows them."""
+        """The cells picked on its input grown to their entity at Scale (a plant, an axis, an organ, a segment ...;
+        "picked", the default: the picked cells' own scale) with everything it contains at finer scales, in every block
+        of the encoding3d reader upstream (every layer, the hidden ones included: a segment's section, built from the
+        frame for the instances selected). The picked entities are kept across time steps (the plant followed as it
+        grows) until the selection changes; Scale re-grows them. A time step at which the selection has no instance
+        is reported in the Output Messages (the plants that have some named), once per time step; a derived field
+        not rebuilt is an error."""
 
         def __init__(self):
             VTKPythonAlgorithmBase.__init__(self, nInputPorts=2, nOutputPorts=1, outputType="vtkMultiBlockDataSet")
             self._scale, self._scales = "", []
             self._picked, self._picked_from = [], None
+            self._reported = set()
 
         def FillInputPortInformation(self, port, info):
             if port == 1:
@@ -1015,23 +1238,30 @@ if VTKPythonAlgorithmBase is not None:
 
         @smproperty.stringvector(name="ScaleNames", information_only="1")
         def GetScaleNames(self):
-            return self._scales
+            return [_views().PICKED_SCALE] + self._scales if self._scales else []
 
-        @smproperty.stringvector(name="Scale", number_of_elements="1", default_values="")
-        @smdomain.xml("""<StringListDomain name="list">
-                           <RequiredProperties>
-                             <Property name="ScaleNames" function="StringInfo"/>
-                           </RequiredProperties>
-                         </StringListDomain>""")
+        @smproperty.xml("""<StringVectorProperty name="Scale" command="SetScale" number_of_elements="1"
+                                                 default_values="picked">
+                             <StringListDomain name="list">
+                               <RequiredProperties>
+                                 <Property name="ScaleNames" function="StringInfo"/>
+                               </RequiredProperties>
+                             </StringListDomain>
+                             <Documentation>The scale the picked cells grow to: "picked" (the default) is the picked
+                             cells' own scale (a root segment, a section's segment); Plant, Axis ... their plant, axis
+                             .... Choose a Scale, then Apply: the buttons below work on the Scale applied, not on one
+                             chosen in this drop-down and not yet applied.</Documentation>
+                           </StringVectorProperty>""")
         def SetScale(self, name):
-            """The scale the picked cells grow to (empty: the coarsest, e.g. Plant)."""
+            """The scale the picked cells grow to (empty or "picked": the picked cells' own)."""
             if (name or "") != self._scale:
                 self._scale = name or ""
                 self.Modified()
 
         @smproperty.xml("""<Property name="Isolate" command="Isolate" panel_widget="command_button">
                              <Documentation>Show the selection alone in the active view, the other items hidden
-                             (Put Back shows them again).</Documentation>
+                             (Put Back shows them again). It shows the Scale applied: choose a Scale, Apply, then
+                             Isolate.</Documentation>
                            </Property>""")
         def Isolate(self):
             _run("isolate", self)
@@ -1039,7 +1269,9 @@ if VTKPythonAlgorithmBase is not None:
         @smproperty.xml("""<Property name="ShowInPanel" label="Show In Panel" command="ShowInPanel"
                                      panel_widget="command_button">
                              <Documentation>Show the selection in a new render view beside the active one, its
-                             camera fit to it; the view itself untouched (Put Back closes it).</Documentation>
+                             camera fit to it; the view itself as it was before the filter (the selection Apply drew
+                             there hidden; Put Back closes the panel and shows it again). It shows the Scale applied:
+                             choose a Scale, Apply, then Show In Panel.</Documentation>
                            </Property>""")
         def ShowInPanel(self):
             _run("show_in_panel", self)
@@ -1069,22 +1301,30 @@ if VTKPythonAlgorithmBase is not None:
             if picked_from != self._picked_from:              # a new selection: its entities picked at this time,
                 self._picked = picked_cells(source, selection)  # then followed through the time steps
                 self._picked_from = picked_from
-            scale = self._scale or (self._scales[0] if self._scales else "")
+            views = _views()
+            scale = self._scale if self._scale not in ("", views.PICKED_SCALE) else \
+                (views.picked_scale(self._picked, self._scales) or (self._scales[0] if self._scales else ""))
+            if source is not None and source.GetInformation().Has(vtkDataObject.DATA_TIME_STEP()):
+                output.GetInformation().Set(vtkDataObject.DATA_TIME_STEP(),
+                                            source.GetInformation().Get(vtkDataObject.DATA_TIME_STEP()))
             try:
-                grown = grow_selection(frame_data, self._picked, scale)
-                try:
-                    rebuild_derived(grown)                    # the selected instances' derived fields
-                except Exception as error:                    # e.g. a part missing: the selection without them
-                    vtkOutputWindow.GetInstance().DisplayWarningText(
-                        f"encoding3d Select at scale: derived fields not rebuilt ({error})\n")
-                output.ShallowCopy(grown)
-            except ValueError as error:
+                chosen = views.picked_entities(self._picked, scale)
+            except ValueError as error:                       # nothing picked at that scale: an empty selection
                 vtkOutputWindow.GetInstance().DisplayWarningText(f"encoding3d Select at scale: {error}\n")
                 empty = vtkMultiBlockDataSet()
                 if isinstance(frame_data, vtkDataObjectTree):
                     empty.CopyStructure(frame_data)
                 output.ShallowCopy(empty)
-            if source is not None and source.GetInformation().Has(vtkDataObject.DATA_TIME_STEP()):
-                output.GetInformation().Set(vtkDataObject.DATA_TIME_STEP(),
-                                            source.GetInformation().Get(vtkDataObject.DATA_TIME_STEP()))
+                return 1
+            try:
+                grown = grow_entities(frame_data, chosen, scale)
+                rebuild_derived(grown)                        # the selected instances' derived fields
+            except Exception as error:                        # e.g. a part missing: said, not hidden in a warning
+                raise RuntimeError(f"encoding3d Select at scale: the selection at {scale} not built, its instances' "
+                                   f"derived fields not rebuilt ({type(error).__name__}: {error})") from error
+            for message in missing_instances(frame_data, grown, chosen, scale):
+                if message not in self._reported:             # once per time step
+                    self._reported.add(message)
+                    vtkOutputWindow.GetInstance().DisplayWarningText(f"encoding3d Select at scale: {message}\n")
+            output.ShallowCopy(grown)
             return 1

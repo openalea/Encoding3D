@@ -33,6 +33,15 @@ instance picked (a few, spread over the set), selected at its owners' scale, its
 with openalea.encoding3d.evaluate, isolated, put back; a screenshot of each.
 
     pvbatch paraview/check_in_paraview.py --instances screenshots run/frames/scene.fspm.json
+
+A large run's check, by hand: a sequence whose views hide an instances layer (metafspm's sections, drawn once a day
+for some plants), opened at a day (12 by default): the hidden layer an empty block; a root segment with a section
+picked and selected at the default Scale ("picked": its own, its section alone placed and its derived field equal to
+openalea.encoding3d.evaluate's), shown in a panel (the selection Apply drew in the view hidden, then shown again by
+Put Back), at Axis and at Plant; the next frame without sections (half a day later) reported; the cells and the peak
+memory of each step printed.
+
+    pvbatch paraview/check_in_paraview.py --large run/frames.fspm.zip [day]
 """
 import os
 import sys
@@ -42,8 +51,9 @@ from paraview import servermanager, simple
 HERE = os.path.dirname(os.path.abspath(__file__))
 DESIGN = len(sys.argv) > 1 and sys.argv[1] == "--design"
 INSTANCES = len(sys.argv) > 1 and sys.argv[1] == "--instances"
-conformance = sys.argv[1] if not (DESIGN or INSTANCES) else None
-pictures = (sys.argv[2] if len(sys.argv) > 2 else None) if INSTANCES else \
+LARGE = len(sys.argv) > 1 and sys.argv[1] == "--large"
+conformance = sys.argv[1] if not (DESIGN or INSTANCES or LARGE) else None
+pictures = None if LARGE else (sys.argv[2] if len(sys.argv) > 2 else None) if INSTANCES else \
     (sys.argv[2 + DESIGN] if len(sys.argv) > 2 + DESIGN else None)
 # (not "output": a Programmable Filter removes that name from the main module once it has run)
 
@@ -226,8 +236,11 @@ def check_conformance() -> None:
         lateral = pick(viewed, "roots", "Axis.id", 101.)
         selection = encoding3dSelectatscale(Input=viewed)  # noqa: F821       (ParaView's selection, as the GUI takes it)
         assert selection.Selection is not None
-        assert scale_names(selection) == ["Plant", "Axis", "SubOrgan"], scale_names(selection)
-        assert selection.Scale == "Plant"                              # the drop-down's first, the coarsest
+        assert scale_names(selection) == ["picked", "Plant", "Axis", "SubOrgan"], scale_names(selection)
+        assert selection.Scale == "picked"                             # the default: the picked cells' own scale
+        selection.UpdatePipeline()
+        picked_cells = servermanager.Fetch(selection).GetBlock(0).GetNumberOfCells()
+        assert picked_cells == 1, picked_cells                        # the picked segment (SubOrgan)
         selection.Scale = "Axis"
         selection.UpdatePipeline()
         grown = servermanager.Fetch(selection)
@@ -371,7 +384,7 @@ def check_design(index_path: str) -> None:
         selection = encoding3dSelectatscale(Input=reader)  # noqa: F821   (the GUI's Filters > encoding3d, Apply)
         scales = scale_names(selection)
         print("scales", scales)
-        assert scales[0] == "Plant" and "Axis" in scales and "Compartment" in scales, scales
+        assert scales[:2] == ["picked", "Plant"] and "Axis" in scales and "Compartment" in scales, scales
         selection.Scale = "Axis"
         selection_display = simple.Show(selection, view)      # Apply shows it, drawn as the layers
         check_drawn(selection_display, layers, selection=True)
@@ -412,7 +425,7 @@ def check_design(index_path: str) -> None:
         shoot_data = data.GetBlock(block_names(reader).index(shoot))
         plant = float(vtk_to_numpy(shoot_data.GetCellData().GetArray("Plant.id"))[0])
         pick(reader, shoot, "Plant.id", plant)
-        plant_selection = encoding3dSelectatscale(Input=reader)  # noqa: F821   (Scale: Plant, the first)
+        plant_selection = encoding3dSelectatscale(Input=reader, Scale="Plant")  # noqa: F821
         plant_selection.InvokeCommand("ShowInPanel")
         layout = simple.GetLayout(view)
         layout.SetSize(1600, 700)
@@ -488,15 +501,22 @@ def check_instances() -> None:
             data = servermanager.Fetch(reader)
             sections = data.GetBlock(1)
             found = {sections.GetCellData().GetArrayName(n) for n in range(sections.GetCellData().GetNumberOfArrays())}
-            assert {"Cell.area", "sections.age", "SubOrgan.id", "Axis.id", "encoding3d_instance"} <= found, found
+            assert {"Cell.area", "SubOrgan.id", "Axis.id", "encoding3d_instance"} <= found, found
             assert "Cell.water_potential" not in found                # on demand
+            assert "sections.age" not in found                        # every variable: All Instance Arrays
+            reader.AllInstanceArrays = 1
+            reader.UpdatePipeline()
+            assert "sections.age" in set(reader.CellData.keys()), set(reader.CellData.keys())
+            reader.AllInstanceArrays = 0
+            reader.UpdatePipeline()
             display = simple.Show(reader, view)
             side_view(view)
             simple.Render(view)
             screenshot(view, f"instances_{name}_1_opened")
             pick(reader, "sections", "encoding3d_instance", 2.)
-            selection = encoding3dSelectatscale(Input=reader, Scale="SubOrgan")  # noqa: F821
-            selection.UpdatePipeline()
+            selection = encoding3dSelectatscale(Input=reader)  # noqa: F821
+            assert selection.Scale == "picked" and scale_names(selection)[0] == "picked", scale_names(selection)
+            selection.UpdatePipeline()                                # the picked cells' own scale: SubOrgan
             grown = servermanager.Fetch(selection)
             block = grown.GetBlock(block_names(selection).index("sections"))
             assert set(vtk_to_numpy(block.GetCellData().GetArray("encoding3d_instance")).tolist()) == {2}
@@ -575,25 +595,39 @@ def check_instances_of(index_path: str, picks: int = 3) -> None:
     assert block is not None, f"no block of instance set {instance_set.name} in {names}"
     sections = data.GetBlock(names.index(block))
     assert sections.GetCellData().GetArray(array) is None                       # on demand
-    print(f"block '{block}': {sections.GetNumberOfCells()} cells")
+    print(f"block '{block}': {sections.GetNumberOfCells()} cells (a hidden layer: none, built by the selection)")
+    owners_array = f"{instance_set.owners}.id"
+
+    def owner_block(owner: int) -> str:
+        """Where an owner is picked: the instances' block when drawn, else a layer drawing the owner."""
+        if sections.GetNumberOfCells():
+            return block
+        return next(name for position, name in enumerate(names) if name != block and data.GetBlock(position)
+                    is not None and data.GetBlock(position).GetCellData().GetArray(owners_array) is not None
+                    and (vtk_to_numpy(data.GetBlock(position).GetCellData().GetArray(owners_array)) == owner).any())
     display = simple.Show(reader, view)
     view.ResetCamera()
     simple.Render(view)
     screenshot(view, "run_instances_1_opened")
     for k, row in enumerate(np.linspace(0, instance_set.count - 1, picks).astype(int).tolist()):
-        pick(reader, block, "encoding3d_instance", float(row))
+        owner = int(instance_set.columns["owner"][row])
+        if owner_block(owner) == block:
+            pick(reader, block, "encoding3d_instance", float(row))
+        else:
+            pick(reader, owner_block(owner), owners_array, float(owner))
         selection = encoding3dSelectatscale(Input=reader, Scale=instance_set.owners)  # noqa: F821
         selection.UpdatePipeline(entry["time"])
         grown = servermanager.Fetch(selection)
         leaf = grown.GetBlock(block_names(selection).index(block))
         picked = vtk_to_numpy(leaf.GetCellData().GetArray("encoding3d_instance"))
-        assert set(picked.tolist()) == {row}, set(picked.tolist())
-        rows = vtk_to_numpy(leaf.GetCellData().GetArray(f"encoding3d_template_row.{field.entity_set}"))
+        same_owner = np.flatnonzero(np.asarray(instance_set.columns["owner"]) == owner).tolist()
+        assert set(picked.tolist()) == set(same_owner), (set(picked.tolist()), same_owner)
+        picked_rows = vtk_to_numpy(leaf.GetCellData().GetArray("encoding3d_instance")) == row
+        rows = vtk_to_numpy(leaf.GetCellData().GetArray(f"encoding3d_template_row.{field.entity_set}"))[picked_rows]
         expected = evaluate(frame, field.name, instances=[row], data_structure=data_structure.id,
                             instance_set=instance_set.name)[0]
-        rebuilt = vtk_to_numpy(leaf.GetCellData().GetArray(array))
+        rebuilt = vtk_to_numpy(leaf.GetCellData().GetArray(array))[picked_rows]
         np.testing.assert_allclose(rebuilt, expected[rows], rtol=1e-12)
-        owner = int(instance_set.columns["owner"][row])
         print(f"instance {row} (owner {owner}): {rebuilt.size} cells rebuilt, {field.name} in "
               f"[{rebuilt.min():.6g}, {rebuilt.max():.6g}], equal to evaluate's")
         simple.Show(selection, view)
@@ -612,8 +646,104 @@ def check_instances_of(index_path: str, picks: int = 3) -> None:
                                                            else ""))
 
 
+def peak_memory() -> str:
+    import resource
+    return f"peak RSS {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024. ** 2:.2f} GB"
+
+
+def check_large(index_path: str, day: float = 12.) -> None:
+    """A large run's hidden instances, selections and messages: see this file's docstring."""
+    from vtkmodules.vtkCommonCore import vtkOutputWindow, vtkStringOutputWindow
+    shown = vtkOutputWindow.GetInstance()
+    messages = vtkStringOutputWindow()                  # the filter's messages, read back
+    vtkOutputWindow.SetInstance(messages)
+    try:
+        _check_large(index_path, day, messages)
+    finally:
+        vtkOutputWindow.SetInstance(shown)
+        print("messages:", messages.GetOutput().strip() or "none")
+
+
+def _check_large(index_path: str, day: float, messages) -> None:
+    import numpy as np
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+    from openalea.encoding3d import evaluate, read, read_index, views
+    entries = read_index(index_path)["frames"]
+    factor = {"s": 1. / 86400., "h": 1. / 24., "min": 1. / 1440., "d": 1.}[read_index(index_path).get("timeUnit", "d")]
+    entry = min(entries, key=lambda item: abs(float(item["time"]) * factor - day))
+    day = float(entry["time"]) * factor
+    view = simple.GetActiveViewOrCreate("RenderView")
+    reader = encoding3dreader(FileName=index_path)  # noqa: F821
+    reader.UpdatePipeline(day)
+    view.ViewTime = day
+    names = block_names(reader)
+    layers = views.configuration(views.read_views(views.views_path(index_path)))[1]
+    hidden = [layer for layer in layers if layer["source"]["kind"] == "instances" and not layer["visible"]]
+    assert hidden, f"no hidden instances layer in {index_path}'s views"
+    layer = hidden[0]
+    block = layer["name"]
+    information = reader.GetDataInformation().DataInformation
+    print(f"day {day:g} ({entry['file']}): reader {information.GetNumberOfCells()} cells, "
+          f"{information.GetMemorySize() / 1024.:.0f} MB, {peak_memory()}")
+    roots = next(other for other in layers if other["source"]["kind"] == "segments")
+    frame = read(entry["path"], lazy=True)
+    data_structure = frame.data_structure(layer["source"]["data_structure"])
+    instance_set = data_structure.instance_set(layer["source"]["instance_set"])
+    segments = data_structure.entity_set(roots["source"]["entity_set"])
+    rows = np.flatnonzero(views.selected(segments, roots["select"]["where"])) if roots.get("select") else \
+        np.arange(segments.count)
+    owners = np.asarray(instance_set.columns["owner"])
+    ids = np.asarray(segments.columns["id"])[rows]
+    owner = int(owners[np.isin(owners, ids)][0])                  # a root segment with a section
+    row = int(np.flatnonzero(owners == owner)[0])
+    field = instance_set.derived[0]
+    expected = evaluate(frame, field.name, instances=[row], data_structure=data_structure.id,
+                        instance_set=instance_set.name)[0]
+    frame.close()
+    simple.SelectCompositeDataIDs(IDs=[flat_index(reader, roots["name"]), 0, int(np.flatnonzero(ids == owner)[0])],
+                                  FieldType="CELL", Source=reader)
+    selection = encoding3dSelectatscale(Input=reader)  # noqa: F821       (no Apply: the default Scale)
+    assert selection.Scale == "picked", selection.Scale
+    selection.UpdatePipeline(day)
+    grown = servermanager.Fetch(selection)
+    part = grown.GetBlock(block_names(selection).index(block))
+    assert set(vtk_to_numpy(part.GetCellData().GetArray("encoding3d_instance")).tolist()) == {row}
+    template_rows = vtk_to_numpy(part.GetCellData().GetArray(f"encoding3d_template_row.{field.entity_set}"))
+    np.testing.assert_allclose(vtk_to_numpy(part.GetCellData().GetArray(f"{field.entity_set}.{field.name}")),
+                               expected[template_rows], rtol=1e-12)
+    print(f"picked (segment {owner}): {selection.GetDataInformation().GetNumberOfCells()} cells, its section's "
+          f"{part.GetNumberOfCells()}, {field.name} equal to evaluate's, {peak_memory()}")
+    assert cells(reader, block) == 0                               # the reader's block still empty
+    shown = simple.Show(selection, view)                            # as Apply: drawn in the view, the reader too
+    assert visible(reader, view) and visible(selection, view)
+    present = set(selection.CellData.keys())
+    assert not shown.ColorArrayName[1] or shown.ColorArrayName[1] in present, (shown.ColorArrayName, present)
+    selection.InvokeCommand("ShowInPanel")
+    assert len(simple.GetViews()) == 2 and visible(reader, view) and not visible(selection, view)
+    selection.InvokeCommand("PutBack")
+    assert len(simple.GetViews()) == 1 and visible(selection, view)
+    simple.SetActiveView(view)
+    for scale in ("Axis", "Plant"):
+        selection.Scale = scale
+        selection.UpdatePipeline(day)
+        print(f"{scale}: {selection.GetDataInformation().GetNumberOfCells()} cells, {peak_memory()}")
+    later = [item for item in entries if float(item["time"]) > float(entry["time"])]
+    if later:
+        selection.Scale = "picked"
+        next_day = float(later[0]["time"]) * factor
+        selection.UpdatePipeline(next_day)
+        said = [line for line in messages.GetOutput().splitlines() if "instance drawn" in line]
+        assert said and "the frame holds none" in said[-1], said
+        print(f"day {next_day:g}: {cells(selection, block)} section cells; the filter says: {said[-1].strip()}")
+    simple.Delete(selection)
+    simple.Delete(reader)
+    print("encoding3d large run check: done, " + peak_memory())
+
+
 if DESIGN:
     check_design(sys.argv[2])
+elif LARGE:
+    check_large(sys.argv[2], *(float(value) for value in sys.argv[3:4]))
 elif INSTANCES and len(sys.argv) > 3:
     check_instances_of(sys.argv[3])
 elif INSTANCES:

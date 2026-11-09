@@ -10,9 +10,10 @@ buttons, in ParaView's client:
     save_views(reader)      the reader's "Save Views": the layers' display, as the representation in the active view
                             holds it (after edits in the MultiBlock Inspector), written back into the views file
     isolate(selection)      the "Select at scale" buttons: the selection alone in the active view, the other items
-    show_in_panel(...)      hidden; or in a new render view beside it, its camera fit to it; put_back goes back one
-    put_back()              step (what a step hid shown again, its panel closed). A selection made on a shown
-                            selection (an axis of the plant shown) is shown over it, and going back returns to the plant
+    show_in_panel(...)      hidden; or in a new render view beside it, its camera fit to it, the active view as it was
+    put_back()              before the filter (the selection Apply drew there hidden); put_back goes back one step
+                            (what a step hid shown again, its panel closed). A selection made on a shown selection (an
+                            axis of the plant shown) is shown over it, and going back returns to the plant
 
 What each layer gives is openalea.encoding3d.views.block_displays, read back by displays_from_blocks and
 layer_from_display, tested without ParaView; this file only hands them to ParaView's server manager. The buttons run
@@ -25,7 +26,7 @@ import time
 
 READER = "encoding3dReader"                 # the plugin's proxy names
 SELECT_AT_SCALE = "encoding3dSelectAtScale"
-DRAWN = "encoding3d_layers"                 # a representation's annotation: the views it is drawn from
+DRAWN = "encoding3d_layers"                 # a representation's annotation: the views and the arrays it is drawn from
 STATE = "encoding3d_selection"              # a view's annotation: [{"selection", "hidden", "panel", ...}]
 CELLS = 1                                   # vtkDataObject.CELL, FIELD_ASSOCIATION_CELLS
 NEVER, GROW_ON_APPLY = -1, 0                # a colour map's AutomaticRescaleRangeMode (vtkSMTransferFunctionManager)
@@ -142,16 +143,16 @@ def _registered(*arguments) -> None:
 
 def _updated(source, event=None) -> None:
     """The plugin's item updated (a time step, another Configuration, the views file changed): its representations
-    drawn again when their views changed."""
+    drawn again when their views changed, or the cell arrays their data holds (a layer empty at one time step and
+    filled at the next, a selection without the shoot)."""
     if _session["busy"]:
         return
     _session["busy"] = True
     try:
         reader = reader_of(source)
         if reader is not None:
-            signature = _signature(reader)
             for representation in representations_of(source):
-                if _annotation(representation) != signature:
+                if _annotation(representation) != _drawn_signature(representation, reader):
                     draw(representation)
     except Exception as error:
         _warn(f"layers not drawn ({error})")
@@ -238,6 +239,16 @@ def _signature(reader) -> str:
     return json.dumps([path, name, _modified(path) if path else None])
 
 
+def _port(representation) -> int:
+    connection = _helper(representation, "Input")
+    return connection.GetOutputPort(0) if connection.GetNumberOfElements() else 0
+
+
+def _drawn_signature(representation, reader) -> str:
+    """What *representation* is drawn from: its reader's views (_signature) and the cell arrays of its data."""
+    return json.dumps([_signature(reader), sorted(_cell_arrays(_input(representation), _port(representation)))])
+
+
 def _cell_arrays(source, port: int = 0) -> set:
     information = source.GetDataInformation(port).GetAttributeInformation(CELLS)
     return {information.GetArrayInformation(number).GetName() for number in range(information.GetNumberOfArrays())}
@@ -269,16 +280,16 @@ def draw(representation, rescale: bool = None) -> bool:
     if reader is None:
         return False
     path, _, layers = _reader_views(reader)
-    representation.SetAnnotation(DRAWN, _signature(reader))
+    representation.SetAnnotation(DRAWN, _drawn_signature(representation, reader))
     if path is None:                                    # no views: ParaView's own display
         return False
     if source.GetXMLName() == SELECT_AT_SCALE:          # a selection: every layer's part, the hidden ones too (a
         layers = [dict(layer, visible=True) for layer in layers]   # segment's section)
     views = _views()
-    connection = _helper(representation, "Input")
-    port = connection.GetOutputPort(0) if connection.GetNumberOfElements() else 0
+    port = _port(representation)
     present = _cell_arrays(source, port)
-    displays = views.block_displays(layers, present)
+    displays = views.block_displays(layers, present)    # (coloured by arrays present only: no "Could not determine
+    #                                                     array range" for a layer missing at this time step)
     for key in ("colourings", "solid_colours", "opacities"):  # by selector, as ParaView's block editors keep them
         displays[key] = sorted(displays[key])            # (BlockLookupTables follows BlockColorArrayNames' order)
     colour_maps = {array: _colour_map(array) for array in displays["colour_maps"]}
@@ -286,6 +297,8 @@ def draw(representation, rescale: bool = None) -> bool:
     if displays["main_array"]:                          # the representation coloured: then its blocks can be
         _helper(representation, "ColorArrayName").SetInputArrayToProcess(CELLS, displays["main_array"])
         _helper(representation, "LookupTable").Set(colour_maps[displays["main_array"]])
+    else:                                               # no layer's array in the data: not coloured by a missing one
+        _helper(representation, "ColorArrayName").SetInputArrayToProcess(CELLS, "")
     _set_strings(representation, "BlockColorArrayNames",     # (set as properties, not by the colour map helper:
                  [value for selector, array in displays["colourings"]   # it fails while the view updates)
                   for value in (selector, CELLS, array)])
@@ -417,10 +430,9 @@ def save_views(algorithm, configuration: str = None) -> str:
         _helper(reader, "Configuration").Set(target)
         reader.UpdateVTKObjects()
         reader.UpdatePropertyInformation()             # the new configuration in the drop-down
-    signature = _signature(reader)                     # drawn as saved: not drawn again
-    for source in [reader] + _selections_of(reader):
+    for source in [reader] + _selections_of(reader):    # drawn as saved: not drawn again
         for drawn in representations_of(source):
-            drawn.SetAnnotation(DRAWN, signature)
+            drawn.SetAnnotation(DRAWN, _drawn_signature(drawn, reader))
     print(f"encoding3d views: configuration '{target}' saved in {path}")
     return path
 
@@ -512,7 +524,7 @@ def _show(selection, mode: str, view=None) -> None:
     picked_on = _input(selection)
     if picked_on is not None:
         simple.ClearSelection(_python_proxy(picked_on))  # the picked cells' highlight (the filter keeps a copy)
-    hidden, bars, panel = [], [], None
+    hidden, bars, panel, shown_by_apply = [], [], None, False
     if mode == "isolate":
         simple.Show(selection_item, view_item)
         hidden = views.isolated(_visible_items(view), [_name_of(selection)])
@@ -524,6 +536,12 @@ def _show(selection, mode: str, view=None) -> None:
             simple.Hide(item, view_item)
         simple.HideUnusedScalarBars(view_item)
     else:
+        drawn = [representation for representation in representations_of(selection)
+                 if representation in _represented(view)]
+        own_step = any(step["selection"] == _name_of(selection) for step in _steps(view))
+        if not own_step and any(_helper(representation, "Visibility").GetAsInt(0) for representation in drawn):
+            simple.Hide(selection_item, view_item)     # drawn there by Apply: the view as it was before the filter
+            shown_by_apply = True                      # (shown again by Put Back)
         panel = _panel(view_item)
         display = simple.Show(selection_item, panel)
         show_scalar_bars(display.SMProxy, panel.SMProxy)
@@ -531,7 +549,7 @@ def _show(selection, mode: str, view=None) -> None:
         simple.Render(panel)
     step = {"selection": _name_of(selection), "hidden": hidden, "scalar_bars": bars,
             "panel": None if panel is None else _proxy_manager().GetProxyName("views", panel.SMProxy),
-            "order": time.time()}
+            "shown_by_apply": shown_by_apply, "order": time.time()}
     _keep_steps(view, _steps(view) + [step])
     simple.SetActiveView(view_item)
     simple.Render(view_item)
@@ -593,6 +611,8 @@ def put_back(algorithm=None) -> bool:
                 if location > 0:
                     layout.Collapse(location)
             simple.Delete(panel_item)
+        if step.get("shown_by_apply") and selection is not None:
+            simple.Show(selection, view_item)          # as Apply had drawn it
     elif selection is not None:
         simple.Hide(selection, view_item)
     _keep_steps(view, [kept for kept in _steps(view) if kept["order"] != step["order"]])
