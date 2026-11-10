@@ -55,6 +55,7 @@ test:
   source_files:
     - bindings/python/test/**
     - conformance/**                            # the reference files the tests check, and their generator
+    - bindings/python/conformance_run.py        # the Python codec's conformance run (test_compare)
 
   commands:
     - encoding3d --help

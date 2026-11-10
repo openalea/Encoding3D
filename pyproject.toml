@@ -58,6 +58,7 @@ coupling = [
 test = [
   "pytest",
   "pyzmq",
+  "scipy",               # the instances' CSR and solve operators (Operator.matrix), which the instance tests evaluate
 ]
 dev = [
   "pytest >=6",

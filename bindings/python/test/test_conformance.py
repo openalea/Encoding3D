@@ -7,6 +7,7 @@ import pytest
 import generate
 from conftest import CONFORMANCE
 from openalea.encoding3d import from_bytes
+from openalea.encoding3d.compare import RELATIVE_TOLERANCE, compare
 from openalea.encoding3d.dump import frame_to_dict
 from openalea.encoding3d.validate import validate_file
 
@@ -18,6 +19,11 @@ def test_committed_files_are_generated(relative):
     if relative.endswith(".fspm.zip"):                  # an archive: the same members, methods and bytes once read
         assert generate.same_archive(os.path.join(CONFORMANCE, relative), FILES[relative]), \
             f"{relative}: run python conformance/generate.py"
+        return
+    if relative.endswith(".evaluated.json"):            # solved values: their last digits follow the platform's BLAS,
+        with open(os.path.join(CONFORMANCE, relative), encoding="utf-8") as file:   # compared as the protocol does
+            found = compare(json.loads(FILES[relative]), json.load(file), relative_tolerance=RELATIVE_TOLERANCE)
+        assert not found, f"{relative}: run python conformance/generate.py ({found[:3]})"
         return
     with open(os.path.join(CONFORMANCE, relative), "rb") as file:
         assert file.read() == FILES[relative], f"{relative}: run python conformance/generate.py"
