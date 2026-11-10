@@ -1,5 +1,17 @@
 # encoding3d - functional-structural plant model scenes, based on glTF 2.0
 
+[![Anaconda-Server Badge](https://anaconda.org/openalea3/openalea.encoding3d/badges/license.svg)](https://anaconda.org/openalea3/openalea.encoding3d)
+
+[![Build Status](https://github.com/openalea/encoding3d/actions/workflows/conda-build.yml/badge.svg?branch=main)](https://github.com/openalea/encoding3d/actions/workflows/conda-build.yml?query=branch%3Amain)
+[![Docs](https://readthedocs.org/projects/encoding3d/badge/?version=latest)](https://encoding3d.readthedocs.io/)
+
+[![Anaconda-Server Badge](https://anaconda.org/openalea3/openalea.encoding3d/badges/version.svg)](https://anaconda.org/openalea3/openalea.encoding3d)
+[![Anaconda-Server Badge](https://anaconda.org/openalea3/openalea.encoding3d/badges/platforms.svg)](https://anaconda.org/openalea3/openalea.encoding3d)
+[![Python Version](https://img.shields.io/badge/python-3.8%20%7C%203.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/downloads/)
+[![Downloads](https://anaconda.org/openalea3/openalea.encoding3d/badges/downloads.svg)](https://anaconda.org/openalea3/openalea.encoding3d)
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.1003173.svg)](https://doi.org/10.5281/zenodo.1003173)
+
 An exchange format for whole functional-structural plant model (FSPM) scenes, across platforms and languages
 (openalea.metafspm, CPlantBox, GroIMP, VirtualPlantLab). It holds:
 
