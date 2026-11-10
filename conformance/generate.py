@@ -23,6 +23,7 @@ from openalea.encoding3d import (DataStructure, DerivedField, EntitySet, Frame, 
                      Operator, Ragged, Relation, Table, Template, Variable, column_major, evaluate, part_bytes,
                      to_bytes, write_index)
 from openalea.encoding3d.codec import _encode, _part_data
+from openalea.encoding3d.glb import pack
 from openalea.encoding3d.dump import frame_to_dict, part_to_dict
 from openalea.encoding3d.parts import Parts, part_file
 
@@ -405,7 +406,8 @@ def instances_files() -> dict:
     frames = [instanced_roots(3, 0., 0), instanced_roots(4, 1., 24)]
     for number, frame in enumerate(frames):
         file_name = f"frame_{number:06d}.glb"
-        data, used = _encode(frame)
+        document, buffers, used = _encode(frame)
+        data = pack(document, buffers)
         keys |= set(used)
         out[f"instances/{file_name}"] = data
         out[f"instances/frame_{number:06d}.expected.json"] = _json(frame_to_dict(frame))

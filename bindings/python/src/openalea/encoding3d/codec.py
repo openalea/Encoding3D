@@ -24,6 +24,7 @@ import numpy as np
 
 from openalea.encoding3d import SPECIFICATION_VERSION, archive
 from openalea.encoding3d.glb import BufferBuilder, pack, unpack, view_bytes
+from openalea.encoding3d.glb import write as write_glb
 from openalea.encoding3d.model import (DataStructure, DerivedField, EDGE_TYPES, ENUM_COLUMNS, EntitySet, Frame, Grid,
                            ID_COLUMNS, InstanceSet, LazyColumns, LazyList, Mapping, Mesh, NO_ID, Operator, Ragged,
                            Relation, Table, Template, Update, Variable, _as_column)
@@ -60,13 +61,15 @@ INFINITY_FLOAT = {dtype: {"positive": float(np.finfo(dtype).max),
 def to_bytes(frame: Frame, embed_parts: bool = False) -> bytes:
     """The GLB file of *frame*; *embed_parts*: the parts its instance sets use in it (one self-contained file), else
     referred to by key (parts/<key>.glb, written by write)."""
-    return _encode(frame, embed_parts=embed_parts)[0]
+    document, buffers, _ = _encode(frame, embed_parts=embed_parts)
+    return pack(document, buffers)
 
 
 def _encode(frame: Frame, embed_parts: bool = False, part=None) -> tuple:
-    """(the GLB bytes of *frame*, {key: the part, its bytes when encoded by this call, or its key for a part read from
-    a file} of the parts its instance sets use). *part*: the frame is a part's file, its FSPM_scene.part this entry (a function of the buffers for an
-    operator's arrays)."""
+    """(the GLB file of *frame*: its JSON document and its binary buffer (a BufferBuilder, its arrays not copied:
+    glb.pack gives the bytes, glb.write writes them), {key: the part, its bytes when encoded by this call, or its key
+    for a part read from a file} of the parts its instance sets use). *part*: the frame is a part's file, its
+    FSPM_scene.part this entry (a function of the buffers for an operator's arrays)."""
     buffers = BufferBuilder()
     used_parts = {}
     schema = {"id": "fspm_scene", "classes": {}, "enums": {
@@ -188,24 +191,22 @@ def _encode(frame: Frame, embed_parts: bool = False, part=None) -> tuple:
         document["extras"] = frame.unknown["extras"]
     if meshes:
         document["meshes"], document["accessors"] = meshes, accessors
-    binary = buffers.binary()
     if buffers.views:
         # the buffer holds the chunk's padding to 8 bytes: glTF-Validator warns of more than 3 bytes beyond it
-        binary += b"\0" * (-len(binary) % 8)
-        document["buffers"] = [{"byteLength": len(binary)}]
+        document["buffers"] = [{"byteLength": buffers.pad(8)}]
         document["bufferViews"] = buffers.views
-    return pack(document, binary), used_parts
+    return document, buffers, used_parts
 
 
 def write(path: str, frame: Frame, embed_parts: bool = False) -> list:
     """Write *frame* to the GLB file *path*; the keys of the parts its instance sets use. The parts go to
     parts/<key>.glb next to it, each written once (a file already there is its content: its name is its hash); with
     *embed_parts*, into the frame instead (one self-contained file)."""
-    data, used_parts = _encode(frame, embed_parts=embed_parts)
+    document, buffers, used_parts = _encode(frame, embed_parts=embed_parts)
     if not embed_parts:
         write_parts(os.path.dirname(os.path.abspath(path)), used_parts, frame)
-    with open(path, "wb") as file:
-        file.write(data)
+    with open(path, "wb") as file:                      # the arrays written from their memory: no copy of the binary
+        write_glb(file, document, buffers)
     return sorted(used_parts)
 
 
@@ -250,7 +251,7 @@ def part_bytes(part) -> bytes:
     sets) or an Operator (a frame of no data structure, the operator's arrays in its binary chunk); FSPM_scene.part
     says which (specification §12.1)."""
     if isinstance(part, Template):
-        return _encode(Frame(data_structures=[part.data_structure()]), part={"kind": "template"})[0]
+        return pack(*_encode(Frame(data_structures=[part.data_structure()]), part={"kind": "template"})[:2])
     if not isinstance(part, Operator):
         raise TypeError(f"a part is a Template or an Operator, not {type(part)}")
 
@@ -268,7 +269,7 @@ def part_bytes(part) -> bytes:
         else:
             described["system"], described["rightHandSide"] = sparse(part.system), sparse(part.right_hand_side)
         return described
-    return _encode(Frame(), part=entry)[0]
+    return pack(*_encode(Frame(), part=entry)[:2])
 
 
 def _instance_set_entry(instance_set: InstanceSet, data_structure: DataStructure, add_table, used_parts: dict) -> dict:

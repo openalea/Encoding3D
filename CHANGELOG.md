@@ -2,6 +2,13 @@
 
 ## Unreleased: specification 0.4 (draft), instances, derived fields, shared parts and archives
 
+- **A frame written without copies** (Python): `write` streams the GLB piece by piece (`glb.write(file, document,
+  buffers)`: the header, the JSON chunk, then each buffer view from its array's own memory and its padding);
+  `glb.BufferBuilder` keeps byte views of the arrays instead of their bytes, `glb.pack` joins the same pieces once
+  (`to_bytes`, `part_bytes`). The files are byte-identical. The former write copied the binary chunk 4-5 times
+  (`tobytes` per array, the join, the padding, the chunks, the header): metafspm's use case 1 at 8 plants, day 12
+  (a 39 MB frame) peaks +0.19 → +0.06 GB, with its sections +0.24 → +0.12 GB, 0.24 → 0.19 s and 0.45 → 0.37 s.
+
 - **A checked pack, then the folder removed** (Python): `pack(folder, path, compression=, level=, keep_folder=False)`
   writes the archive next to *path*, checks it (`check_archive(path, folder)`: every file of the sequence a member and
   nothing else, of the same size and CRC-32, each member read back; the archive valid, 0 errors), moves it into

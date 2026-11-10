@@ -1,4 +1,5 @@
 """Writing then reading a frame gives it back: every column bit for bit, declarations, grids, mappings, meshes."""
+import io
 import json
 import struct
 
@@ -7,9 +8,10 @@ import pytest
 
 import generate
 from openalea.encoding3d import (DataStructure, EntitySet, Frame, Mesh, Table, Variable, from_bytes, read_index, read_sequence,
-                     to_bytes, write_sequence)
+                     to_bytes, write, write_sequence)
+from openalea.encoding3d import glb
 from openalea.encoding3d.dump import frame_to_dict
-from openalea.encoding3d.glb import unpack
+from openalea.encoding3d.glb import BufferBuilder, unpack
 
 
 def same_columns(a, b):
@@ -73,6 +75,34 @@ def test_buffer_length_holds_the_chunk_padding():
                   rank=1)])])
     document, binary = unpack(to_bytes(frame))
     assert len(binary) % 8 == 0 and document["buffers"][0]["byteLength"] == len(binary)
+
+
+@pytest.mark.parametrize("name", sorted(generate.SCENES))
+def test_a_written_file_is_to_bytes_file(name, tmp_path):
+    """write() streams the GLB piece by piece (the arrays from their own memory, no copy of the binary chunk): the
+    same bytes as to_bytes()."""
+    frame = generate.SCENES[name]()
+    path = tmp_path / "frame.glb"
+    write(str(path), frame, embed_parts=True)
+    assert path.read_bytes() == to_bytes(frame, embed_parts=True)
+
+
+def test_the_buffer_keeps_its_arrays_without_copying_them():
+    """BufferBuilder holds a byte view of a contiguous little-endian array, not a copy: glb.write writes it from the
+    array's memory; pack() joins the same pieces."""
+    array = np.arange(5, dtype=np.float64)
+    buffers = BufferBuilder()
+    buffers.add(b"abc")
+    index = buffers.add(array)
+    view = buffers.parts[-1]
+    assert np.shares_memory(np.frombuffer(view, dtype=np.uint8), array)
+    assert buffers.views[index]["byteOffset"] == 8 and buffers.length == 48
+    stream = io.BytesIO()
+    written = glb.write(stream, {"asset": {}}, buffers)
+    assert stream.getvalue() == glb.pack({"asset": {}}, buffers) == glb.pack({"asset": {}}, buffers.binary())
+    assert written == len(stream.getvalue())
+    document, binary = unpack(stream.getvalue())
+    assert np.array_equal(np.frombuffer(bytes(binary)[8:48], dtype=np.float64), array)
 
 
 def test_column_types():
