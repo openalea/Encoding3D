@@ -6,7 +6,9 @@ buttons, in ParaView's client:
                             or of an "encoding3d Select at scale" drawn from one (Apply, Show, a new view), is drawn
                             as the layers of the reader's configuration, each layer a block with its own colour
                             variable, colour map, range, log scale or solid colour, opacity and visibility; drawn
-                            again when the reader's Configuration or its views file changes
+                            again when the reader's Configuration or its views file changes; each colour legend
+                            titled "<array> [<unit>]" when the array holds its variable's unit (the reader puts it
+                            in vtkDataArray.UNITS_LABEL), those of the arrays the user colours by too
     save_views(reader)      the reader's "Save Views": the layers' display, as the representation in the active view
                             holds it (after edits in the MultiBlock Inspector), written back into the views file
     isolate(selection)      the "Select at scale" buttons: the selection alone in the active view, the other items
@@ -31,7 +33,8 @@ STATE = "encoding3d_selection"              # a view's annotation: [{"selection"
 CELLS = 1                                   # vtkDataObject.CELL, FIELD_ASSOCIATION_CELLS
 NEVER, GROW_ON_APPLY = -1, 0                # a colour map's AutomaticRescaleRangeMode (vtkSMTransferFunctionManager)
 
-_session = {"managers": {}, "watched": set(), "busy": False, "connections": False}   # kept across plugin reloads
+_session = {"managers": {}, "watched": set(), "legends": set(), "busy": False,
+            "connections": False}                   # kept across plugin reloads
 
 
 def _views():
@@ -135,6 +138,9 @@ def _registered(*arguments) -> None:
         for representation in _proxies("representations"):
             if not representation.HasAnnotation(DRAWN) and _drawable(representation):
                 draw(representation)
+        for legend in _proxies("scalar_bars"):           # (ParaView's own legends too: the user's colourings)
+            if legend.GetGlobalID() not in _session.setdefault("legends", set()):
+                _watch_legend(legend)
     except Exception as error:
         _warn(f"layers not drawn ({error})")
     finally:
@@ -344,7 +350,7 @@ def _views_of(representation) -> list:
 
 def show_scalar_bars(representation, view, displays: dict = None, present: set = None) -> None:
     """The colour legends of the visible coloured layers of *representation* shown in *view* (those whose array its
-    data holds, *present*)."""
+    data holds, *present*), titled with their units (_watch_legend)."""
     if present is None:
         present = _cell_arrays(_input(representation))
     if displays is None:
@@ -355,6 +361,75 @@ def show_scalar_bars(representation, view, displays: dict = None, present: set =
         for selector in shown:
             _colour_maps().vtkSMColorMapEditorHelper.SetBlocksScalarBarVisibility(representation, view, [selector],
                                                                                     True)
+    manager = _colour_maps().vtkSMTransferFunctionManager()
+    for array in dict.fromkeys(array for selector, array in displays["colourings"] if selector in shown):
+        legend = manager.GetScalarBarRepresentation(_colour_map(array), view)
+        if legend is not None:
+            _watch_legend(legend)
+
+
+def legend_title(array: str, unit: str = None) -> str:
+    """The colour legend's title of *array*: "<array> [<unit>]", the array alone without a unit or for "1"."""
+    return f"{array} [{unit}]" if unit and unit != "1" else array
+
+
+def _watch_legend(legend) -> None:
+    """*legend* (a scalar bar) titled with its array's unit now and whenever ParaView titles it again by the array's
+    name (a layer's legend shown, or the user colouring by another array: _titled)."""
+    watched = _session.setdefault("legends", set())
+    if legend.GetGlobalID() not in watched:
+        legend.AddObserver("PropertyModifiedEvent", _titled)
+        watched.add(legend.GetGlobalID())
+    _titled(legend)
+
+
+def _titled(legend, event=None) -> None:
+    """*legend*'s title "<array> [<unit>]" (legend_title) when it is the bare name of an array of the plugin's items
+    that holds a unit; any other title (one the user typed, an array without a unit, of another item) kept."""
+    if legend.GetProperty("Title") is None:
+        return
+    title = _text(legend, "Title")
+    if not title or title.endswith("]"):
+        return
+    units = {}
+    for source in _proxies("sources"):
+        if source.GetXMLName() in (READER, SELECT_AT_SCALE):
+            for array, unit in _units(source).items():
+                units.setdefault(array, unit)
+    titled = legend_title(title, units.get(title))
+    if titled != title:
+        _helper(legend, "Title").Set(titled)
+        legend.UpdateVTKObjects()
+
+
+def _units(source, port: int = 0) -> dict:
+    """{cell array: its unit} of *source*'s data, the units the reader put in the arrays' information
+    (vtkDataArray.UNITS_LABEL); empty when the data is not in this process (a remote server)."""
+    from vtkmodules.vtkCommonCore import vtkDataArray
+    from vtkmodules.vtkCommonDataModel import vtkCompositeDataSet
+    algorithm = source.GetClientSideObject() if source is not None else None
+    data = algorithm.GetOutputDataObject(port) if algorithm is not None and hasattr(
+        algorithm, "GetOutputDataObject") else None
+    if data is None:
+        return {}
+    leaves = []
+    if isinstance(data, vtkCompositeDataSet):
+        iterator = data.NewIterator()
+        iterator.InitTraversal()
+        while not iterator.IsDoneWithTraversal():
+            leaves.append(iterator.GetCurrentDataObject())
+            iterator.GoToNextItem()
+    else:
+        leaves.append(data)
+    key, units = vtkDataArray.UNITS_LABEL(), {}
+    for leaf in leaves:
+        cell_data = leaf.GetCellData() if hasattr(leaf, "GetCellData") else None
+        for number in range(cell_data.GetNumberOfArrays() if cell_data is not None else 0):
+            array = cell_data.GetAbstractArray(number)
+            information = array.GetInformation() if array is not None else None
+            if information is not None and information.Has(key):
+                units.setdefault(array.GetName(), information.Get(key))
+    return units
 
 
 # ── Saving the views ─────────────────────────────────────────────────────────

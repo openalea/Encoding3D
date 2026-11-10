@@ -67,6 +67,11 @@ own colouring or opacity, which is every layer at the start. Change a layer in t
 Layers coloured by the same variable share one colour map, as in ParaView in general. Tick **Use Separate Color Map**
 to give a layer its own.
 
+A colour legend shows the variable's **unit** when the frame gives one: `SubOrgan.radius [m]`,
+`cell.pressure_head [m]`, `Plant.blade_duration [{phyllochron}]`. A variable without a unit (a count, a type, an
+id) shows its name alone. This holds for the legends of the layers and for those of a variable you pick yourself
+(the layer's drop-down, or the toolbar's). A title you type in the legend's properties is kept.
+
 Without a `views.json`, the reader shows one block per data structure (each plant population, the soil), with every
 variable as a colouring choice. Colour them like any ParaView item.
 
@@ -177,6 +182,10 @@ case 1): select an axis or a segment there.
   but the buttons do nothing (a message in Output Messages).
 - Items made from the reader by other filters (*Clip*, *Slice*) are drawn by ParaView in the usual way, not as the
   layers.
+- Units appear in the colour legends only. ParaView 6.2's *Information* panel and *Spreadsheet View* show the
+  arrays' names without their units. With the default legend font (Arial), ParaView draws the square brackets of
+  `[m]` as round ones; Times or Courier (the legend's *Title Font Properties*) show them square.
+- The legends get their units with ParaView's built-in server. With a remote server they show the names alone.
 
 ## For developers
 
@@ -201,6 +210,12 @@ case 1): select an axis or a segment there.
   draws them again when the configuration or the views file changes. The block properties come from
   `openalea.encoding3d.views.block_displays`, and `displays_from_blocks` reads them back. Both are tested without
   ParaView.
+- Units: each array of a declared variable holds the variable's UCUM unit in its information
+  (`vtkDataArray.UNITS_LABEL()`), the derived fields and the instances' own variables too (`_array(..., unit=)`,
+  `unit_of`); the undeclared columns (`id`, `label`, the links, the text codes `<set>.<column>_code`) have none.
+  The arrays keep their names. `encoding3d_displays` titles each legend `<array> [<unit>]` (`legend_title`; the
+  name alone for no unit or `1`), the layers' legends when it shows them and ParaView's own: it watches each scalar
+  bar and retitles it when ParaView sets its title to the bare name of an array that has a unit (`_watch_legend`).
 - Instances: the reader draws each visible instance set with `openalea.encoding3d.instances.placed_meshes`; each cell
   has its instance's row (`encoding3d_instance`), its rows in the template's entity sets
   (`encoding3d_template_row.<set>`), the ids containing it and the layer's colour variable (every variable with

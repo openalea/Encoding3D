@@ -1,8 +1,9 @@
 """
 The plugin inside ParaView: loads plugin_encoding3d.py, opens conformance files and a sequence, checks their blocks,
 arrays and time steps, and renders a picture of each; then a frame with views (one block per layer, drawn by the
-plugin as its layers when shown, the configurations' drop-down, "Save Views"), and selection by scale (the filter
-"encoding3d Select at scale", its Scale drop-down, its Isolate and Put Back buttons).
+plugin as its layers when shown, the configurations' drop-down, "Save Views", a declared unit on its array and in its
+colour legend's title), and selection by scale (the filter "encoding3d Select at scale", its Scale drop-down, its
+Isolate and Put Back buttons).
 
     pvpython paraview/check_in_paraview.py conformance [output folder]
 
@@ -228,6 +229,13 @@ def check_conformance() -> None:
         view = simple.GetActiveViewOrCreate("RenderView")
         display = simple.Show(viewed, view)                   # as the GUI's Apply: drawn as its layers
         check_drawn(display, views.configuration(views.read_views(path))[1])
+        encoding3d_displays.show_scalar_bars(display.SMProxy, view.SMProxy)   # (the GUI's Apply shows them)
+        title = simple.GetScalarBar(simple.GetColorTransferFunction("SubOrgan.water_potential"), view).Title
+        assert title == "SubOrgan.water_potential [MPa]", title            # the legend: its variable's unit
+        from vtkmodules.vtkCommonCore import vtkDataArray
+        roots_data = viewed.GetClientSideObject().GetOutputDataObject(0).GetBlock(0).GetCellData()
+        assert roots_data.GetArray("SubOrgan.water_potential").GetInformation().Get(vtkDataArray.UNITS_LABEL()) == "MPa"
+        assert not roots_data.GetArray("SubOrgan.id").GetInformation().Has(vtkDataArray.UNITS_LABEL())   # undeclared
         display.BlockOpacities = [views.block_selector("roots"), "0.5"]
         viewed.InvokeCommand("SaveViews")                     # the reader's button
         assert views.read_views(path)["configurations"]["default"]["layers"][0]["opacity"] == 0.5

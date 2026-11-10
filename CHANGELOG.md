@@ -2,6 +2,12 @@
 
 ## Unreleased: specification 0.4 (draft), instances, derived fields, shared parts and archives
 
+- **Units in ParaView** (the plugin only): each array the reader builds from a declared variable, a derived field or
+  an instance variable holds its UCUM unit in its information (`vtkDataArray.UNITS_LABEL()`), the names unchanged;
+  the colour legends are titled `<array> [<unit>]` (the name alone without a unit or for `1`), the layers' and those
+  of an array the user colours by, a typed title kept. ParaView 6.2's Information panel and spreadsheet do not show
+  the key. Undeclared columns and frames without declarations give the same output as before.
+
 - **A part's root node without empty children** (every codec): a part (or a frame of no data structure) wrote the
   scene node with `"children": []`, which glTF forbids (glTF-Validator: one error per operator part, so the C++, Java
   and Julia conformance and the validate job failed); the key is now left out when empty. The operator parts' keys

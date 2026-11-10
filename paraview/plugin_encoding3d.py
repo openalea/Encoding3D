@@ -30,7 +30,9 @@ What it shows, one block per data structure:
 
 Labels and other text columns become integer codes ("<entity set>.label_code", the names in the block's field data).
 The graph's links (complex, parent, edge_type) and the columns of role "setting" (a platform's own bookkeeping, e.g.
-metafspm's MPG links) are left out unless "Show Settings" is ticked.
+metafspm's MPG links) are left out unless "Show Settings" is ticked. An array of a declared variable (or a derived
+field) holds the variable's unit (UCUM) in its information (vtkDataArray.UNITS_LABEL), which the layers' colour
+legends show ("<array> [<unit>]"); an undeclared column (id, label, ...) has none.
 Data structures are placed by their origin.
 
 With views (specification §8.1: a views.json next to the file, or the one "Views" names), the output is instead one
@@ -65,7 +67,7 @@ import sys
 
 import numpy as np
 from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray, vtk_to_numpy
-from vtkmodules.vtkCommonCore import vtkOutputWindow, vtkPoints, vtkStringArray
+from vtkmodules.vtkCommonCore import vtkDataArray, vtkOutputWindow, vtkPoints, vtkStringArray
 from vtkmodules.vtkCommonDataModel import (VTK_HEXAHEDRON, vtkCellArray, vtkDataObject, vtkDataObjectTree,
                                            vtkDataSetAttributes, vtkImageData, vtkMultiBlockDataSet, vtkPolyData,
                                            vtkSelection, vtkUnstructuredGrid)
@@ -98,12 +100,21 @@ SEGMENT_ENDS = (("proximal_end_x", "x1"), ("proximal_end_y", "y1"), ("proximal_e
 
 # ── Frames to VTK data sets ──────────────────────────────────────────────────
 
-def _array(name: str, values: np.ndarray, deep: bool = True):
-    """A VTK array of *values*; *deep* False for values made for it alone (the array then holds them, no copy)."""
+def _array(name: str, values: np.ndarray, deep: bool = True, unit: str = None):
+    """A VTK array of *values*; *deep* False for values made for it alone (the array then holds them, no copy);
+    *unit*: its variable's declared unit (UCUM), in its information (vtkDataArray.UNITS_LABEL; None: none declared)."""
     values = np.ascontiguousarray(values)
     array = numpy_to_vtk(values, deep=deep)
     array.SetName(name)
+    if unit is not None:
+        array.GetInformation().Set(vtkDataArray.UNITS_LABEL(), str(unit))
     return array
+
+
+def unit_of(entity_set, name: str):
+    """The declared unit of column *name* of *entity_set* (None: the column has no declaration)."""
+    declared = entity_set.variables.get(name)
+    return declared.unit if declared is not None else None
 
 
 def _numeric(column: np.ndarray) -> bool:
@@ -159,7 +170,7 @@ def _add_columns(data, entity_set, rows: np.ndarray, field_data, settings: bool 
         if np.ma.isMaskedArray(values):
             values = values.filled(np.nan)                              # and where a value is missing
         values = np.where(valid.reshape((-1,) + (1,) * (values.ndim - 1)), values, np.nan)
-        data.AddArray(_array(label, values, deep=False))
+        data.AddArray(_array(label, values, deep=False, unit=unit_of(entity_set, name)))
 
 
 def _instances_module():
@@ -350,7 +361,8 @@ def _add_derived(data_set, frame, data_structure, instance_set) -> None:
         valid = (rows >= 0) & (rows < lengths[position])
         out = np.full(rows.size, np.nan)
         out[valid] = flat[starts[position[valid]] + rows[valid]]
-        cell_data.AddArray(_array(f"{derived.entity_set}.{derived.name}", out, deep=False))
+        cell_data.AddArray(_array(f"{derived.entity_set}.{derived.name}", out, deep=False,
+                                  unit=derived.variable.unit if derived.variable is not None else None))
 
 
 _DERIVED = {}       # {(frame file, data structure, instance set, field): {instance row: values}} of the frames open
