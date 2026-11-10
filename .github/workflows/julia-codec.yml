@@ -70,7 +70,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: The Python coordinator
-        run: pip install -e . pytest pyzmq jsonschema
+        run: pip install -e . numpy pytest pyzmq jsonschema
       - name: A Julia project with encoding3d and ZMQ
         run: |
           mkdir -p coupling-env
