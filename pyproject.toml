@@ -22,6 +22,8 @@ package-dir = {"" = "bindings/python/src", "openalea.encoding3d.spec" = "spec"}
 name = "openalea.encoding3d"
 authors = [
   { name = "Tristan Gérault", email = "tristan.gerault@uclouvain.be" },
+  { name = "Christophe Pradal", email = "christophe.pradal@cirad.fr" },
+  { name = "Fabrice Bauget" },
 ]
 description = "encoding3d, an exchange format for whole FSPM scenes, with its Python reference codec, validator and vocabulary"
 readme = "README.md"
