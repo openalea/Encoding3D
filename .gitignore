@@ -18,6 +18,7 @@ env/
 downloads/
 eggs/
 parts/
+!conformance/instances/parts/
 bin/
 var/
 sdist/
