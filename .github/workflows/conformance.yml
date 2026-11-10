@@ -24,7 +24,9 @@ jobs:
       - name: The committed files are the generated ones
         run: |
           python conformance/generate.py
-          git diff --exit-code -- conformance
+          # the evaluated values' last digits follow the platform's BLAS: test_conformance compares them within the
+          # protocol's 1e-12; every other file must be what the generator writes, byte for byte
+          git diff --exit-code -- conformance ':(exclude)conformance/instances/*.evaluated.json'
       - name: encoding3d validator
         run: encoding3d validate conformance/*.glb conformance/growing_sequence/scene.fspm.json conformance/instances/scene.fspm.json conformance/instances/embedded.glb conformance/archives/*.fspm.zip
       - name: Khronos glTF-Validator
