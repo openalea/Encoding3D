@@ -624,6 +624,8 @@ std::vector<std::uint8_t> encode_frame(const Frame &frame, bool embed_parts, con
         document["meshes"] = meshes;
         document["accessors"] = accessors;
     }
+    // a part, or a frame of no data structure: glTF has no empty children
+    if (document["nodes"][0]["children"].empty()) document["nodes"][0].erase("children");
     if (!buffers.views.empty()) {
         // the buffer holds the chunk's padding to 8 bytes: glTF-Validator warns of more than 3 bytes beyond it
         buffers.data.resize(buffers.data.size() + detail::padding(buffers.data.size()), 0);

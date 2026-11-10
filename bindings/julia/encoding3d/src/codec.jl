@@ -163,6 +163,9 @@ function encode_frame(frame::Frame; embed_parts::Bool = false, part_entry = noth
     if !isempty(meshes)
         document["meshes"], document["accessors"] = meshes, accessors
     end
+    if isempty(document["nodes"][1]["children"])   # a part, or a frame of no data structure: glTF has no empty children
+        delete!(document["nodes"][1], "children")
+    end
     if !isempty(buffers.views)
         # the buffer holds the chunk's padding to 8 bytes: glTF-Validator warns of more than 3 bytes beyond it
         append!(buffers.data, zeros(UInt8, padding(length(buffers.data))))

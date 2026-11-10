@@ -203,6 +203,9 @@ public final class Codec {
             document.set("meshes", meshes);
             document.set("accessors", accessors);
         }
+        if (sceneNode.get("children").isEmpty()) {    // a part, or a frame of no data structure: glTF has no empty children
+            sceneNode.remove("children");
+        }
         byte[] binary = buffers.data.toByteArray();
         if (!buffers.views.isEmpty()) {
             // the buffer holds the chunk's padding to 8 bytes: glTF-Validator warns of more than 3 bytes beyond it

@@ -53,4 +53,7 @@ runs:
       run: |
         curl -sSL -o validator.tar.xz "https://github.com/KhronosGroup/glTF-Validator/releases/download/${{ inputs.gltf-validator }}/gltf_validator-${{ inputs.gltf-validator }}-linux64.tar.xz"
         tar xf validator.tar.xz gltf_validator
-        find "${{ inputs.written }}" -name "*.glb" -print0 | xargs -0 -n1 ./gltf_validator
+        find "${{ inputs.written }}" -name "*.glb" -print0 | xargs -0 -n1 ./gltf_validator || {
+          # each file's issues are in its report beside it: print the errors
+          find "${{ inputs.written }}" -name "*.report.json" -exec python -c "import json, sys; report = json.load(open(sys.argv[1])); [print(sys.argv[1], m['code'], m.get('pointer', ''), m['message']) for m in report['issues']['messages'] if m['severity'] == 0]" {} \;
+          exit 1; }

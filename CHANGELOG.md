@@ -2,6 +2,15 @@
 
 ## Unreleased: specification 0.4 (draft), instances, derived fields, shared parts and archives
 
+- **A part's root node without empty children** (every codec): a part (or a frame of no data structure) wrote the
+  scene node with `"children": []`, which glTF forbids (glTF-Validator: one error per operator part, so the C++, Java
+  and Julia conformance and the validate job failed); the key is now left out when empty. The operator parts' keys
+  change (their bytes do): the conformance instances, their expected values and the archives regenerated. CI: the
+  Windows line endings of the coupling generator's JSON (`newline="\n"`), the chosen instances' evaluation compared
+  within 1e-12 (MKL sums a smaller batch otherwise, 1 ulp), the conda test environment with scipy and
+  `conformance_run.py`, the evaluated values compared within the protocol's 1e-12 (the platform's BLAS); the
+  validator steps print each failing file's errors from its report.
+
 - **A frame written without copies** (Python): `write` streams the GLB piece by piece (`glb.write(file, document,
   buffers)`: the header, the JSON chunk, then each buffer view from its array's own memory and its padding);
   `glb.BufferBuilder` keeps byte views of the arrays instead of their bytes, `glb.pack` joins the same pieces once

@@ -80,10 +80,11 @@ def test_evaluate_gives_each_instance_its_field():
     frame = frames()[1]
     chosen = evaluate(frame, "water_potential", instances=[3, 1])
     everything = evaluate(frame, "water_potential")
-    np.testing.assert_array_equal(chosen[0], everything[3])
-    np.testing.assert_array_equal(chosen[1], everything[1])
+    # the chosen instances are applied as a smaller batch: the BLAS may sum them otherwise (MKL on Windows: 1 ulp)
+    np.testing.assert_allclose(chosen[0], everything[3], rtol=1e-12, atol=0.)
+    np.testing.assert_allclose(chosen[1], everything[1], rtol=1e-12, atol=0.)
     mask = evaluate(frame, "water_potential", instances=np.array([False, True, False, True]))
-    np.testing.assert_array_equal(mask[1], everything[3])
+    np.testing.assert_allclose(mask[1], everything[3], rtol=1e-12, atol=0.)
 
 
 def test_the_conformance_case_evaluates_as_expected():

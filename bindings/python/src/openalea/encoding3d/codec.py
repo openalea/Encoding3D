@@ -191,6 +191,8 @@ def _encode(frame: Frame, embed_parts: bool = False, part=None) -> tuple:
         document["extras"] = frame.unknown["extras"]
     if meshes:
         document["meshes"], document["accessors"] = meshes, accessors
+    if not document["nodes"][0]["children"]:      # a part, or a frame of no data structure: glTF has no empty children
+        del document["nodes"][0]["children"]
     if buffers.views:
         # the buffer holds the chunk's padding to 8 bytes: glTF-Validator warns of more than 3 bytes beyond it
         document["buffers"] = [{"byteLength": buffers.pad(8)}]

@@ -32,7 +32,7 @@ jobs:
           curl -sSL -o validator.tar.xz "https://github.com/KhronosGroup/glTF-Validator/releases/download/${GLTF_VALIDATOR}/gltf_validator-${GLTF_VALIDATOR}-linux64.tar.xz"
           tar xf validator.tar.xz gltf_validator
           for file in conformance/*.glb conformance/growing_sequence/*.glb conformance/instances/*.glb conformance/instances/parts/*.glb; do
-            ./gltf_validator "$file" || exit 1
+            ./gltf_validator "$file" || { python -c "import json, sys; report = json.load(open(sys.argv[1])); [print(sys.argv[1], m['code'], m.get('pointer', ''), m['message']) for m in report['issues']['messages'] if m['severity'] == 0]" "${file}.report.json"; exit 1; }
           done
 
   docs:

@@ -156,11 +156,11 @@ def generate(name: str, spec: dict, directory: str = DIRECTORY) -> None:
     os.makedirs(os.path.join(folder, "expected", "record"))
     write_sequence(os.path.join(folder, "peer"), spec["peer"]())
     declaration = spec["declaration"]()
-    with open(os.path.join(folder, "subject", "declaration.json"), "w", encoding="utf-8") as file:
+    with open(os.path.join(folder, "subject", "declaration.json"), "w", encoding="utf-8", newline="\n") as file:
         file.write(_json(declaration.to_json()))
     settings = {"steps": STEPS, "interval": 1., "timeUnit": "d", "links": [link.to_json() for link in spec["links"]],
                 "covers": spec["covers"]}
-    with open(os.path.join(folder, "session.json"), "w", encoding="utf-8") as file:
+    with open(os.path.join(folder, "session.json"), "w", encoding="utf-8", newline="\n") as file:
         file.write(_json(settings))
 
     answer = spec["subject"]()
@@ -169,7 +169,7 @@ def generate(name: str, spec: dict, directory: str = DIRECTORY) -> None:
         participant = Participant.connect(spec["declaration"](), endpoint, timeout=60)
         for turn in participant.turns():
             with open(os.path.join(folder, "expected", f"turn_{turn.step:04d}.json"), "w",
-                      encoding="utf-8") as file:
+                      encoding="utf-8", newline="\n") as file:
                 file.write(_json(frame_to_dict(turn.frame)))
             update = answer(turn, participant.id_offset)
             update.update = None
@@ -188,7 +188,7 @@ def generate(name: str, spec: dict, directory: str = DIRECTORY) -> None:
         thread.join(60)
         for entry in read_index(os.path.join(temporary, "record", "scene.fspm.json"))["frames"]:
             path = os.path.join(folder, "expected", "record", entry["file"].replace(".glb", ".json"))
-            with open(path, "w", encoding="utf-8") as file:
+            with open(path, "w", encoding="utf-8", newline="\n") as file:
                 file.write(_json(frame_to_dict(read(entry["path"]))))
     assert participant_offset_ok(folder)
 
