@@ -112,6 +112,7 @@ test/*.png
 examples/**/outputs/
 
 /dev*.md
+/.devplan/
 
 # glTF-Validator reports
 *.report.json
