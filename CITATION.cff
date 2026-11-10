@@ -14,7 +14,7 @@ abstract: >-
 authors:
   - family-names: "Gérault"
     given-names: "Tristan"
-    email: "tristan.gerault@inrae.fr"
+    email: "tristan.gerault@uclouvain.be"
 repository-code: "https://github.com/openalea/encoding3d"
 url: "https://encoding3d.readthedocs.io"
 license: CECILL-C
