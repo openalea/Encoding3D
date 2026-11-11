@@ -269,8 +269,8 @@ A **frame** carries its time `t` (float64, unit s or d declared), a step index, 
 | `ArrayDataStructure` (`shape`, `dx`, `origin`, `axes`, `periodic`) | a regular grid |
 | `AdaptiveGridDataStructure` (leaves, levels) | an adaptive grid |
 | `CrossMapping` (rows, columns, weights; `method`) | a mapping table |
-| `Triangles(vertices, owner)` from `ds.triangles()` | a mesh; `owner` is the feature ID at the node scale; coarser feature IDs come from the membership |
-| `VariableSpec` (`location`, `scale`, `kind`, `variable_type`, `dtype`, `shape`) and the declaration's `unit`, `description`, `min_value`, `max_value`, `references`, `DOI` | the variable declaration, field for field |
+| `Triangles(vertices, owner)` from `data_structure.triangles()` | a mesh; `owner` is the feature ID at the node scale; coarser feature IDs come from the membership |
+| `VariableSpec` (`location`, `scale`, `kind`, `role`, `dtype`, `shape`) and the declaration's `unit`, `description`, `min_value`, `max_value`, `references`, `DOI` | the variable declaration, field for field |
 | `Scene` populations, planting table | data structures with origin transforms, scene table |
 | `SceneRecorder` every N steps | frames |
 

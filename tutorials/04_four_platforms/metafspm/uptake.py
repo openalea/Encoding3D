@@ -8,10 +8,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from openalea.metafspm.coupling.component import FunctionalComponent, input_variable, state_variable
+from openalea.metafspm import actual, FunctionalComponent, input_variable, state_variable
 from openalea.metafspm.data_structure.configs import ScalesConfig as scales
 from openalea.metafspm.io.coupling import RemoteComponent
-from openalea.metafspm.solve.decorator import actual
 
 UNIT = dict(unit_comment="", value_comment="", references="", DOI=[], min_value=None, max_value=None)
 CONDUCTANCE = 0.5                # cm3 of water per cm2 of root surface per day, at full carbon status (a toy)
