@@ -1,0 +1,39 @@
+cff-version: 1.2.0
+message: "If you use encoding3d, please cite it as below."
+type: software
+title: "encoding3d: an exchange format for functional-structural plant model scenes"
+abstract: >-
+  encoding3d is an exchange format for whole functional-structural plant model (FSPM) scenes, across platforms and
+  languages (openalea.metafspm, CPlantBox, GroIMP, VirtualPlantLab), based on glTF 2.0. Each time step is one glTF
+  file holding the multiscale plant graphs, their state variables and parameters, their geometry and the
+  environment's grids, with one shared vocabulary of variables; sequences of frames, shared parts and instances,
+  and archives describe a whole simulation. It also runs models of several platforms together, step by step
+  (coupling sessions over ZeroMQ or a folder). The repository holds the specification, its JSON schemas and
+  vocabulary, conformance files, a Python reference codec and validator, C++, Java and Julia codecs, and a
+  ParaView reader.
+authors:
+  - family-names: "Gérault"
+    given-names: "Tristan"
+    email: "tristan.gerault@uclouvain.be"
+    affiliation: "UCLouvain"
+    orcid: "https://orcid.org/0009-0003-8781-1470"
+  - family-names: "Pradal"
+    given-names: "Christophe"
+    email: "christophe.pradal@cirad.fr"
+    affiliation: "CIRAD"
+    orcid: "https://orcid.org/0000-0002-2555-761X"
+  - family-names: "Bauget"
+    given-names: "Fabrice"
+    affiliation: "CIRAD"
+    orcid: "https://orcid.org/0000-0002-3293-4049"
+doi: "10.5281/zenodo.0000000"                            # stand-in: the concept DOI once Zenodo has minted it
+repository-code: "https://github.com/openalea/encoding3d"
+url: "https://encoding3d.readthedocs.io"
+license: CECILL-C
+keywords:
+  - functional-structural plant model
+  - FSPM
+  - glTF
+  - exchange format
+  - model coupling
+  - OpenAlea

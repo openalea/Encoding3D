@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Tutorial 4, GroIMP's side: the shoot architecture as a coupling session's participant (../README.md). Needs
+     encoding3d's Java codec and GroIMP's adapter in Maven's local repository, GroIMP's Graph module from GroIMP's
+     package registry, and JeroMQ (the coupling's ZeroMQ transport).
+
+       mvn -q package dependency:copy-dependencies -DincludeScope=runtime
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>org.openalea.tutorials</groupId>
+  <artifactId>encoding3d-tutorial-shoot</artifactId>
+  <version>0.1.0</version>
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <repositories>
+    <repository>
+      <id>groimp</id>
+      <url>https://gitlab.com/api/v4/groups/55048746/-/packages/maven</url>
+    </repository>
+  </repositories>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.openalea</groupId>
+      <artifactId>encoding3d-groimp</artifactId>
+      <version>0.1.0</version>
+    </dependency>
+    <dependency>
+      <groupId>de.grogra</groupId>
+      <artifactId>graph</artifactId>
+      <version>3.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>org.zeromq</groupId>
+      <artifactId>jeromq</artifactId>
+      <version>0.6.0</version>
+    </dependency>
+  </dependencies>
+</project>

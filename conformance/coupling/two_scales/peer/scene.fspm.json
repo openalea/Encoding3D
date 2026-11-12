@@ -1,0 +1,31 @@
+{
+ "fspmIndex": "0.4",
+ "timeUnit": "d",
+ "frames": [
+  {
+   "time": 0.0,
+   "step": 0,
+   "file": "frame_000000.glb"
+  },
+  {
+   "time": 1.0,
+   "step": 1,
+   "file": "frame_000001.glb"
+  },
+  {
+   "time": 2.0,
+   "step": 2,
+   "file": "frame_000002.glb"
+  },
+  {
+   "time": 3.0,
+   "step": 3,
+   "file": "frame_000003.glb"
+  },
+  {
+   "time": 4.0,
+   "step": 4,
+   "file": "frame_000004.glb"
+  }
+ ]
+}

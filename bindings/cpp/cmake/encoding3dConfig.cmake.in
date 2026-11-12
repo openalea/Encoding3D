@@ -1,0 +1,10 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(nlohmann_json 3.11)
+set(ENCODING3D_MINIZIP_PACKAGE "@ENCODING3D_MINIZIP_PACKAGE@")
+if(ENCODING3D_MINIZIP_PACKAGE)
+    find_dependency(${ENCODING3D_MINIZIP_PACKAGE} 4 CONFIG)
+endif()
+include("${CMAKE_CURRENT_LIST_DIR}/encoding3dTargets.cmake")
+check_required_components(encoding3d)

@@ -40,3 +40,4 @@ cell_area,m2,extensive,area,cell,cross section,,Cell,area of the cell in the cro
 wall_thickness,m,intensive,thickness,cell wall,,,Connection Cell,thickness of the cell wall,wall_thickness,,,,GRANAP/MECHA: wall_thickness (um)
 net_co2_assimilation_rate,mol/(m2.s),intensive,assimilation rate,carbon dioxide,leaf,net,SubOrgan Organ,net CO2 assimilated per unit of leaf area (photosynthesis minus respiration),,,,,"not in metafspm yet (VPL's Ecophys.jl, GroIMP's photosynthesis models)"
 nitrate_concentration,mol/m3,volumic_concentration,amount concentration,nitrate,entity or soil,,SubOrgan Voxel,amount of nitrate per volume,,,,,not in metafspm yet (CPlantBox/DuMux solute transport)
+mtg_index,1,descriptor,index,entity,,in its MTG code,any,the index of an entity in its MTG code: 1 in Internode1,,,,mtg_index,

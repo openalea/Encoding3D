@@ -1,0 +1,16 @@
+{
+ "steps": 4,
+ "interval": 1.0,
+ "timeUnit": "d",
+ "links": [
+  {
+   "receiver": "subject",
+   "variable": "segment_length",
+   "provider": "peer",
+   "source": "length",
+   "aggregation": "copy",
+   "factor": 0.5
+  }
+ ],
+ "covers": "a subject refining a replayed peer's organs into segments: new entities, removals cascading to the subject's segments, a unit conversion and a factor, a copy to finer entities"
+}

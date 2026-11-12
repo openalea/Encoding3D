@@ -1,0 +1,160 @@
+{
+ "kind": "template",
+ "data_structure": {
+  "id": "template",
+  "kind": "table",
+  "origin": [
+   [
+    1.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   [
+    0.0,
+    1.0,
+    0.0,
+    0.0
+   ],
+   [
+    0.0,
+    0.0,
+    1.0,
+    0.0
+   ],
+   [
+    0.0,
+    0.0,
+    0.0,
+    1.0
+   ]
+  ],
+  "entity_sets": [
+   {
+    "name": "Cell",
+    "count": 4,
+    "columns": {
+     "id": {
+      "dtype": "int64",
+      "values": [
+       0,
+       1,
+       2,
+       3
+      ]
+     },
+     "label": {
+      "dtype": "string",
+      "values": [
+       "epidermis",
+       "cortex",
+       "epidermis",
+       "cortex"
+      ]
+     },
+     "area": {
+      "dtype": "float64",
+      "values": [
+       0.5,
+       0.5,
+       0.5,
+       0.5
+      ]
+     }
+    },
+    "variables": {
+     "area": {
+      "unit": "m2",
+      "role": "state",
+      "kind": "extensive",
+      "description": "area in the unit section"
+     }
+    },
+    "rank": null
+   }
+  ],
+  "meshes": [
+   {
+    "name": "section",
+    "positions_float32": [
+     [
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      1.0,
+      0.0
+     ],
+     [
+      -1.0,
+      0.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      -1.0,
+      0.0,
+      0.0
+     ],
+     [
+      -0.0,
+      -1.0,
+      0.0
+     ],
+     [
+      0.0,
+      0.0,
+      0.0
+     ],
+     [
+      -0.0,
+      -1.0,
+      0.0
+     ],
+     [
+      1.0,
+      -0.0,
+      0.0
+     ]
+    ],
+    "feature_rows": {
+     "Cell": [
+      0,
+      0,
+      0,
+      1,
+      1,
+      1,
+      2,
+      2,
+      2,
+      3,
+      3,
+      3
+     ]
+    }
+   }
+  ]
+ }
+}

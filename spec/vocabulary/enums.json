@@ -1,8 +1,9 @@
 {
- "version": "0.1",
+ "version": "0.2",
  "edge_type": {"none": "the entity's scale has no predecessor for it (a root of its scale)",
                "successor": "it follows its parent on the same axis (MTG '<')",
-               "branch": "it branches from its parent (MTG '+')"},
+               "branch": "it branches from its parent (MTG '+')",
+               "unknown": "it has a parent, but the writer does not know how it follows it"},
  "kind": {"extensive": "proportional to the amount of matter: summed when entities are merged, split by weights",
           "intensive": "independent of the amount: averaged (weighted by volume or mass) when entities are merged",
           "massic_concentration": "an amount per mass: averaged weighted by mass",
@@ -20,5 +21,11 @@
  "grid_kind": {"regular": "shape cells of size spacing from origin",
                "adaptive": "a regular base grid refined up to maxLevel; the leaf cells are listed"},
  "scales": ["Plant", "Axis", "GrowthUnit", "Phytomer", "Organ", "SubOrgan", "Layer", "Cell", "Compartment",
-            "Connection"]
+            "Connection"],
+ "scale": {"mixed": "an entity set whose rows belong to several base scales (e.g. CPlantBox's organs: root axes and leaves)"},
+ "format": {"date": "ISO 8601 date: 2022-08-24", "date-time": "ISO 8601 date and time: 2022-08-24T13:00:00",
+            "time": "ISO 8601 time: 13:00:00"},
+ "bearer_relation": {"successor": "MTG '<' to an entity of another scale",
+                     "branch": "MTG '+' to an entity of another scale",
+                     "decomposition": "MTG '/' to an entity that is not its complex"}
 }

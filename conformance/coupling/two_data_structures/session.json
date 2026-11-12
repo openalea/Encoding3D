@@ -1,0 +1,15 @@
+{
+ "steps": 4,
+ "interval": 1.0,
+ "timeUnit": "d",
+ "links": [
+  {
+   "receiver": "subject",
+   "variable": "uptake",
+   "provider": "peer",
+   "source": "uptake",
+   "mapping": "organs_in_soil"
+  }
+ ],
+ "covers": "a subject owning another data structure, linked to the peer's by the mapping it provides: a sum through a mapping, the subject's mappings in its updates"
+}

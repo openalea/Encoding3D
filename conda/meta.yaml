@@ -27,7 +27,7 @@ build:
   # --ignore-installed ensure that compiled files (accidentally present in sources or uncleaned locally) will be overwritten
   script: {{ PYTHON }} -m pip install . --no-deps --ignore-installed --no-build-isolation -vv
   entry_points:
-    - fspm-tf = openalea.fspm_tf.cli:main
+    - encoding3d = openalea.encoding3d.cli:main
 
 requirements:
   build:
@@ -55,9 +55,10 @@ test:
   source_files:
     - bindings/python/test/**
     - conformance/**                            # the reference files the tests check, and their generator
+    - bindings/python/conformance_run.py        # the Python codec's conformance run (test_compare)
 
   commands:
-    - fspm-tf --help
+    - encoding3d --help
     - cd bindings/python/test
     - pytest -v
 

@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- encoding3d, the Java codec of encoding3d: reading and writing frames and sequences (spec 0.4: instances, derived fields, shared parts, .fspm.zip
+     archives), a coupling session's participant. Dependencies: Jackson, xz-java (the archives' lzma members), and JeroMQ, optional, for the coupling's
+     ZeroMQ transport.
+
+       mvn -f bindings/java/pom.xml verify          the tests, the conformance files included
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>org.openalea</groupId>
+  <artifactId>encoding3d</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+  <name>encoding3d (Java)</name>
+  <description>Reading and writing encoding3d files: functional-structural plant model scenes as glTF 2.0 binaries</description>
+  <url>https://github.com/openalea/encoding3d</url>
+  <licenses>
+    <license>
+      <name>GPL-3.0-or-later</name>
+      <url>https://www.gnu.org/licenses/gpl-3.0.txt</url>
+      <comments>As GroIMP, the platform this codec serves (bindings/java/LICENSE); the rest of encoding3d is CeCILL-C</comments>
+    </license>
+  </licenses>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <jackson.version>2.18.2</jackson.version>
+    <junit.version>5.11.4</junit.version>
+    <encoding3d.conformance>${project.basedir}/../../conformance</encoding3d.conformance>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>${jackson.version}</version>
+    </dependency>
+    <!-- the archives' lzma members (ZIP's method 14; stored and deflate: java.util.zip) -->
+    <dependency>
+      <groupId>org.tukaani</groupId>
+      <artifactId>xz</artifactId>
+      <version>1.10</version>
+    </dependency>
+    <!-- the coupling's ZeroMQ transport (pure Java); optional: the folder transport needs nothing -->
+    <dependency>
+      <groupId>org.zeromq</groupId>
+      <artifactId>jeromq</artifactId>
+      <version>0.6.0</version>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <compilerArgs>
+            <arg>-Xlint:all</arg>
+          </compilerArgs>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+        <configuration>
+          <systemPropertyVariables>
+            <encoding3d.conformance>${encoding3d.conformance}</encoding3d.conformance>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <mainClass>org.openalea.encoding3d.ConformanceRun</mainClass>
+            </manifest>
+            <manifestEntries>
+              <Automatic-Module-Name>org.openalea.encoding3d</Automatic-Module-Name>
+            </manifestEntries>
+          </archive>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

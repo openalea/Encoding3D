@@ -1,0 +1,86 @@
+# The Julia codec (bindings/julia/encoding3d): its tests, on the oldest supported Julia and the latest release, and the
+# conformance check other codecs run (its dumps of the conformance files compared with their expected values, the files
+# it writes validated by encoding3d validate and Khronos' glTF-Validator); its coupling participant. No platform: the
+# package extensions for VirtualPlantLab (PlantGraphs, PlantGeomTurtle) and MTG.jl, proposals for those platforms, are
+# tested by hand in their own projects (test/plantgraphs, test/multiscaletreegraph; bindings/julia/README.md). OpenAlea's
+# conda CI builds the Python package only.
+name: Julia codec
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  test:
+    name: Julia ${{ matrix.julia-version }}, ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        julia-version: ["1.10", "1"]
+        os: [ubuntu-latest]
+        include:
+          - julia-version: "1"
+            os: windows-latest
+          - julia-version: "1"
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.julia-version }}
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+        with:
+          project: bindings/julia/encoding3d
+      - uses: julia-actions/julia-runtest@v1
+        with:
+          project: bindings/julia/encoding3d
+
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1"
+      - uses: julia-actions/cache@v2
+      - name: Dump and write the conformance scenes with the Julia codec
+        run: |
+          julia --project=bindings/julia/encoding3d -e 'using Pkg; Pkg.instantiate()'
+          julia --project=bindings/julia/encoding3d bindings/julia/conformance_run.jl conformance out
+      - uses: ./.github/actions/conformance
+        with:
+          dumps: out/dumps
+          written: out/written
+
+  # encoding3d.jl as a participant of coupling sessions run by the Python coordinator (specification §11), over ZeroMQ
+  # and over a folder
+  coupling:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1"
+      - uses: julia-actions/cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: The Python coordinator
+        run: pip install -e . numpy pytest pyzmq jsonschema
+      - name: A Julia project with encoding3d and ZMQ
+        run: |
+          mkdir -p coupling-env
+          julia --project=coupling-env -e 'using Pkg; Pkg.develop(path="bindings/julia/encoding3d"); Pkg.add("ZMQ")'
+      - name: The coupling tests, with the Julia participant
+        env:
+          ENCODING3D_JULIA: julia --project=coupling-env
+        run: pytest -v bindings/python/test/test_coupling.py
+      - name: The coupling conformance sessions, the Julia participant
+        run: |
+          julia --project=coupling-env -e 'using Pkg; Pkg.add("JSON")'
+          encoding3d couple-conformance conformance/coupling --participant \
+            "julia --project=$PWD/coupling-env $PWD/bindings/julia/coupling_conformance.jl"

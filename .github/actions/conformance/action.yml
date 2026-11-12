@@ -1,13 +1,15 @@
-# Checks a codec against fspm-TF's conformance files, in a codec's own CI, once the codec has run:
+# Checks a codec against encoding3d's conformance files, in a codec's own CI, once the codec has run:
 #
-#   - uses: ./.github/actions/conformance            (in this repository; elsewhere openalea/fspm-TF/.github/actions/conformance@main)
+#   - uses: ./.github/actions/conformance            (in this repository; elsewhere openalea/encoding3d/.github/actions/conformance@main)
 #     with:
 #       dumps: out/dumps          # what the codec read: one JSON dump per conformance GLB, x.json for x.expected.json
-#       written: out/written      # what the codec wrote: the conformance scenes, as .glb files (optional)
+#       written: out/written      # what the codec wrote: the conformance scenes, as .glb files (optional), and
+#                                 # archives (.fspm.zip) when the codec packs
+#       instances: "true"         # "false" for a codec reading 0.3 only: no instances (0.4) and archives
 #
-# Reading passes when every dump equals its expected values; writing, when every written file passes fspm-tf validate
-# and Khronos' glTF-Validator with no error.
-name: fspm-TF conformance
+# Reading passes when every dump equals its expected values (the dumps' layout: conformance/README.md); writing, when
+# every written file passes encoding3d validate and Khronos' glTF-Validator with no error.
+name: encoding3d conformance
 description: Compare a codec's reading of the conformance files with their expected values, and validate what it wrote
 inputs:
   dumps:
@@ -17,8 +19,12 @@ inputs:
     description: the folder of the .glb files the codec wrote for the conformance scenes (empty to skip)
     required: false
     default: ""
-  fspm-tf:
-    description: the path of an fspm-TF checkout (its conformance folder and Python package)
+  instances:
+    description: whether the codec reads 0.4's instances and archives (their dumps compared); "false" skips them
+    required: false
+    default: "true"
+  encoding3d:
+    description: the path of an encoding3d checkout (its conformance folder and Python package)
     required: false
     default: "."
   gltf-validator:
@@ -31,20 +37,23 @@ runs:
     - uses: actions/setup-python@v5
       with:
         python-version: "3.12"
-    - name: Install openalea.fspm_tf
+    - name: Install openalea.encoding3d
       shell: bash
-      run: python -m pip install numpy jsonschema "${{ inputs.fspm-tf }}"
+      run: python -m pip install numpy jsonschema "${{ inputs.encoding3d }}"
     - name: Reading
       shell: bash
-      run: fspm-tf compare-all "${{ inputs.dumps }}" "${{ inputs.fspm-tf }}/conformance"
-    - name: Writing, fspm-TF validator
+      run: encoding3d compare-all "${{ inputs.dumps }}" "${{ inputs.encoding3d }}/conformance" ${{ inputs.instances == 'false' && '--skip-instances' || '' }}
+    - name: Writing, encoding3d validator
       if: inputs.written != ''
       shell: bash
-      run: find "${{ inputs.written }}" -name "*.glb" -print0 | xargs -0 fspm-tf validate
+      run: find "${{ inputs.written }}" \( -name "*.glb" -o -name "*.fspm.zip" \) -print0 | xargs -0 encoding3d validate
     - name: Writing, Khronos' glTF-Validator
       if: inputs.written != '' && runner.os == 'Linux'
       shell: bash
       run: |
         curl -sSL -o validator.tar.xz "https://github.com/KhronosGroup/glTF-Validator/releases/download/${{ inputs.gltf-validator }}/gltf_validator-${{ inputs.gltf-validator }}-linux64.tar.xz"
         tar xf validator.tar.xz gltf_validator
-        find "${{ inputs.written }}" -name "*.glb" -print0 | xargs -0 -n1 ./gltf_validator
+        find "${{ inputs.written }}" -name "*.glb" -print0 | xargs -0 -n1 ./gltf_validator || {
+          # each file's issues are in its report beside it: print the errors
+          find "${{ inputs.written }}" -name "*.report.json" -exec python -c "import json, sys; report = json.load(open(sys.argv[1])); [print(sys.argv[1], m['code'], m.get('pointer', ''), m['message']) for m in report['issues']['messages'] if m['severity'] == 0]" {} \;
+          exit 1; }
