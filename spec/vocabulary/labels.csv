@@ -9,6 +9,7 @@ ShootGrowthUnit,GrowthUnit,,,no Plant Ontology term
 RootGrowthUnit,GrowthUnit,,,no Plant Ontology term
 ShootPhytomer,Phytomer,,,no Plant Ontology term
 RootPhytomer,Phytomer,,,no Plant Ontology term
+Seed,Organ,PO:0009010,seed,"the seed (or a grass's caryopsis), bearing the seminal roots and the shoot"
 Meristem,Organ,PO:0020147,root apical meristem,or a shoot apical meristem: the term depends on the axis
 StemInternode,Organ,PO:0020142,stem internode,
 RootInternode,Organ,PO:0009005,root,a root portion between two branching points: no own term
@@ -19,6 +20,7 @@ Sheath,Organ,PO:0020104,leaf sheath,
 Blade,Organ,PO:0020039,leaf lamina,
 Peduncle,Organ,PO:0009053,peduncle,
 Ear,Organ,PO:0030117,spike inflorescence,
+Awn,Organ,,,a grass ear's awns as one organ; no Plant Ontology term checked
 LeafElement,SubOrgan,PO:0025034,leaf,a portion of a leaf
 StemElement,SubOrgan,PO:0025029,shoot axis,a portion of a stem
 RootSegment,SubOrgan,PO:0009005,root,a portion of a root

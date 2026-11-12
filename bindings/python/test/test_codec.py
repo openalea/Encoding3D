@@ -1,4 +1,5 @@
 """Writing then reading a frame gives it back: every column bit for bit, declarations, grids, mappings, meshes."""
+import io
 import json
 import struct
 
@@ -6,10 +7,11 @@ import numpy as np
 import pytest
 
 import generate
-from openalea.fspm_tf import (DataStructure, EntitySet, Frame, Mesh, Table, Variable, from_bytes, read_index, read_sequence,
-                     to_bytes, write_sequence)
-from openalea.fspm_tf.dump import frame_to_dict
-from openalea.fspm_tf.glb import unpack
+from openalea.encoding3d import (DataStructure, EntitySet, Frame, Mesh, Table, Variable, from_bytes, read_index, read_sequence,
+                     to_bytes, write, write_sequence)
+from openalea.encoding3d import glb
+from openalea.encoding3d.dump import frame_to_dict
+from openalea.encoding3d.glb import BufferBuilder, unpack
 
 
 def same_columns(a, b):
@@ -17,7 +19,11 @@ def same_columns(a, b):
     for name in a.columns:
         x, y = a.columns[name], b.columns[name]
         assert x.dtype == y.dtype and x.shape == y.shape, name
-        if x.dtype.kind == "f":
+        assert np.ma.isMaskedArray(x) == np.ma.isMaskedArray(y), name
+        if np.ma.isMaskedArray(x):                                    # missing values: the same rows, the same others
+            assert np.array_equal(np.ma.getmaskarray(x), np.ma.getmaskarray(y)), name
+            assert np.array_equal(x.compressed(), y.compressed()), name
+        elif x.dtype.kind == "f":
             assert np.ascontiguousarray(x).tobytes() == np.ascontiguousarray(y).tobytes(), name      # bit for bit
         else:
             assert np.array_equal(x, y), name
@@ -36,6 +42,8 @@ def test_round_trip(name):
         for a, b in zip(written.entity_sets + written.relations, read.entity_sets + read.relations):
             same_columns(a, b)
         assert [entity_set.rank for entity_set in written.entity_sets] == [s.rank for s in read.entity_sets]
+        assert [entity_set.scale for entity_set in written.entity_sets] == [s.scale for s in read.entity_sets]
+        assert written.labels == read.labels
         if written.scalars is not None:
             same_columns(written.scalars, read.scalars)
         assert written.grid == read.grid
@@ -57,6 +65,44 @@ def test_glb_layout():
     document, _ = unpack(data)
     assert all(view["byteOffset"] % 8 == 0 for view in document["bufferViews"])
     assert "FSPM_scene" not in document.get("extensionsRequired", [])
+
+
+def test_buffer_length_holds_the_chunk_padding():
+    """A binary chunk of 4 bytes of data is padded to 8: the buffer's byteLength counts the padding, so that the
+    chunk is no longer than the buffer (glTF-Validator: BUFFER_GLB_CHUNK_TOO_BIG beyond 3 bytes)."""
+    frame = Frame(data_structures=[DataStructure("plants", entity_sets=[
+        EntitySet("Plant", columns={"id": np.array([0], dtype=np.int64), "count": np.array([1], dtype=np.int32)},
+                  rank=1)])])
+    document, binary = unpack(to_bytes(frame))
+    assert len(binary) % 8 == 0 and document["buffers"][0]["byteLength"] == len(binary)
+
+
+@pytest.mark.parametrize("name", sorted(generate.SCENES))
+def test_a_written_file_is_to_bytes_file(name, tmp_path):
+    """write() streams the GLB piece by piece (the arrays from their own memory, no copy of the binary chunk): the
+    same bytes as to_bytes()."""
+    frame = generate.SCENES[name]()
+    path = tmp_path / "frame.glb"
+    write(str(path), frame, embed_parts=True)
+    assert path.read_bytes() == to_bytes(frame, embed_parts=True)
+
+
+def test_the_buffer_keeps_its_arrays_without_copying_them():
+    """BufferBuilder holds a byte view of a contiguous little-endian array, not a copy: glb.write writes it from the
+    array's memory; pack() joins the same pieces."""
+    array = np.arange(5, dtype=np.float64)
+    buffers = BufferBuilder()
+    buffers.add(b"abc")
+    index = buffers.add(array)
+    view = buffers.parts[-1]
+    assert np.shares_memory(np.frombuffer(view, dtype=np.uint8), array)
+    assert buffers.views[index]["byteOffset"] == 8 and buffers.length == 48
+    stream = io.BytesIO()
+    written = glb.write(stream, {"asset": {}}, buffers)
+    assert stream.getvalue() == glb.pack({"asset": {}}, buffers) == glb.pack({"asset": {}}, buffers.binary())
+    assert written == len(stream.getvalue())
+    document, binary = unpack(stream.getvalue())
+    assert np.array_equal(np.frombuffer(bytes(binary)[8:48], dtype=np.float64), array)
 
 
 def test_column_types():

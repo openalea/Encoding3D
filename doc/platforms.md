@@ -1,0 +1,140 @@
+# Implementing a platform
+
+A platform reads and writes encoding3d through two pieces of code, which live in different places.
+
+| | What it does | Depends on | Lives in |
+|---|---|---|---|
+| **The codec** | reads and writes the files: the GLB container, the typed tables, sequences and their index, the vocabulary | `spec/` only | this repository, `bindings/<language>/` |
+| **The adapter** | turns the codec's tables into the platform's own model, and back | the platform's internals | the platform's repository |
+
+## The codec
+
+The codec is the format in a language. The Python one, `bindings/python/`, is the reference.
+
+What it has to handle:
+
+- **The GLB container:** a 12-byte header (magic `glTF`, version 2, total length), a JSON chunk and a binary chunk,
+  both padded to 8 bytes.
+- **The JSON:** the glTF document, with two extensions.
+  - `EXT_structural_metadata` declares the tables' classes and points to their columns in the binary chunk.
+  - `FSPM_scene` describes the scene: its data structures and their entity sets, relations, grids, meshes and
+    mappings; the frame's time; the variables' declarations.
+- **The tables:** each column is a slice of the binary chunk, little-endian, of its declared type. Booleans are bits;
+  text is UTF-8 with offsets; labels are enums; NaN and infinities use the stand-ins the specification gives.
+- **Meshes:** float32 positions, and one feature ID attribute per scale a mesh represents.
+- **Sequences:** the index `scene.fspm.json`.
+- **Since 0.4, optionally:** instance sets, derived fields and shared parts (§12: a part is a GLB of its own, found by
+  the SHA-256 of its bytes, embedded or in `parts/`), and `.fspm.zip` archives (§8.2: a ZIP of the folder). The
+  Python, C++, Java and Julia codecs implement them ([Implementations](implementations.md)). A codec reading 0.3 only
+  skips the conformance folders `instances/` and `archives/` (`encoding3d compare-all --skip-instances`); it should
+  read a 0.4 frame's other content and ignore its instance sets.
+
+This is a few hundred lines in any language. Existing libraries help:
+
+- **C++:** done, `bindings/cpp/` ([C++ and CPlantBox](cpp.md)): hand-written, with nlohmann_json; archives with
+  minizip-ng.
+- **Java:** done, `bindings/java/` ([Java and GroIMP](java.md)): hand-written, with Jackson; archives with
+  `java.util.zip` and xz-java.
+- **Julia:** done, `bindings/julia/encoding3d/` ([encoding3d.jl](julia.md)): a hand-written GLB container and JSON.jl;
+  archives with ZipArchives.jl and liblzma (XZ_jll).
+
+Each codec goes in its own folder, with its usual build files and tests:
+
+```
+bindings/
+  python/                    the reference (openalea.encoding3d)
+  cpp/                       CMakeLists.txt, include/, src/, test/
+  java/                      pom.xml or build.gradle, src/main/, src/test/
+  julia/encoding3d/              Project.toml, src/, test/
+```
+
+A codec is released by its team on its own channel (conda, Maven, the Julia registry), under its own tag (e.g.
+`cpp-v0.1.0`), and states the specification version it implements.
+
+## The adapter
+
+The adapter maps the platform's model onto the format's tables:
+
+- its scales onto entity sets, and its topology onto `complex`, `parent` and `edge_type`;
+- its variables onto columns, declared with their units and kinds;
+- its geometry onto meshes, and its soil and mappings onto grids and mapping tables;
+- entities drawn many times with one shape (sections, coarse cells, organs of a few shapes) onto instance sets of
+  shared templates, and their inner values, when the model gives them as a linear function of a few values it keeps
+  (a reduced network, a coarse cell's recovery), onto derived fields: see
+  [Instances, derived fields and archives](instances.md), "Writing instances: for platforms".
+
+What the platform needs to rebuild its own model exactly, beyond the shared data model, may go in the data
+structure's `extras` (under the platform's name) and in columns of role `setting`. Other readers keep them without
+interpreting them.
+
+**Example:** metafspm's adapter, `openalea.metafspm.io.encoding3d`, rebuilds its multiscale graphs bit for bit from its
+own files, and a simulation continues from them exactly as from the original. It reads its standard names from its
+column of the vocabulary.
+
+**Standard names.** A platform lists its names for each standard name in its column of
+`spec/vocabulary/standard_names.csv`. Its adapter reads its mapping from there, so the vocabulary can change
+without changing the platform's code.
+
+## Passing conformance
+
+`conformance/` holds reference scenes: a root system, a wheat shoot, a cell network, soil with roots and their
+mapping, an adaptive grid, a parameter set, and a growing sequence. Each GLB comes with its expected values,
+`*.expected.json`. A codec conforms to a version of the specification when it passes two checks.
+
+- **Reading:** everything it reads from each conformance GLB equals the expected JSON.
+  - Floats are compared exactly.
+  - NaN is `null`; infinities are the strings `"Infinity"` and `"-Infinity"`.
+  - Positions are the float32 values.
+- **Writing:** what it writes, for the same scenes, passes `encoding3d validate` with no error. It also passes Khronos'
+  glTF-Validator with no error, so that every viewer opens it.
+
+`conformance/README.md` gives the layout of the expected JSON. A codec dumps what it reads from each conformance
+GLB in that layout (`x.json` for `x.glb`), and writes the same scenes back as GLB files. Then:
+
+```bash
+encoding3d compare-all dumps/ conformance/       # reading: every dump equals its expected values, or the differences
+encoding3d validate written/*.glb                # writing
+```
+
+In GitHub Actions, the composite action `.github/actions/conformance` runs both, plus Khronos' glTF-Validator,
+after the codec's own steps:
+
+```yaml
+- name: Dump and write the conformance scenes
+  run: <the codec's command> conformance out          # out/dumps/x.json, out/written/x.glb
+- uses: ./.github/actions/conformance
+  with:
+    dumps: out/dumps
+    written: out/written
+```
+
+The Python codec does exactly this (`bindings/python/conformance_run.py`, the `python-codec-conformance` job).
+
+A codec that passes is listed in [Implementations](implementations.md) with the version it passes.
+
+## Taking part in a coupling session
+
+To couple its models with other platforms' (specification §11), a codec adds a participant's side;
+the coordinator is encoding3d's own (`encoding3d couple`), so no platform implements it. A participant:
+
+1. reads and writes **partial frames**: `FSPM_scene.update` (its sender, and a property table of the removed ids per
+   entity set), tables holding some rows and columns only;
+2. sends its **declaration** and receives the welcome (its id offset, its inputs' providers), as JSON headers
+   (`spec/schema/coupling.schema.json`);
+3. answers each **turn** (a partial frame of its inputs and the entities added or removed since its last turn) with
+   an **update** (its outputs and its own topology changes), until `stop`;
+4. speaks both transports: a folder of numbered JSON headers and GLB payloads (files only), and ZeroMQ (a DEALER
+   socket named after the participant; one or two message frames).
+
+The four codecs have a participant: Python (`openalea.encoding3d.coupling.participant`), Julia (`Participant`, `turns`,
+`send_update`), C++ (`encoding3d/coupling.hpp`) and Java (`org.openalea.encoding3d.coupling`). A new one proves itself on the
+conformance sessions: a small program run as `COMMAND SESSION OUT` that joins with the session's declaration, dumps
+each turn it reads and sends the session's updates, as the four codecs' programs do
+(`coupling/conformance.py`, `bindings/julia/coupling_conformance.jl`, `bindings/cpp/tools/coupling_conformance.cpp`,
+`ConformanceParticipant.java`):
+
+```bash
+encoding3d couple-conformance conformance/coupling --participant "<command>"
+```
+
+An adapter then maps the turns to the platform's model, as metafspm's `RemoteComponent` does.

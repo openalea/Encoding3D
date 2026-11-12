@@ -5,9 +5,9 @@ import numpy as np
 import pytest
 
 import generate
-from openalea.fspm_tf import NO_ID, Variable, to_bytes, write_sequence
-from openalea.fspm_tf.glb import pack, unpack
-from openalea.fspm_tf.validate import validate_bytes, validate_sequence
+from openalea.encoding3d import NO_ID, Variable, to_bytes, write_sequence
+from openalea.encoding3d.glb import pack, unpack
+from openalea.encoding3d.validate import validate_bytes, validate_sequence
 
 
 def messages(frame) -> str:
@@ -101,6 +101,29 @@ def test_ids_never_reused(tmp_path):
     assert "id(s) reused after their entity disappeared" in str(report), str(report)
 
 
+def adaptive_soil_at(step: int, ids, levels, indices):
+    """generate.adaptive_soil's grid with the leaf cells *ids* at *levels* and *indices*, at *step*."""
+    frame = generate.adaptive_soil()
+    cells = frame.data_structures[0].entity_set("Cell")
+    cells.columns = {"id": np.asarray(ids, dtype=np.int64), "level": np.asarray(levels, dtype=np.int64),
+                     "index": np.asarray(indices, dtype=np.int64),
+                     "soil_water_potential": np.full(len(ids), -0.02e6)}
+    frame.time, frame.step = float(step), step
+    return frame
+
+
+def test_an_adaptive_grid_cell_refined_again_keeps_its_id(tmp_path):
+    fine = [[i, j, k] for i in range(2) for j in range(2) for k in range(2)]
+    refined = adaptive_soil_at(0, list(range(8)) + [8], [1] * 8 + [0], fine + [[1, 0, 0]])
+    coarsened = adaptive_soil_at(1, [9, 8], [0, 0], [[0, 0, 0], [1, 0, 0]])
+    again = adaptive_soil_at(2, list(range(8)) + [8], [1] * 8 + [0], fine + [[1, 0, 0]])
+    report = validate_sequence(write_sequence(str(tmp_path / "back"), [refined, coarsened, again]))
+    assert report.ok, str(report)                                     # the same cells (level, index) again
+    moved = adaptive_soil_at(2, [9, 3], [0, 1], [[0, 0, 0], [1, 0, 0]])        # cell 3's id given to another cell
+    report = validate_sequence(write_sequence(str(tmp_path / "moved"), [refined, coarsened, moved]))
+    assert "1 id(s) reused after their entity disappeared, e.g. [3]" in str(report), str(report)
+
+
 def test_index_order(tmp_path):
     index = write_sequence(str(tmp_path), generate.growing_sequence())
     with open(index) as file:
@@ -109,3 +132,50 @@ def test_index_order(tmp_path):
     with open(index, "w") as file:
         json.dump(content, file)
     assert "frames are in time order" in str(validate_sequence(index))
+
+
+def organs_of(frame):
+    return frame.data_structures[0].entity_set("Organ")
+
+
+def test_missing_values_scene_is_valid():
+    report = validate_bytes(to_bytes(generate.missing_values()))
+    assert report.ok and not report.warnings, str(report)
+
+
+def test_rules_of_0_2():
+    frame = generate.missing_values()
+    organs_of(frame).columns["emergence"][0] = "1 March 2026"
+    assert "1 value(s) not ISO 8601 date" in messages(frame)
+    frame = generate.missing_values()
+    organs_of(frame).columns["edge_type"][0] = "unknown"           # an unknown link needs a parent
+    assert "'none' exactly for the entities without a parent" in messages(frame)
+    frame = generate.missing_values()
+    organs_of(frame).columns["sibling_order"][0] = -1
+    assert "positions among siblings are non-negative" in messages(frame)
+    frame = generate.missing_values()
+    frame.data_structures[0].relations[1].name = "bearer_Axis_Organ"
+    assert "two relations have the same name" in messages(frame)
+    frame = generate.missing_values()
+    frame.data_structures[0].relations[0].columns["relation"][0] = "sideways"
+    assert "bearer labels ['sideways']" in messages(frame)
+    frame = generate.missing_values()
+    organs_of(frame).scale = "Organ"
+    organs_of(frame).rank = 3
+    assert "rank 3: the base scale Organ's position is 5" in messages(frame)
+    frame = generate.missing_values()
+    frame.data_structures[0].labels["Petal"] = "Corolla"
+    text = messages(frame)
+    assert "'Petal' is no entity's label" in text and "'Corolla' is not a label of the vocabulary" in text
+    frame = generate.missing_values()
+    frame.data_structures[0].extras = {"MyPlatform": {}}
+    assert "key 'MyPlatform': the platform's name, in lower case" in messages(frame)
+
+
+def test_boolean_with_missing_values_is_uint8():
+    data = to_bytes(generate.missing_values())
+    document, binary = unpack(data)
+    classes = document["extensions"]["EXT_structural_metadata"]["schema"]["classes"]
+    classes["plant__Organ"]["properties"]["alive"]["noData"] = 2
+    assert "a boolean column with missing values is UINT8 (0, 1) with noData 255" in \
+        str(validate_bytes(pack(document, binary)))

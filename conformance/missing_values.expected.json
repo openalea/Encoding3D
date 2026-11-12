@@ -1,0 +1,337 @@
+{
+ "time": 3.0,
+ "time_unit": "d",
+ "step": 72,
+ "data_structures": [
+  {
+   "id": "plant",
+   "kind": "graph",
+   "origin": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "entity_sets": [
+    {
+     "name": "Plant",
+     "count": 1,
+     "columns": {
+      "id": {
+       "dtype": "int64",
+       "values": [
+        0
+       ]
+      },
+      "label": {
+       "dtype": "string",
+       "values": [
+        "Wheat"
+       ]
+      }
+     },
+     "rank": 1,
+     "scale": "Plant"
+    },
+    {
+     "name": "Axis",
+     "count": 2,
+     "columns": {
+      "id": {
+       "dtype": "int64",
+       "values": [
+        1,
+        2
+       ]
+      },
+      "label": {
+       "dtype": "string",
+       "values": [
+        "Axis",
+        "Axis"
+       ]
+      },
+      "complex": {
+       "dtype": "int64",
+       "values": [
+        0,
+        0
+       ]
+      },
+      "parent": {
+       "dtype": "int64",
+       "values": [
+        -1,
+        -1
+       ]
+      },
+      "edge_type": {
+       "dtype": "string",
+       "values": [
+        "none",
+        "none"
+       ]
+      }
+     },
+     "rank": 2,
+     "scale": "Axis"
+    },
+    {
+     "name": "Organ",
+     "count": 7,
+     "columns": {
+      "id": {
+       "dtype": "int64",
+       "values": [
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+       ]
+      },
+      "label": {
+       "dtype": "string",
+       "values": [
+        "Internode",
+        "Internode",
+        "Leaf",
+        "Leaf",
+        "Internode",
+        "Bud",
+        "Root"
+       ]
+      },
+      "complex": {
+       "dtype": "int64",
+       "values": [
+        1,
+        1,
+        1,
+        1,
+        2,
+        2,
+        0
+       ]
+      },
+      "parent": {
+       "dtype": "int64",
+       "values": [
+        -1,
+        10,
+        10,
+        11,
+        11,
+        14,
+        -1
+       ]
+      },
+      "edge_type": {
+       "dtype": "string",
+       "values": [
+        "none",
+        "successor",
+        "branch",
+        "unknown",
+        "branch",
+        "successor",
+        "none"
+       ]
+      },
+      "sibling_order": {
+       "dtype": "int64",
+       "values": [
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        1
+       ]
+      },
+      "length": {
+       "dtype": "float64",
+       "values": [
+        0.12,
+        0.08,
+        0.2,
+        0.15,
+        0.05,
+        null,
+        0.3
+       ]
+      },
+      "rank": {
+       "dtype": "int32",
+       "values": [
+        1,
+        2,
+        1,
+        2,
+        1,
+        null,
+        null
+       ]
+      },
+      "tissue": {
+       "dtype": "string",
+       "values": [
+        "stem",
+        "stem",
+        "blade",
+        null,
+        "stem",
+        null,
+        "root"
+       ]
+      },
+      "alive": {
+       "dtype": "bool",
+       "values": [
+        true,
+        true,
+        true,
+        false,
+        true,
+        null,
+        false
+       ]
+      },
+      "emergence": {
+       "dtype": "string",
+       "values": [
+        "2026-03-01",
+        "2026-03-04",
+        "2026-03-02",
+        "2026-03-06",
+        null,
+        null,
+        "2026-02-28"
+       ]
+      }
+     },
+     "variables": {
+      "length": {
+       "unit": "m",
+       "role": "state",
+       "standard_name": "length",
+       "kind": "extensive"
+      },
+      "rank": {
+       "unit": "1",
+       "role": "state",
+       "kind": "descriptor",
+       "description": "the organ's rank on its axis"
+      },
+      "tissue": {
+       "unit": "1",
+       "role": "state",
+       "kind": "descriptor"
+      },
+      "alive": {
+       "unit": "1",
+       "role": "state",
+       "kind": "descriptor"
+      },
+      "emergence": {
+       "unit": "1",
+       "role": "state",
+       "kind": "descriptor",
+       "description": "the organ's emergence date",
+       "format": "date"
+      }
+     },
+     "rank": 5,
+     "scale": "mixed"
+    }
+   ],
+   "platform": "encoding3d",
+   "model": "toy plant with per-class fields",
+   "labels": {
+    "Internode": "StemInternode",
+    "Leaf": "Leaf",
+    "Bud": "Meristem",
+    "Root": "RootAxis",
+    "Axis": "ShootAxis"
+   },
+   "relations": [
+    {
+     "name": "bearer_Axis_Organ",
+     "count": 1,
+     "columns": {
+      "source": {
+       "dtype": "int64",
+       "values": [
+        2
+       ]
+      },
+      "target": {
+       "dtype": "int64",
+       "values": [
+        11
+       ]
+      },
+      "relation": {
+       "dtype": "string",
+       "values": [
+        "branch"
+       ]
+      }
+     },
+     "source_set": "Axis",
+     "target_set": "Organ"
+    },
+    {
+     "name": "bearer_Organ_Axis",
+     "count": 1,
+     "columns": {
+      "source": {
+       "dtype": "int64",
+       "values": [
+        15
+       ]
+      },
+      "target": {
+       "dtype": "int64",
+       "values": [
+        1
+       ]
+      },
+      "relation": {
+       "dtype": "string",
+       "values": [
+        "decomposition"
+       ]
+      }
+     },
+     "source_set": "Organ",
+     "target_set": "Axis"
+    }
+   ]
+  }
+ ],
+ "mappings": []
+}

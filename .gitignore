@@ -18,6 +18,7 @@ env/
 downloads/
 eggs/
 parts/
+!conformance/instances/parts/
 bin/
 var/
 sdist/
@@ -111,10 +112,14 @@ test/*.png
 examples/**/outputs/
 
 /dev*.md
+/.devplan/
 
 # glTF-Validator reports
 *.report.json
 
 # the documentation build, and its pages generated from spec/vocabulary
-docs/_build/
-docs/_generated/
+doc/_build/
+doc/_generated/
+
+# Julia: environments resolved locally (the codec is a library: no committed manifest)
+bindings/julia/**/Manifest*.toml

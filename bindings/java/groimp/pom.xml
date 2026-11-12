@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- GroIMP's adapter for encoding3d: a GroIMP graph (de.grogra.graph.impl.Node) as an encoding3d graph, and back. It builds on
+     GroIMP's Graph module only (scales from refinement edges, managed fields as variables), so that it can become a
+     GroIMP plugin (devplan_bindings.md, G4). Status: a first proposal for GroIMP's team, not a part of encoding3d (whose
+     requirements and CI do not depend on it), built and tested by hand (README.md here).
+
+       mvn -f bindings/java/pom.xml install && mvn -f bindings/java/groimp/pom.xml verify
+     (GroIMP's graph, utilities and xl.core 3.0.0: from GroIMP's package registry)
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>org.openalea</groupId>
+  <artifactId>encoding3d-groimp</artifactId>
+  <version>0.1.0</version>
+  <packaging>jar</packaging>
+  <name>encoding3d, GroIMP's adapter</name>
+  <licenses>
+    <license>
+      <name>GPL-3.0-or-later</name>
+      <url>https://www.gnu.org/licenses/gpl-3.0.txt</url>
+    </license>
+  </licenses>
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <groimp.version>3.0.0</groimp.version>
+    <junit.version>5.11.4</junit.version>
+  </properties>
+
+  <repositories>
+    <repository>
+      <id>gitlab-maven</id>        <!-- GroIMP's modules (graph, utilities, xl.core 3.0.0) -->
+      <url>https://gitlab.com/api/v4/groups/55048746/-/packages/maven</url>
+    </repository>
+  </repositories>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.openalea</groupId>
+      <artifactId>encoding3d</artifactId>
+      <version>0.1.0</version>
+    </dependency>
+    <dependency>
+      <groupId>de.grogra</groupId>
+      <artifactId>graph</artifactId>
+      <version>${groimp.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+        <configuration>
+          <useModulePath>false</useModulePath>
+          <systemPropertyVariables>
+            <encoding3d.conformance>${project.basedir}/../../../conformance</encoding3d.conformance>
+            <encoding3d.out>${project.build.directory}/groimp_out</encoding3d.out>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

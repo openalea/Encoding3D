@@ -1,0 +1,23 @@
+{
+ "fspmIndex": "0.4",
+ "timeUnit": "d",
+ "frames": [
+  {
+   "time": 0.0,
+   "step": 0,
+   "file": "frame_000000.glb"
+  },
+  {
+   "time": 1.0,
+   "step": 24,
+   "file": "frame_000001.glb"
+  }
+ ],
+ "parts": {
+  "1fc6cae2e8bdfb8b4c0c887860c547876a6f4c4fcabdb7116474dd334f3d205e": "parts/1fc6cae2e8bdfb8b4c0c887860c547876a6f4c4fcabdb7116474dd334f3d205e.glb",
+  "5f4dcfceeee06a9b1a46be0f33ba54a809b4ee2e65050d4f5f4154a5cfccac5b": "parts/5f4dcfceeee06a9b1a46be0f33ba54a809b4ee2e65050d4f5f4154a5cfccac5b.glb",
+  "df3173434d6f32ec7226d20dea08dc127797b0e3c8099be50d68c62530005fed": "parts/df3173434d6f32ec7226d20dea08dc127797b0e3c8099be50d68c62530005fed.glb",
+  "e7f3620589ada8a5d45c6a14e8d6c7063e50353c57deeb41270afc18ffe9974e": "parts/e7f3620589ada8a5d45c6a14e8d6c7063e50353c57deeb41270afc18ffe9974e.glb",
+  "ebfa0af42677b84d0a3950b223aebffe00d4f6da881b8800fd7f2b48ae687c58": "parts/ebfa0af42677b84d0a3950b223aebffe00d4f6da881b8800fd7f2b48ae687c58.glb"
+ }
+}

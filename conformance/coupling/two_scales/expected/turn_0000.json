@@ -1,0 +1,82 @@
+{
+ "time": 0.0,
+ "time_unit": "d",
+ "step": 0,
+ "data_structures": [
+  {
+   "id": "plant",
+   "kind": "graph",
+   "origin": [
+    [
+     1.0,
+     0.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     1.0,
+     0.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     1.0,
+     0.0
+    ],
+    [
+     0.0,
+     0.0,
+     0.0,
+     1.0
+    ]
+   ],
+   "entity_sets": [
+    {
+     "name": "Organ",
+     "count": 1,
+     "columns": {
+      "id": {
+       "dtype": "int64",
+       "values": [
+        8589934592
+       ]
+      },
+      "label": {
+       "dtype": "string",
+       "values": [
+        "Leaf"
+       ]
+      },
+      "complex": {
+       "dtype": "int64",
+       "values": [
+        -1
+       ]
+      },
+      "parent": {
+       "dtype": "int64",
+       "values": [
+        -1
+       ]
+      },
+      "edge_type": {
+       "dtype": "string",
+       "values": [
+        "none"
+       ]
+      }
+     },
+     "rank": 5,
+     "scale": "Organ"
+    }
+   ]
+  }
+ ],
+ "mappings": [],
+ "update": {
+  "participant": "coordinator",
+  "removed": []
+ }
+}

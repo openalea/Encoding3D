@@ -1,4 +1,4 @@
-# The conformance files are valid glTF for every viewer (Khronos' glTF-Validator) and valid fspm-TF (our validator)
+# The conformance files are valid glTF for every viewer (Khronos' glTF-Validator) and valid encoding3d (our validator)
 name: Conformance
 
 on:
@@ -17,22 +17,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install openalea.fspm_tf (its dependencies, conda-only in pyproject.toml, given here), and VTK for the ParaView reader's tests
-        run: python -m pip install numpy jsonschema pytest vtk . 
+      - name: Install openalea.encoding3d (its dependencies, conda-only in pyproject.toml, given here), and VTK for the ParaView reader's tests
+        run: python -m pip install numpy jsonschema scipy pytest pyzmq vtk . 
       - name: Tests, the ParaView reader's conversion included
         run: pytest bindings/python/test -v
       - name: The committed files are the generated ones
         run: |
           python conformance/generate.py
-          git diff --exit-code -- conformance
-      - name: fspm-TF validator
-        run: fspm-tf validate conformance/*.glb conformance/growing_sequence/scene.fspm.json
+          # the evaluated values' last digits follow the platform's BLAS: test_conformance compares them within the
+          # protocol's 1e-12; every other file must be what the generator writes, byte for byte
+          git diff --exit-code -- conformance ':(exclude)conformance/instances/*.evaluated.json'
+      - name: encoding3d validator
+        run: encoding3d validate conformance/*.glb conformance/growing_sequence/scene.fspm.json conformance/instances/scene.fspm.json conformance/instances/embedded.glb conformance/archives/*.fspm.zip
       - name: Khronos glTF-Validator
         run: |
           curl -sSL -o validator.tar.xz "https://github.com/KhronosGroup/glTF-Validator/releases/download/${GLTF_VALIDATOR}/gltf_validator-${GLTF_VALIDATOR}-linux64.tar.xz"
           tar xf validator.tar.xz gltf_validator
-          for file in conformance/*.glb conformance/growing_sequence/*.glb; do
-            ./gltf_validator "$file" || exit 1
+          for file in conformance/*.glb conformance/growing_sequence/*.glb conformance/instances/*.glb conformance/instances/parts/*.glb; do
+            ./gltf_validator "$file" || { python -c "import json, sys; report = json.load(open(sys.argv[1])); [print(sys.argv[1], m['code'], m.get('pointer', ''), m['message']) for m in report['issues']['messages'] if m['severity'] == 0]" "${file}.report.json"; exit 1; }
           done
 
   docs:
@@ -42,10 +44,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install openalea.fspm_tf and the documentation's tools
-        run: python -m pip install numpy jsonschema sphinx pydata-sphinx-theme myst-parser sphinx-favicon sphinx-copybutton .
+      - name: Install openalea.encoding3d and the documentation's tools
+        run: |
+          sudo apt-get install -y pandoc
+          python -m pip install numpy jsonschema pytest sphinx ".[doc]"
+      - name: The notebooks run
+        run: python -m pytest --nbmake doc/notebooks tutorials/01_encoding3d_alone
       - name: Build the documentation, warnings as errors
-        run: python -m sphinx -b html docs docs/_build -W --keep-going
+        run: python -m sphinx -b html doc doc/_build -W --keep-going
 
   # The reference codec through the action other codecs use: its dumps of the conformance files, and the files it writes
   python-codec-conformance:
@@ -57,7 +63,7 @@ jobs:
           python-version: "3.12"
       - name: Dump and write the conformance scenes with the Python codec
         run: |
-          python -m pip install numpy jsonschema .
+          python -m pip install numpy jsonschema scipy .
           python bindings/python/conformance_run.py conformance out
       - uses: ./.github/actions/conformance
         with:

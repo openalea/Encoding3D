@@ -3,9 +3,9 @@ import numpy as np
 import pytest
 
 import generate
-from openalea.fspm_tf import from_bytes, read, to_bytes, ucum, vocabulary, write
-from openalea.fspm_tf.cli import main
-from openalea.fspm_tf.display import add_display, remove_display
+from openalea.encoding3d import from_bytes, read, to_bytes, ucum, vocabulary, write
+from openalea.encoding3d.cli import main
+from openalea.encoding3d.display import add_display, remove_display
 
 
 @pytest.mark.parametrize("code, other", [("mm3/(s.MPa)", "m3/(s.Pa)"), ("cm4/(hPa.d)", "m4/(s.Pa)"),

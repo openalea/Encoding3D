@@ -133,10 +133,10 @@
      "rank": 9
     }
    ],
-   "platform": "fspm-tf",
+   "platform": "encoding3d",
    "model": "toy cell network",
    "extras": {
-    "fspm-tf": {
+    "encoding3d": {
      "note": "extras are the writer's, kept by readers"
     }
    },
