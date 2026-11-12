@@ -11,7 +11,7 @@ cmake --build cplantbox/build -j 4 > /dev/null
 mvn -q -f ../../bindings/java/pom.xml install -DskipTests
 mvn -q -f ../../bindings/java/groimp/pom.xml install -DskipTests
 mvn -q -f groimp/pom.xml package dependency:copy-dependencies -DincludeScope=runtime
-"${JULIA:-julia}" --project=virtualplantlab -e 'using Pkg; Pkg.instantiate(); using encoding3d, PlantGraphs, ZMQ'
+"${JULIA:-julia}" --project=virtualplantlab -e 'using Pkg; Pkg.resolve(); Pkg.instantiate(); using encoding3d, PlantGraphs, ZMQ'
 python session.py "$PWD/cplantbox/build/roots" "$PWD/groimp/target/classes:$PWD/groimp/target/dependency/*" \
        "${JULIA:-julia}" "$(command -v python)"
 if command -v encoding3d > /dev/null; then encoding3d validate outputs/record/scene.fspm.json | head -1; fi
